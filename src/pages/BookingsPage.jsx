@@ -229,7 +229,8 @@ export default function BookingsPage() {
       console.warn('Backend API offline or static host fallback for convert:', err);
     } finally {
       alert('Successfully converted to active Workshop Job Card!');
-      navigate('/app/workshop');
+      const basePrefix = window.location.pathname.startsWith('/admin') ? '/admin' : '/app';
+      navigate(`${basePrefix}/workshop`);
     }
   };
 

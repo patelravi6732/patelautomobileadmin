@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { PlusCircle, User, Phone, Bike, UserCheck, Users } from 'lucide-react';
 import API from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { pushCloudJob } from '../utils/cloudSync';
 
 export default function NewServicePage() {
   const { garageInfo } = useAuth();
@@ -15,7 +16,8 @@ export default function NewServicePage() {
     mobile_number: '',
     vehicle_number: '',
     bike_model: '',
-    assigned_mechanic: 'Patel Owner',
+    complaint: '',
+    assigned_mechanic: 'Vijay Owner',
     secondary_mechanic: '',
     labour_charge: 300.00
   });
@@ -44,15 +46,32 @@ export default function NewServicePage() {
       return;
     }
     setLoading(true);
+
+    const basePrefix = window.location.pathname.startsWith('/admin') ? '/admin' : '/app';
+    const newJobObj = {
+      ...formData,
+      id: Date.now(),
+      parts: [],
+      parts_total: 0,
+      live_total: parseFloat(formData.labour_charge || 300),
+      status: 'IN_PROGRESS',
+      created_at: new Date().toISOString()
+    };
+
+    pushCloudJob(newJobObj).catch(console.warn);
+
+    const existingJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
+    existingJobs.push(newJobObj);
+    localStorage.setItem('workshop_jobs', JSON.stringify(existingJobs));
+
     try {
       await API.post('/workshop/', formData);
-      alert('Service job created successfully!');
-      navigate('/app/workshop');
     } catch (err) {
-      console.error(err);
-      alert('Failed to create service job.');
+      console.warn('Backend API offline on static host, saved service job locally and pushed to cloud:', err);
     } finally {
       setLoading(false);
+      alert('Service job created successfully!');
+      navigate(`${basePrefix}/workshop`);
     }
   };
 

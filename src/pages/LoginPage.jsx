@@ -65,7 +65,7 @@ export default function LoginPage() {
     setError(null);
     try {
       await login(username, password);
-      navigate('/app/dashboard');
+      navigate('/admin/dashboard');
     } catch (err) {
       console.error(err);
       const data = err.response?.data;

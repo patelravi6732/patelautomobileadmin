@@ -4,7 +4,7 @@ import {
   IndianRupee, Package, Bike, User, Phone, Check, Receipt, UserCheck, Users, Lock, Search, ChevronDown, Edit2, Tag
 } from 'lucide-react';
 import API from '../services/api';
-import { fetchCloudJobs, updateCloudJobStatus, deleteCloudJob, fetchCloudInventory, pushCloudJob, pushCloudRecycleBinItem } from '../utils/cloudSync';
+import { fetchCloudJobs, updateCloudJobStatus, deleteCloudJob, fetchCloudInventory, pushCloudJob, pushCloudRecycleBinItem, pushCloudKhataEntry, pushCloudInvoice, updateCloudBookingStatus } from '../utils/cloudSync';
 import { useAuth } from '../context/AuthContext';
 import AdminPasswordModal from '../components/AdminPasswordModal';
 import { DEFAULT_SPARE_PARTS } from './InventoryPage';
@@ -330,27 +330,98 @@ export default function WorkshopPage() {
     e.preventDefault();
     if (!selectedJob) return;
     const numericDiscount = parseFloat(discountAmount.toString().replace(/[^0-9.]/g, '')) || 0;
+    const finishLabourNum = parseFloat(finishLabourCharge) || 0;
+    const partsTotalNum = parseFloat(selectedJob.parts_total || 0);
+    const grandTotal = Math.max(0, (partsTotalNum + finishLabourNum) - numericDiscount);
+    const paidAmountNum = parseFloat(paidAmount) || 0;
+    const unpaidAmount = Math.max(0, grandTotal - paidAmountNum);
     const targetId = selectedJob.id;
+    const completionTime = new Date().toISOString();
 
-    // Update local memory and cloud status
-    updateCloudJobStatus(targetId, 'FINISHED').catch(console.warn);
+    const finishedJobData = {
+      ...selectedJob,
+      status: 'FINISHED',
+      finished_at: completionTime,
+      completed_at: completionTime,
+      labour_charge: finishLabourNum,
+      grand_total: grandTotal,
+      live_total: grandTotal,
+      paid_amount: paidAmountNum,
+      pending_amount: unpaidAmount,
+      discount_amount: numericDiscount
+    };
+
+    // 1. Update cloud jobs & local workshop memory
+    pushCloudJob(finishedJobData).catch(console.warn);
     const currentJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
-    const updatedLocal = currentJobs.map(j => (String(j.id) === String(targetId) ? { ...j, status: 'FINISHED' } : j));
+    const updatedLocal = currentJobs.map(j => (String(j.id) === String(targetId) ? finishedJobData : j));
+    if (!updatedLocal.some(j => String(j.id) === String(targetId))) {
+      updatedLocal.push(finishedJobData);
+    }
     localStorage.setItem('workshop_jobs', JSON.stringify(updatedLocal));
+    setJobs(prev => prev.map(j => (String(j.id) === String(targetId) ? finishedJobData : j)));
 
-    setJobs(prev => prev.map(j => (String(j.id) === String(targetId) ? { ...j, status: 'FINISHED' } : j)));
+    // 2. Mark matching booking as COMPLETED
+    if (selectedJob.vehicle_number) {
+      updateCloudBookingStatus(null, 'COMPLETED', selectedJob.vehicle_number, selectedJob.preferred_date).catch(console.warn);
+      const localBookings = JSON.parse(localStorage.getItem('local_bookings') || '[]');
+      const updatedBookings = localBookings.map(b => (b.vehicle_number === selectedJob.vehicle_number ? { ...b, status: 'COMPLETED' } : b));
+      localStorage.setItem('local_bookings', JSON.stringify(updatedBookings));
+    }
+
+    // 3. Create Billing Invoice Object
+    const newInvoiceObj = {
+      id: `inv_${Date.now()}`,
+      invoice_number: `INV-${String(targetId).slice(-4)}`,
+      customer_name: selectedJob.customer_name,
+      mobile_number: selectedJob.mobile_number,
+      vehicle_number: selectedJob.vehicle_number,
+      bike_model: selectedJob.bike_model || 'Two Wheeler',
+      labour_charge: finishLabourNum,
+      parts_total: partsTotalNum,
+      grand_total: grandTotal,
+      total_amount: grandTotal,
+      paid_amount: paidAmountNum,
+      pending_amount: unpaidAmount,
+      discount_amount: numericDiscount,
+      payment_status: unpaidAmount > 0 ? 'PARTIAL' : 'PAID',
+      created_at: completionTime,
+      parts: selectedJob.parts || []
+    };
+    pushCloudInvoice(newInvoiceObj).catch(console.warn);
+    const localInvoices = JSON.parse(localStorage.getItem('local_invoices') || '[]');
+    localStorage.setItem('local_invoices', JSON.stringify([newInvoiceObj, ...localInvoices]));
+
+    // 4. Auto-Push Unpaid Balance to Khata Book if pending amount > 0
+    if (unpaidAmount > 0) {
+      const khataDebitEntry = {
+        id: `khata_${Date.now()}`,
+        customer_name: selectedJob.customer_name,
+        mobile_number: selectedJob.mobile_number,
+        vehicle_number: selectedJob.vehicle_number,
+        bike_model: selectedJob.bike_model || 'Two Wheeler',
+        type: 'DEBIT',
+        amount: unpaidAmount,
+        description: `Unpaid balance from Service Bill (Total: ₹${grandTotal.toFixed(2)}, Paid: ₹${paidAmountNum.toFixed(2)})`,
+        date: completionTime
+      };
+      pushCloudKhataEntry(khataDebitEntry).catch(console.warn);
+      const localKhata = JSON.parse(localStorage.getItem('khata_entries') || '[]');
+      localStorage.setItem('khata_entries', JSON.stringify([khataDebitEntry, ...localKhata]));
+    }
+
     setShowFinishModal(false);
 
     try {
       const res = await API.post(`/workshop/${targetId}/finish_service/`, {
-        labour_charge: finishLabourCharge,
+        labour_charge: finishLabourNum,
         discount_amount: numericDiscount,
-        paid_amount: paidAmount
+        paid_amount: paidAmountNum
       }, { timeout: 2000 });
-      alert(`Service finished! Invoice ${res.data?.invoice?.invoice_number || 'INV-LOCAL'} generated.`);
+      alert(`🎉 Service finished! Invoice ${res.data?.invoice?.invoice_number || newInvoiceObj.invoice_number} generated.`);
     } catch (err) {
       console.warn('Backend API offline on static host, finished service bill locally:', err);
-      alert('Service finished successfully!');
+      alert(`🎉 Service finished successfully! Invoice ${newInvoiceObj.invoice_number} generated.`);
     }
   };
 
@@ -674,7 +745,7 @@ export default function WorkshopPage() {
                     </p>
                     <p className="text-xs text-slate-600 font-medium flex items-center gap-1.5 pt-0.5">
                       <CalendarClock className="w-3.5 h-3.5 text-emerald-600" />
-                      {job.status === 'CANCELLED' ? 'Closed' : 'Finished'}: <strong>{formatCompletionDateTime(job.finished_at)}</strong>
+                      {job.status === 'CANCELLED' ? 'Closed' : 'Finished'}: <strong>{formatCompletionDateTime(job.finished_at || job.completed_at || job.created_at)}</strong>
                     </p>
                   </div>
 

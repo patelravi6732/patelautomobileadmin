@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Users, Search, Phone, Bike, Calendar, IndianRupee, Trash2, Lock, ShieldCheck, AlertTriangle } from 'lucide-react';
 import API from '../services/api';
-import { pushCloudRecycleBinItem } from '../utils/cloudSync';
+import { pushCloudRecycleBinItem, fetchCloudKhataEntries, fetchCloudJobs, fetchCloudBookings, fetchCloudInvoices } from '../utils/cloudSync';
 
 export default function CustomersPage() {
   const [customers, setCustomers] = useState([]);
@@ -22,32 +22,110 @@ export default function CustomersPage() {
       const res = await API.get('/customers/', { timeout: 1500 });
       backendCusts = res.data || [];
     } catch (err) {
-      console.warn('Backend API offline for customers, deriving from local jobs and bookings:', err);
+      console.warn('Backend API offline for customers, deriving from local jobs, khata, and bookings:', err);
     }
 
-    const finishedJobs = (JSON.parse(localStorage.getItem('workshop_jobs') || '[]')).filter(j => j && (j.status === 'FINISHED' || j.status === 'COMPLETED'));
+    const allJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
+    const cloudJobs = await fetchCloudJobs();
+    const combinedJobs = [...allJobs, ...cloudJobs];
+
+    const localBookings = JSON.parse(localStorage.getItem('local_bookings') || '[]');
+    const cloudBookings = await fetchCloudBookings();
+    const combinedBookings = [...localBookings, ...cloudBookings];
+
+    const localKhata = JSON.parse(localStorage.getItem('khata_entries') || '[]');
+    const cloudKhata = await fetchCloudKhataEntries();
+    const combinedKhata = [...localKhata, ...cloudKhata];
+
+    const localInvoices = JSON.parse(localStorage.getItem('local_invoices') || '[]');
+    const cloudInvoices = await fetchCloudInvoices();
+    const combinedInvoices = [...localInvoices, ...cloudInvoices];
+
     const savedCustomers = JSON.parse(localStorage.getItem('local_customers') || '[]');
 
     const allMap = new Map();
-    [...backendCusts, ...finishedJobs, ...savedCustomers].forEach(c => {
-      if (c && typeof c === 'object' && (c.customer_name || c.name || c.mobile_number || c.phone)) {
-        const name = c.customer_name || c.name || 'Valued Customer';
-        const phone = c.mobile_number || c.phone || 'N/A';
-        const key = `${name}_${phone}`;
-        if (!allMap.has(key)) {
-          allMap.set(key, {
-            id: c.id || key,
-            customer_name: name,
-            mobile_number: phone,
-            vehicle_number: c.vehicle_number || 'GJ-15',
-            bike_model: c.bike_model || 'Two Wheeler',
-            created_at: c.created_at || new Date().toISOString()
-          });
+    [...backendCusts, ...combinedJobs, ...combinedBookings, ...savedCustomers].forEach(c => {
+      if (c && typeof c === 'object') {
+        const name = (c.customer_name || c.name || '').trim();
+        const vehicle = (c.vehicle_number || '').trim();
+        const phone = (c.mobile_number || c.phone || c.phone_number || '').trim();
+        
+        if (name || vehicle || phone) {
+          const key = vehicle || `${name}_${phone}`;
+          if (!allMap.has(key)) {
+            allMap.set(key, {
+              id: c.id || key,
+              customer_name: name || 'Valued Customer',
+              mobile_number: phone || 'N/A',
+              phone: phone || 'N/A',
+              vehicle_number: vehicle || 'GJ-15',
+              bike_model: c.bike_model || 'Two Wheeler',
+              created_at: c.created_at || new Date().toISOString()
+            });
+          } else {
+            const existing = allMap.get(key);
+            if ((!existing.phone || existing.phone === 'N/A') && phone) {
+              existing.phone = phone;
+              existing.mobile_number = phone;
+            }
+            if ((!existing.customer_name || existing.customer_name === 'Valued Customer') && name) {
+              existing.customer_name = name;
+            }
+          }
         }
       }
     });
 
-    setCustomers(Array.from(allMap.values()));
+    const customerList = Array.from(allMap.values()).map(cust => {
+      const custVeh = (cust.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+      const custName = (cust.customer_name || '').toLowerCase();
+
+      // Count Visits
+      const matchingJobs = combinedJobs.filter(j => {
+        if (!j) return false;
+        const jVeh = (j.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+        const jName = (j.customer_name || '').toLowerCase();
+        return (custVeh && jVeh && custVeh === jVeh) || (custName && jName && custName === jName);
+      });
+      const visitCount = Math.max(1, matchingJobs.length);
+
+      // Calculate Pending Khata Amount
+      let pendingBalance = 0;
+      combinedKhata.forEach(k => {
+        if (!k) return;
+        const kVeh = (k.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+        const kName = (k.customer_name || '').toLowerCase();
+        if ((custVeh && kVeh && custVeh === kVeh) || (custName && kName && custName === kName)) {
+          const amt = parseFloat(k.amount || 0);
+          if (k.type === 'DEBIT') {
+            pendingBalance += amt;
+          } else if (k.type === 'CREDIT') {
+            pendingBalance -= amt;
+          }
+        }
+      });
+
+      // Also add unpaid invoice amounts if not already in Khata
+      combinedInvoices.forEach(inv => {
+        if (!inv) return;
+        const invVeh = (inv.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+        const invName = (inv.customer_name || '').toLowerCase();
+        if ((custVeh && invVeh && custVeh === invVeh) || (custName && invName && custName === invName)) {
+          const due = parseFloat(inv.pending_amount || 0);
+          if (due > 0 && pendingBalance <= 0) {
+            pendingBalance += due;
+          }
+        }
+      });
+
+      return {
+        ...cust,
+        visit_count: visitCount,
+        pending_amount: Math.max(0, pendingBalance)
+      };
+    });
+
+    setCustomers(customerList);
     setLoading(false);
   };
 
@@ -158,7 +236,7 @@ export default function CustomersPage() {
                 {filtered.map((c) => (
                   <tr key={c.id} className="hover:bg-slate-50/80 transition-colors">
                     <td className="px-6 py-4 font-bold text-slate-900 font-poppins">{c.customer_name}</td>
-                    <td className="px-6 py-4 font-medium text-slate-700">{c.phone}</td>
+                    <td className="px-6 py-4 font-medium text-slate-700">{c.phone || c.mobile_number || 'N/A'}</td>
                     <td className="px-6 py-4">
                       <span className="font-mono text-xs font-bold px-2.5 py-1 rounded-md bg-slate-100 text-slate-800 border border-slate-200">
                         {c.vehicle_number}

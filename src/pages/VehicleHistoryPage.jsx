@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { Search, Bike, Calendar, CheckCircle2, ShieldCheck, Wrench, Clock, FileText, Sparkles, AlertCircle, ArrowRight, Phone, User, Lock } from 'lucide-react';
-import { Link } from 'react-router-dom';
 import API from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { fetchCloudJobs, fetchCloudBookings, fetchCloudInvoices } from '../utils/cloudSync';
 
 export default function VehicleHistoryPage() {
   const { garageInfo } = useAuth();
@@ -27,16 +27,96 @@ export default function VehicleHistoryPage() {
     setLoading(true);
     setSearched(true);
     setErrorMsg(null);
+
+    const cleanInputVeh = vehicleNumber.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+    const cleanInputPhone = mobileNumber.replace(/\D/g, '').slice(-10);
+
+    let backendData = null;
     try {
-      const res = await API.get(`/vehicle-history/?vehicle_number=${encodeURIComponent(vehicleNumber.trim())}&mobile_number=${encodeURIComponent(mobileNumber.trim())}`);
-      setHistoryData(res.data);
+      const res = await API.get(`/vehicle-history/?vehicle_number=${encodeURIComponent(vehicleNumber.trim())}&mobile_number=${encodeURIComponent(mobileNumber.trim())}`, { timeout: 1500 });
+      backendData = res.data;
     } catch (err) {
-      console.error(err);
-      setHistoryData(null);
-      setErrorMsg(err.response?.data?.error || 'Vehicle number and registered mobile number do not match. Access denied for privacy protection.');
-    } finally {
-      setLoading(false);
+      console.warn('Backend API offline or 404 for vehicle history, falling back to local memory & cloud stores:', err);
     }
+
+    if (backendData && backendData.service_history && backendData.service_history.length > 0) {
+      setHistoryData(backendData);
+      setLoading(false);
+      return;
+    }
+
+    // Comprehensive Fallback Search across Local & Cloud Store
+    const allJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
+    const cloudJobs = await fetchCloudJobs();
+    const combinedJobs = [...allJobs, ...cloudJobs];
+
+    const localInvoices = JSON.parse(localStorage.getItem('local_invoices') || '[]');
+    const cloudInvoices = await fetchCloudInvoices();
+    const combinedInvoices = [...localInvoices, ...cloudInvoices];
+
+    const localBookings = JSON.parse(localStorage.getItem('local_bookings') || '[]');
+    const cloudBookings = await fetchCloudBookings();
+    const combinedBookings = [...localBookings, ...cloudBookings];
+
+    const matchedJobs = combinedJobs.filter(j => {
+      if (!j) return false;
+      const jVeh = (j.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+      const jPhone = (j.mobile_number || j.phone || '').replace(/\D/g, '').slice(-10);
+      return jVeh === cleanInputVeh || (jPhone && cleanInputPhone && jPhone === cleanInputPhone);
+    });
+
+    const matchedInvs = combinedInvoices.filter(i => {
+      if (!i) return false;
+      const iVeh = (i.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+      const iPhone = (i.mobile_number || i.phone || '').replace(/\D/g, '').slice(-10);
+      return iVeh === cleanInputVeh || (iPhone && cleanInputPhone && iPhone === cleanInputPhone);
+    });
+
+    const matchedBookings = combinedBookings.filter(b => {
+      if (!b) return false;
+      const bVeh = (b.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+      const bPhone = (b.mobile_number || b.phone || '').replace(/\D/g, '').slice(-10);
+      return bVeh === cleanInputVeh || (bPhone && cleanInputPhone && bPhone === cleanInputPhone);
+    });
+
+    if (matchedJobs.length === 0 && matchedInvs.length === 0 && matchedBookings.length === 0) {
+      setHistoryData(null);
+      setErrorMsg(`No service history records found matching vehicle ${vehicleNumber.toUpperCase()} and mobile number ${mobileNumber}. Please verify details.`);
+      setLoading(false);
+      return;
+    }
+
+    const firstMatch = matchedJobs[0] || matchedInvs[0] || matchedBookings[0];
+    const customerName = firstMatch.customer_name || 'Valued Customer';
+    const bikeModel = firstMatch.bike_model || 'Two Wheeler';
+    const regPhone = firstMatch.mobile_number || mobileNumber;
+
+    const timelineHistory = [...matchedJobs, ...matchedInvs].map((item, idx) => {
+      const labour = parseFloat(item.labour_charge || 100);
+      const partsVal = parseFloat(item.parts_total || 0);
+      const totalBill = parseFloat(item.grand_total || item.live_total || item.total_amount || (partsVal + labour));
+      return {
+        id: item.id || `hist_${idx}`,
+        created_at: item.finished_at || item.created_at || new Date().toISOString(),
+        bike_model: item.bike_model || bikeModel,
+        complaint: item.complaint || item.complaint_details || 'General Service & Maintenance',
+        assigned_mechanic: item.assigned_mechanic || 'Master Technician',
+        labour_charge: labour,
+        parts_total: partsVal,
+        live_total: totalBill,
+        status: item.status || 'FINISHED',
+        parts: item.parts || []
+      };
+    });
+
+    setHistoryData({
+      vehicle_number: vehicleNumber.toUpperCase(),
+      customer_name: customerName,
+      bike_model: bikeModel,
+      mobile_number: regPhone,
+      service_history: timelineHistory
+    });
+    setLoading(false);
   };
 
   return (

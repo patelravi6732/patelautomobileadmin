@@ -3,7 +3,7 @@ import { Receipt, Printer, Eye, Wrench, Calendar, Phone, MapPin, Trash2, Camera,
 import html2canvas from 'html2canvas';
 import API from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { pushCloudRecycleBinItem } from '../utils/cloudSync';
+import { pushCloudRecycleBinItem, fetchCloudInvoices } from '../utils/cloudSync';
 import AdminPasswordModal from '../components/AdminPasswordModal';
 import { LOGO_BASE64 } from '../assets/logoBase64';
 import { sharePhotoToWhatsApp } from '../utils/whatsappPhotoSharer';
@@ -40,34 +40,65 @@ export default function BillingPage() {
       const res = await API.get('/billing/', { timeout: 1500 });
       backendInvs = res.data || [];
     } catch (err) {
-      console.warn('Backend API offline for billing, deriving from local jobs:', err);
+      console.warn('Backend API offline for billing, deriving from local & cloud invoices:', err);
     }
 
-    const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
-    const finishedJobs = localJobs.filter(j => j && (j.status === 'FINISHED' || j.status === 'COMPLETED'));
-    const derivedInvs = finishedJobs.map((j, idx) => ({
-      id: j.id || `inv_local_${idx}`,
-      invoice_number: `INV-${String(j.id || idx).slice(-4)}`,
-      customer_name: j.customer_name || 'Valued Customer',
-      mobile_number: j.mobile_number || 'N/A',
-      vehicle_number: j.vehicle_number || 'GJ-15',
-      bike_model: j.bike_model || 'Two Wheeler',
-      labour_charge: parseFloat(j.labour_charge || 100),
-      parts_total: parseFloat(j.parts_total || 0),
-      total_amount: parseFloat(j.live_total || (parseFloat(j.parts_total || 0) + parseFloat(j.labour_charge || 100))),
-      paid_amount: parseFloat(j.live_total || (parseFloat(j.parts_total || 0) + parseFloat(j.labour_charge || 100))),
-      discount_amount: 0,
-      payment_status: 'PAID',
-      created_at: j.created_at || new Date().toISOString(),
-      parts: j.parts || []
-    }));
+    const localInvs = JSON.parse(localStorage.getItem('local_invoices') || '[]');
+    const cloudInvs = await fetchCloudInvoices();
+    const finishedJobs = (JSON.parse(localStorage.getItem('workshop_jobs') || '[]')).filter(j => j && (j.status === 'FINISHED' || j.status === 'COMPLETED'));
+
+    const derivedInvs = finishedJobs.map((j, idx) => {
+      const partsVal = parseFloat(j.parts_total || 0);
+      const labourVal = parseFloat(j.labour_charge || 100);
+      const discountVal = parseFloat(j.discount_amount || 0);
+      const totalVal = parseFloat(j.grand_total || j.total_amount || j.live_total || Math.max(0, partsVal + labourVal - discountVal));
+      const paidVal = j.paid_amount !== undefined ? parseFloat(j.paid_amount) : totalVal;
+      const pendingVal = j.pending_amount !== undefined ? parseFloat(j.pending_amount) : Math.max(0, totalVal - paidVal);
+
+      return {
+        id: j.id || `job_${idx}`,
+        invoice_number: `INV-${String(j.id || idx).slice(-4)}`,
+        customer_name: j.customer_name || 'Valued Customer',
+        mobile_number: j.mobile_number || 'N/A',
+        vehicle_number: j.vehicle_number || 'GJ-15',
+        bike_model: j.bike_model || 'Two Wheeler',
+        labour_charge: labourVal,
+        parts_total: partsVal,
+        grand_total: totalVal,
+        total_amount: totalVal,
+        paid_amount: paidVal,
+        pending_amount: pendingVal,
+        discount_amount: discountVal,
+        payment_status: pendingVal > 0 ? 'PARTIAL' : 'PAID',
+        created_at: j.finished_at || j.completed_at || j.created_at || new Date().toISOString(),
+        parts: j.parts || []
+      };
+    });
 
     const allMap = new Map();
-    [...backendInvs, ...derivedInvs].forEach(inv => {
-      if (inv && typeof inv === 'object') {
+    [...backendInvs, ...localInvs, ...cloudInvs, ...derivedInvs].forEach(inv => {
+      if (inv && typeof inv === 'object' && (inv.id || inv.invoice_number)) {
         const key = String(inv.id || inv.invoice_number);
+        const partsVal = parseFloat(inv.parts_total || 0);
+        const labourVal = parseFloat(inv.labour_charge || 100);
+        const discountVal = parseFloat(inv.discount_amount || 0);
+        const totalVal = parseFloat(inv.grand_total || inv.total_amount || inv.live_total || Math.max(0, partsVal + labourVal - discountVal));
+        const paidVal = inv.paid_amount !== undefined ? parseFloat(inv.paid_amount) : totalVal;
+        const pendingVal = inv.pending_amount !== undefined ? parseFloat(inv.pending_amount) : Math.max(0, totalVal - paidVal);
+
+        const normalizedInv = {
+          ...inv,
+          grand_total: totalVal,
+          total_amount: totalVal,
+          paid_amount: paidVal,
+          pending_amount: pendingVal,
+          payment_status: pendingVal > 0 ? 'PARTIAL' : 'PAID'
+        };
+
         if (!allMap.has(key)) {
-          allMap.set(key, inv);
+          allMap.set(key, normalizedInv);
+        } else {
+          allMap.set(key, { ...allMap.get(key), ...normalizedInv });
         }
       }
     });

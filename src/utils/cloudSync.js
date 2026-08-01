@@ -14,7 +14,13 @@ async function fetchMasterStore() {
         jobs: Array.isArray(res.data.jobs) ? res.data.jobs : [],
         inventory: Array.isArray(res.data.inventory) ? res.data.inventory : [],
         recycleBin: Array.isArray(res.data.recycleBin) ? res.data.recycleBin : [],
-        garageInfo: res.data.garageInfo || null
+        garageInfo: res.data.garageInfo || null,
+        adminProfiles: Array.isArray(res.data.adminProfiles) ? res.data.adminProfiles : [],
+        khataEntries: Array.isArray(res.data.khataEntries) ? res.data.khataEntries : [],
+        customers: Array.isArray(res.data.customers) ? res.data.customers : [],
+        invoices: Array.isArray(res.data.invoices) ? res.data.invoices : [],
+        attendance: Array.isArray(res.data.attendance) ? res.data.attendance : [],
+        salaryPayments: Array.isArray(res.data.salaryPayments) ? res.data.salaryPayments : []
       };
     }
   } catch (e1) {
@@ -28,14 +34,20 @@ async function fetchMasterStore() {
           jobs: Array.isArray(res.data.data.jobs) ? res.data.data.jobs : [],
           inventory: Array.isArray(res.data.data.inventory) ? res.data.data.inventory : [],
           recycleBin: Array.isArray(res.data.data.recycleBin) ? res.data.data.recycleBin : [],
-          garageInfo: res.data.data.garageInfo || null
+          garageInfo: res.data.data.garageInfo || null,
+          adminProfiles: Array.isArray(res.data.data.adminProfiles) ? res.data.data.adminProfiles : [],
+          khataEntries: Array.isArray(res.data.data.khataEntries) ? res.data.data.khataEntries : [],
+          customers: Array.isArray(res.data.data.customers) ? res.data.data.customers : [],
+          invoices: Array.isArray(res.data.data.invoices) ? res.data.data.invoices : [],
+          attendance: Array.isArray(res.data.data.attendance) ? res.data.data.attendance : [],
+          salaryPayments: Array.isArray(res.data.data.salaryPayments) ? res.data.data.salaryPayments : []
         };
       }
     } catch (e2) {
-      // Offline or cloud endpoint down, return empty store without spamming console
+      // Offline or cloud endpoint down
     }
   }
-  return { bookings: [], messages: [], jobs: [], inventory: [], recycleBin: [], garageInfo: null };
+  return { bookings: [], messages: [], jobs: [], inventory: [], recycleBin: [], garageInfo: null, adminProfiles: [], khataEntries: [], customers: [], invoices: [], attendance: [], salaryPayments: [] };
 }
 
 async function saveMasterStore(storeData) {
@@ -279,4 +291,71 @@ export async function deleteCloudAdminProfile(adminId) {
   const existing = (store.adminProfiles || []).filter(a => a && typeof a === 'object');
   const updated = existing.filter(a => a.id !== adminId && String(a.id) !== String(adminId));
   await saveMasterStore({ ...store, adminProfiles: updated });
+}
+
+// ---------------- KHATA ENTRIES ----------------
+export async function fetchCloudKhataEntries() {
+  const store = await fetchMasterStore();
+  return (store.khataEntries || []).filter(k => k && typeof k === 'object' && (k.id || k.customer_name || k.amount));
+}
+
+export async function pushCloudKhataEntry(khataObj) {
+  if (!khataObj || typeof khataObj !== 'object') return;
+  const store = await fetchMasterStore();
+  const existing = (store.khataEntries || []).filter(k => k && typeof k === 'object');
+  const exists = existing.some(k => k.id === khataObj.id || String(k.id) === String(khataObj.id));
+  let updated = existing;
+  if (!exists) {
+    updated = [khataObj, ...existing];
+  } else {
+    updated = existing.map(k => (k.id === khataObj.id || String(k.id) === String(khataObj.id)) ? { ...k, ...khataObj } : k);
+  }
+  await saveMasterStore({ ...store, khataEntries: updated });
+}
+
+// ---------------- INVOICES & BILLING ----------------
+export async function fetchCloudInvoices() {
+  const store = await fetchMasterStore();
+  return (store.invoices || []).filter(i => i && typeof i === 'object' && (i.id || i.invoice_number || i.customer_name));
+}
+
+export async function pushCloudInvoice(invObj) {
+  if (!invObj || typeof invObj !== 'object') return;
+  const store = await fetchMasterStore();
+  const existing = (store.invoices || []).filter(i => i && typeof i === 'object');
+  const exists = existing.some(i => i.id === invObj.id || String(i.id) === String(invObj.id));
+  let updated = existing;
+  if (!exists) {
+    updated = [invObj, ...existing];
+  } else {
+    updated = existing.map(i => (i.id === invObj.id || String(i.id) === String(invObj.id)) ? { ...i, ...invObj } : i);
+  }
+  await saveMasterStore({ ...store, invoices: updated });
+}
+
+// ---------------- ATTENDANCE & SALARY PAYMENTS ----------------
+export async function fetchCloudAttendance() {
+  const store = await fetchMasterStore();
+  return (store.attendance || []).filter(a => a && typeof a === 'object' && (a.id || a.mechanic_name));
+}
+
+export async function pushCloudAttendanceRecord(attObj) {
+  if (!attObj || typeof attObj !== 'object') return;
+  const store = await fetchMasterStore();
+  const existing = (store.attendance || []).filter(a => a && typeof a === 'object');
+  const updated = [attObj, ...existing];
+  await saveMasterStore({ ...store, attendance: updated });
+}
+
+export async function fetchCloudSalaryPayments() {
+  const store = await fetchMasterStore();
+  return (store.salaryPayments || []).filter(s => s && typeof s === 'object' && (s.id || s.mechanic_name || s.amount));
+}
+
+export async function pushCloudSalaryPayment(salObj) {
+  if (!salObj || typeof salObj !== 'object') return;
+  const store = await fetchMasterStore();
+  const existing = (store.salaryPayments || []).filter(s => s && typeof s === 'object');
+  const updated = [salObj, ...existing];
+  await saveMasterStore({ ...store, salaryPayments: updated });
 }

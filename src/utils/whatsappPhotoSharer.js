@@ -13,11 +13,7 @@ export const sharePhotoToWhatsApp = async (element, customerPhone, customerName 
   }
 
   const encodedMsg = customMessage ? encodeURIComponent(customMessage) : '';
-  const waUrl = `https://web.whatsapp.com/send?phone=${phoneClean}${encodedMsg ? `&text=${encodedMsg}` : ''}`;
-  const waMobileUrl = `https://api.whatsapp.com/send?phone=${phoneClean}${encodedMsg ? `&text=${encodedMsg}` : ''}`;
-
-  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-  const targetUrl = isMobile ? waMobileUrl : waUrl;
+  const targetUrl = `https://wa.me/${phoneClean}${encodedMsg ? `?text=${encodedMsg}` : ''}`;
 
   const openWhatsApp = () => {
     try {

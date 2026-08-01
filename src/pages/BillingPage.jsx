@@ -201,11 +201,7 @@ export default function BillingPage() {
 
     let customMsg = `${safetyMsg}\n\n📞 Contact: ${contactPhone}\n— ${garageName}`;
     const encodedMsg = encodeURIComponent(customMsg);
-
-    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-    const targetUrl = isMobile
-      ? `https://api.whatsapp.com/send?phone=${phoneClean}&text=${encodedMsg}`
-      : `https://web.whatsapp.com/send?phone=${phoneClean}&text=${encodedMsg}`;
+    const targetUrl = `https://wa.me/${phoneClean}?text=${encodedMsg}`;
 
     window.open(targetUrl, '_blank');
   };

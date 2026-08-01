@@ -15,7 +15,7 @@ export default function WorkshopPage() {
   const [inventory, setInventory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('ACTIVE'); // ACTIVE or FINISHED
-  const [mechanicOptions, setMechanicOptions] = useState(['Unassigned', 'Amitbhai Mechanic', 'Vishalbhai Mechanic', 'Manojbhai Mechanic', 'Patel Owner', 'Ramesh Mechanic', 'Suresh Technician']);
+  const [mechanicOptions, setMechanicOptions] = useState(['Unassigned', 'Amitbhai Mechanic', 'Vishalbhai Mechanic', 'Manojbhai Mechanic']);
   
   // Modal states
   const [selectedJob, setSelectedJob] = useState(null);

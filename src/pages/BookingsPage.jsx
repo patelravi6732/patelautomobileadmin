@@ -230,9 +230,9 @@ export default function BookingsPage() {
       bike_model: bookingObj.bike_model || 'Commuter Bike',
       complaint: bookingObj.complaint || 'General Service & Repair',
       assigned_mechanic: 'Unassigned',
-      labour_charge: 300.00,
+      labour_charge: 100.00,
       parts_total: 0.00,
-      live_total: 300.00,
+      live_total: 100.00,
       status: 'IN_PROGRESS',
       created_at: new Date().toISOString()
     };

@@ -9,7 +9,7 @@ export default function NewServicePage() {
   const { garageInfo } = useAuth();
   const navigate = useNavigate();
 
-  const [mechanicOptions, setMechanicOptions] = useState(['Unassigned', 'Amitbhai Mechanic', 'Vishalbhai Mechanic', 'Manojbhai Mechanic', 'Patel Owner', 'Ramesh Mechanic', 'Suresh Technician']);
+  const [mechanicOptions, setMechanicOptions] = useState(['Unassigned', 'Amitbhai Mechanic', 'Vishalbhai Mechanic', 'Manojbhai Mechanic']);
 
   const [formData, setFormData] = useState({
     customer_name: '',
@@ -19,7 +19,7 @@ export default function NewServicePage() {
     complaint: '',
     assigned_mechanic: 'Unassigned',
     secondary_mechanic: '',
-    labour_charge: 300.00
+    labour_charge: 100.00
   });
 
   const [loading, setLoading] = useState(false);
@@ -31,8 +31,7 @@ export default function NewServicePage() {
         setMechanicOptions(parsed);
         setFormData(prev => ({
           ...prev,
-          assigned_mechanic: parsed[0],
-          labour_charge: garageInfo.default_labour_charge || prev.labour_charge
+          labour_charge: garageInfo.default_labour_charge || 100.00
         }));
       }
     }
@@ -45,6 +44,12 @@ export default function NewServicePage() {
       alert('Mobile number must be compulsory 10 digits.');
       return;
     }
+
+    if (!formData.assigned_mechanic || formData.assigned_mechanic === 'Unassigned') {
+      alert('⚠️ Compulsory Mechanic Assignment: Please select a valid mechanic (Amitbhai, Vishalbhai, or Manojbhai) for this service job!');
+      return;
+    }
+
     setLoading(true);
 
     const basePrefix = window.location.pathname.startsWith('/admin') ? '/admin' : '/app';
@@ -53,7 +58,7 @@ export default function NewServicePage() {
       id: Date.now(),
       parts: [],
       parts_total: 0,
-      live_total: parseFloat(formData.labour_charge || 300),
+      live_total: parseFloat(formData.labour_charge || 100),
       status: 'IN_PROGRESS',
       created_at: new Date().toISOString()
     };

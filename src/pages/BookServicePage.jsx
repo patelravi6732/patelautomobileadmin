@@ -28,14 +28,39 @@ export default function BookServicePage() {
     'Clutch & Throttle Cable Adjustment'
   ];
 
-  const timeSlots = [
-    '09:00 AM - 10:00 AM',
-    '10:00 AM - 11:00 AM',
-    '11:00 AM - 12:00 PM',
-    '02:00 PM - 03:00 PM',
-    '04:00 PM - 05:00 PM',
-    '06:00 PM - 07:00 PM'
+  const allTimeSlots = [
+    { label: '09:00 AM - 10:00 AM', endHour: 10 },
+    { label: '10:00 AM - 11:00 AM', endHour: 11 },
+    { label: '11:00 AM - 12:00 PM', endHour: 12 },
+    { label: '02:00 PM - 03:00 PM', endHour: 15 },
+    { label: '04:00 PM - 05:00 PM', endHour: 17 },
+    { label: '06:00 PM - 07:00 PM', endHour: 19 }
   ];
+
+  const getAvailableSlotsForDate = (dateStr) => {
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    
+    if (dateStr !== todayStr) {
+      return allTimeSlots.map(s => s.label);
+    }
+    
+    const currentHour = now.getHours();
+    return allTimeSlots.filter(s => s.endHour > currentHour).map(s => s.label);
+  };
+
+  const availableSlots = getAvailableSlotsForDate(formData.preferred_date);
+
+  const handleDateChange = (newDate) => {
+    const validForNewDate = getAvailableSlotsForDate(newDate);
+    const newPreferredTime = validForNewDate.length > 0 ? validForNewDate[0] : '';
+    setFormData(prev => ({
+      ...prev,
+      preferred_date: newDate,
+      preferred_time: newPreferredTime
+    }));
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     const cleanPhone = (formData.mobile_number || '').replace(/\D/g, '');
@@ -43,6 +68,12 @@ export default function BookServicePage() {
       setError('Mobile number must be compulsory 10 digits.');
       return;
     }
+
+    if (!formData.preferred_time || availableSlots.length === 0) {
+      setError('All time slots for the selected date have passed. Please select tomorrow or a future date.');
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
@@ -302,7 +333,7 @@ export default function BookServicePage() {
                       required
                       min={new Date().toISOString().split('T')[0]}
                       value={formData.preferred_date}
-                      onChange={(e) => setFormData({ ...formData, preferred_date: e.target.value })}
+                      onChange={(e) => handleDateChange(e.target.value)}
                       className="w-full pl-10 pr-4 py-3.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600 text-sm font-medium transition-all shadow-xs"
                     />
                   </div>
@@ -317,11 +348,16 @@ export default function BookServicePage() {
                     <select
                       value={formData.preferred_time}
                       onChange={(e) => setFormData({ ...formData, preferred_time: e.target.value })}
-                      className="w-full pl-10 pr-4 py-3.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600 text-sm font-medium transition-all shadow-xs"
+                      disabled={availableSlots.length === 0}
+                      className="w-full pl-10 pr-4 py-3.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600 text-sm font-medium transition-all shadow-xs disabled:bg-slate-100 disabled:text-slate-400"
                     >
-                      {timeSlots.map((slot, idx) => (
-                        <option key={idx} value={slot}>{slot}</option>
-                      ))}
+                      {availableSlots.length === 0 ? (
+                        <option value="">All time slots for today have passed. Please select tomorrow.</option>
+                      ) : (
+                        availableSlots.map((slot, idx) => (
+                          <option key={idx} value={slot}>{slot}</option>
+                        ))
+                      )}
                     </select>
                   </div>
                 </div>

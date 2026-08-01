@@ -1,15 +1,17 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import API from '../services/api';
+import { fetchCloudGarageInfo, pushCloudGarageInfo } from '../utils/cloudSync';
 
 export const DEFAULT_GARAGE_INFO = {
   garage_name: 'Patel Automobiles',
   address: 'Near Dandi Pond, Dandi, Valsad, Gujarat - 396385',
   phone: '+91 81403 71414',
   whatsapp_number: '+91 81403 71414',
-  email: 'patelautomobile9397@gmail.com',
+  email: 'contact@patelautomobiles.com',
   logo: '/logo.png',
   upi_id: 'pritpatel9397@oksbi',
   upi_payee_name: 'Prit Patel',
+  timing_text: 'Mon - Sat: 09:00 AM - 08:30 PM, Sun: 09:00 AM - 02:00 PM',
   mechanics_list: 'Vijay Owner, Patel Owner, Ramesh Mechanic, Suresh Technician'
 };
 
@@ -21,18 +23,41 @@ export const AuthProvider = ({ children }) => {
     return saved ? JSON.parse(saved) : null;
   });
   const [loading, setLoading] = useState(true);
-  const [garageInfo, setGarageInfo] = useState(DEFAULT_GARAGE_INFO);
+  const [garageInfo, setGarageInfo] = useState(() => {
+    const saved = localStorage.getItem('garage_info');
+    return saved ? JSON.parse(saved) : DEFAULT_GARAGE_INFO;
+  });
 
   const fetchGarageInfo = async () => {
+    let cloudInfo = null;
     try {
-      const res = await API.get('/public/info/');
+      cloudInfo = await fetchCloudGarageInfo();
+    } catch (e) {
+      console.warn('Cloud garage info fetch error:', e);
+    }
+
+    try {
+      const res = await API.get('/public/info/', { timeout: 1500 });
       if (res.data && res.data.phone) {
         setGarageInfo(res.data);
+        localStorage.setItem('garage_info', JSON.stringify(res.data));
+        return;
       }
     } catch (err) {
-      console.warn('Backend API offline or unreachable, using default garage info:', err);
-      setGarageInfo(DEFAULT_GARAGE_INFO);
+      console.warn('Backend API offline, using cloud + local garage info:', err);
     }
+
+    if (cloudInfo) {
+      setGarageInfo(cloudInfo);
+      localStorage.setItem('garage_info', JSON.stringify(cloudInfo));
+    }
+  };
+
+  const updateGarageSettings = async (newInfo) => {
+    const updated = { ...garageInfo, ...newInfo };
+    setGarageInfo(updated);
+    localStorage.setItem('garage_info', JSON.stringify(updated));
+    pushCloudGarageInfo(updated).catch(console.warn);
   };
 
   const fetchCurrentUser = async () => {
@@ -128,6 +153,7 @@ export const AuthProvider = ({ children }) => {
         loading,
         garageInfo,
         fetchGarageInfo,
+        updateGarageSettings,
       }}
     >
       {children}

@@ -11,13 +11,14 @@ async function fetchMasterStore() {
         messages: Array.isArray(res.data.data.messages) ? res.data.data.messages : [],
         jobs: Array.isArray(res.data.data.jobs) ? res.data.data.jobs : [],
         inventory: Array.isArray(res.data.data.inventory) ? res.data.data.inventory : [],
-        recycleBin: Array.isArray(res.data.data.recycleBin) ? res.data.data.recycleBin : []
+        recycleBin: Array.isArray(res.data.data.recycleBin) ? res.data.data.recycleBin : [],
+        garageInfo: res.data.data.garageInfo || null
       };
     }
-    return { bookings: [], messages: [], jobs: [], inventory: [], recycleBin: [] };
+    return { bookings: [], messages: [], jobs: [], inventory: [], recycleBin: [], garageInfo: null };
   } catch (err) {
     console.warn('Failed to fetch Master Cloud Store:', err);
-    return { bookings: [], messages: [], jobs: [], inventory: [], recycleBin: [] };
+    return { bookings: [], messages: [], jobs: [], inventory: [], recycleBin: [], garageInfo: null };
   }
 }
 
@@ -218,4 +219,16 @@ export async function restoreCloudRecycleBinItem(itemId) {
 export async function emptyCloudRecycleBin() {
   const store = await fetchMasterStore();
   await saveMasterStore({ ...store, recycleBin: [] });
+}
+
+// ---------------- GARAGE INFO (SETTINGS) ----------------
+export async function fetchCloudGarageInfo() {
+  const store = await fetchMasterStore();
+  return store.garageInfo || null;
+}
+
+export async function pushCloudGarageInfo(infoObj) {
+  if (!infoObj || typeof infoObj !== 'object') return;
+  const store = await fetchMasterStore();
+  await saveMasterStore({ ...store, garageInfo: infoObj });
 }

@@ -58,9 +58,21 @@ export default function BookingsPage() {
 
     const allBookingsMap = new Map();
     [...backendBookings, ...localBookings, ...cloudBookings].forEach(b => {
-      const uniqueKey = b.id || `${b.vehicle_number}_${b.preferred_date}`;
-      if (!allBookingsMap.has(uniqueKey)) {
-        allBookingsMap.set(uniqueKey, b);
+      if (b && typeof b === 'object' && (b.id || b.vehicle_number)) {
+        const uniqueKey = String(b.id || `${b.vehicle_number}_${b.preferred_date}`);
+        if (!allBookingsMap.has(uniqueKey)) {
+          allBookingsMap.set(uniqueKey, b);
+        } else {
+          const existing = allBookingsMap.get(uniqueKey);
+          // Priority Rule: ACCEPTED/REJECTED/CANCELLED status overrides PENDING status upon page refresh
+          if (existing.status === 'PENDING' && b.status && b.status !== 'PENDING') {
+            allBookingsMap.set(uniqueKey, { ...existing, ...b });
+          } else if (b.status === 'PENDING' && existing.status && existing.status !== 'PENDING') {
+            // Retain existing non-pending status
+          } else {
+            allBookingsMap.set(uniqueKey, { ...existing, ...b });
+          }
+        }
       }
     });
 
@@ -177,11 +189,21 @@ export default function BookingsPage() {
     setConfirmModal({ isOpen: false, booking: null, actionType: 'ACCEPT' });
     const newStatus = actionType === 'ACCEPT' ? 'ACCEPTED' : 'REJECTED';
 
-    // Update Global Cloud Store so status updates sync across devices
-    updateCloudBookingStatus(booking.id, newStatus).catch(console.warn);
+    // 1. Update local storage local_bookings immediately
+    const existingLocal = JSON.parse(localStorage.getItem('local_bookings') || '[]');
+    const updatedLocal = existingLocal.map(b => {
+      if (String(b.id) === String(booking.id) || (b.vehicle_number === booking.vehicle_number && b.preferred_date === booking.preferred_date)) {
+        return { ...b, status: newStatus };
+      }
+      return b;
+    });
+    localStorage.setItem('local_bookings', JSON.stringify(updatedLocal));
 
-    // Update local state directly
-    setBookings(prev => prev.map(b => b.id === booking.id ? { ...b, status: newStatus } : b));
+    // 2. Update Global Cloud Store
+    updateCloudBookingStatus(booking.id, newStatus, booking.vehicle_number, booking.preferred_date).catch(console.warn);
+
+    // 3. Update React state
+    setBookings(prev => prev.map(b => (String(b.id) === String(booking.id) || (b.vehicle_number === booking.vehicle_number && b.preferred_date === booking.preferred_date)) ? { ...b, status: newStatus } : b));
 
     try {
       if (actionType === 'ACCEPT') {

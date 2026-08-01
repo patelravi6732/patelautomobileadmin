@@ -80,12 +80,14 @@ export async function pushCloudBooking(newBooking) {
   await saveMasterStore({ ...store, bookings: updatedBookings });
 }
 
-export async function updateCloudBookingStatus(bookingId, newStatus) {
-  if (!bookingId) return;
+export async function updateCloudBookingStatus(bookingId, newStatus, vehicleNumber = null, prefDate = null) {
+  if (!bookingId && !vehicleNumber) return;
   const store = await fetchMasterStore();
   const existing = (store.bookings || []).filter(b => b && typeof b === 'object');
   const updatedBookings = existing.map(b => {
-    if (b.id === bookingId || String(b.id) === String(bookingId)) {
+    const isMatch = (bookingId && (b.id === bookingId || String(b.id) === String(bookingId))) ||
+                    (vehicleNumber && prefDate && b.vehicle_number === vehicleNumber && b.preferred_date === prefDate);
+    if (isMatch) {
       return { ...b, status: newStatus };
     }
     return b;

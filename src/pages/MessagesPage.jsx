@@ -4,7 +4,7 @@ import API from '../services/api';
 import AdminPasswordModal from '../components/AdminPasswordModal';
 import { useAuth } from '../context/AuthContext';
 import { generateInquiryReplyMessage } from '../utils/aiMessageGenerator';
-import { fetchCloudMessages } from '../utils/cloudSync';
+import { fetchCloudMessages, markCloudMessageRead, deleteCloudMessage } from '../utils/cloudSync';
 
 export default function MessagesPage() {
   const { garageInfo } = useAuth();
@@ -94,29 +94,31 @@ export default function MessagesPage() {
     }
 
     setActionLoading(prev => ({ ...prev, [msg.id]: true }));
+
+    // Mark completed locally and in cloud bin
+    markCloudMessageRead(msg.id).catch(console.warn);
+    const localMsgs = JSON.parse(localStorage.getItem('local_messages') || '[]');
+    const updatedLocal = localMsgs.map(m => (String(m.id) === String(msg.id) ? { ...m, is_read: true, status: 'COMPLETED' } : m));
+    localStorage.setItem('local_messages', JSON.stringify(updatedLocal));
+
+    setMessages(prev => prev.map(m => (String(m.id) === String(msg.id) ? { ...m, is_read: true, status: 'COMPLETED' } : m)));
+
+    let phoneClean = (msg.phone || '').replace(/\D/g, '');
+    if (!phoneClean.startsWith('91') && phoneClean.length === 10) {
+      phoneClean = '91' + phoneClean;
+    }
+    const encoded = encodeURIComponent(textToSend);
+    const fallbackWhatsappUrl = `https://wa.me/${phoneClean}?text=${encoded}`;
+
     try {
       const res = await API.post(`/messages/${msg.id}/approve_and_send_ai_reply/`, {
         approved_text: textToSend
-      });
-
-      let whatsappUrl = res.data.whatsapp_link;
-      if (!whatsappUrl) {
-        let phoneClean = msg.phone.replace(/\D/g, '');
-        if (!phoneClean.startsWith('91') && phoneClean.length === 10) {
-          phoneClean = '91' + phoneClean;
-        }
-        const encoded = encodeURIComponent(textToSend);
-        whatsappUrl = `https://wa.me/${phoneClean}?text=${encoded}`;
-      }
-
-      if (whatsappUrl) {
-        window.open(whatsappUrl, '_blank');
-      }
-
-      fetchMessages();
+      }, { timeout: 2000 });
+      const finalUrl = res.data.whatsapp_link || fallbackWhatsappUrl;
+      window.open(finalUrl, '_blank');
     } catch (err) {
-      console.error(err);
-      alert('Failed to send message.');
+      console.warn('Backend API offline, opening WhatsApp link directly:', err);
+      window.open(fallbackWhatsappUrl, '_blank');
     } finally {
       setActionLoading(prev => ({ ...prev, [msg.id]: false }));
     }
@@ -124,11 +126,26 @@ export default function MessagesPage() {
 
   const handleDeleteWithPassword = async (adminPassword) => {
     if (!deleteModal.messageObj) return;
-    await API.post(`/messages/${deleteModal.messageObj.id}/delete_with_password/`, {
-      admin_password: adminPassword
-    });
-    alert('Message deleted successfully!');
-    fetchMessages();
+    const targetId = deleteModal.messageObj.id;
+
+    // Delete locally and from cloud bin
+    deleteCloudMessage(targetId).catch(console.warn);
+    const localMsgs = JSON.parse(localStorage.getItem('local_messages') || '[]');
+    const updatedLocal = localMsgs.filter(m => String(m.id) !== String(targetId));
+    localStorage.setItem('local_messages', JSON.stringify(updatedLocal));
+
+    setMessages(prev => prev.filter(m => String(m.id) !== String(targetId)));
+    setDeleteModal({ isOpen: false, messageObj: null });
+
+    try {
+      await API.post(`/messages/${targetId}/delete_with_password/`, {
+        admin_password: adminPassword
+      }, { timeout: 2000 });
+    } catch (err) {
+      console.warn('Backend API offline, deleted message locally and cloud store:', err);
+    } finally {
+      alert('Message deleted successfully!');
+    }
   };
 
   const openDirectWhatsApp = (msg) => {

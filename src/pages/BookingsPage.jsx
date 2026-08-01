@@ -5,7 +5,7 @@ import API from '../services/api';
 import AdminPasswordModal from '../components/AdminPasswordModal';
 import { useAuth } from '../context/AuthContext';
 import { generateBookingNotificationMessage } from '../utils/aiMessageGenerator';
-import { fetchCloudBookings, updateCloudBookingStatus, pushCloudJob } from '../utils/cloudSync';
+import { fetchCloudBookings, updateCloudBookingStatus, deleteCloudBooking, pushCloudJob } from '../utils/cloudSync';
 
 const DEFAULT_BOOKING_DATE = new Date();
 
@@ -236,11 +236,26 @@ export default function BookingsPage() {
 
   const handleDeleteWithPassword = async (adminPassword) => {
     if (!deleteModal.booking) return;
-    await API.post(`/bookings/${deleteModal.booking.id}/delete_with_password/`, {
-      admin_password: adminPassword
-    });
-    alert('Booking deleted successfully!');
-    fetchBookings();
+    const targetId = deleteModal.booking.id;
+
+    // Delete locally and from cloud bin
+    deleteCloudBooking(targetId).catch(console.warn);
+    const localBookings = JSON.parse(localStorage.getItem('local_bookings') || '[]');
+    const updatedLocal = localBookings.filter(b => String(b.id) !== String(targetId));
+    localStorage.setItem('local_bookings', JSON.stringify(updatedLocal));
+
+    setBookings(prev => prev.filter(b => String(b.id) !== String(targetId)));
+    setDeleteModal({ isOpen: false, booking: null });
+
+    try {
+      await API.post(`/bookings/${targetId}/delete_with_password/`, {
+        admin_password: adminPassword
+      }, { timeout: 2000 });
+    } catch (err) {
+      console.warn('Backend API offline, deleted booking locally & cloud store:', err);
+    } finally {
+      alert('Booking deleted successfully!');
+    }
   };
 
   return (

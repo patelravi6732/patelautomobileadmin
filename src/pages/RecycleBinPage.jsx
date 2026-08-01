@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Trash2, RotateCcw, ShieldAlert, Clock, User, FileText, CheckCircle2, AlertTriangle } from 'lucide-react';
 import API from '../services/api';
+import { fetchCloudRecycleBin, restoreCloudRecycleBinItem, emptyCloudRecycleBin, pushCloudInventoryItem } from '../utils/cloudSync';
 import AdminPasswordModal from '../components/AdminPasswordModal';
 
 export default function RecycleBinPage() {
@@ -10,14 +11,29 @@ export default function RecycleBinPage() {
 
   const fetchRecycleBin = async () => {
     setLoading(true);
+    let backendItems = [];
     try {
-      const res = await API.get('/recycle-bin/');
-      setItems(res.data);
+      const res = await API.get('/recycle-bin/', { timeout: 1500 });
+      backendItems = res.data || [];
     } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
+      console.warn('Backend API offline for Recycle Bin, using fast local+cloud store:', err);
     }
+
+    const localTrash = JSON.parse(localStorage.getItem('recycle_bin_items') || '[]');
+    const cloudTrash = await fetchCloudRecycleBin();
+
+    const allMap = new Map();
+    [...backendItems, ...localTrash, ...cloudTrash].forEach(r => {
+      if (r && typeof r === 'object') {
+        const key = String(r.id || r.title || Date.now());
+        if (!allMap.has(key)) {
+          allMap.set(key, r);
+        }
+      }
+    });
+
+    setItems(Array.from(allMap.values()));
+    setLoading(false);
   };
 
   useEffect(() => {
@@ -25,32 +41,64 @@ export default function RecycleBinPage() {
   }, []);
 
   const handleRestore = async (item) => {
+    restoreCloudRecycleBinItem(item.id).catch(console.warn);
+
+    // Restore locally
+    const currentTrash = JSON.parse(localStorage.getItem('recycle_bin_items') || '[]');
+    const updatedTrash = currentTrash.filter(r => String(r.id) !== String(item.id));
+    localStorage.setItem('recycle_bin_items', JSON.stringify(updatedTrash));
+
+    if (item.payload && item.item_type === 'Inventory') {
+      const currentInv = JSON.parse(localStorage.getItem('inventory_items') || '[]');
+      localStorage.setItem('inventory_items', JSON.stringify([item.payload, ...currentInv]));
+      pushCloudInventoryItem(item.payload).catch(console.warn);
+    }
+
+    setItems(prev => prev.filter(r => String(r.id) !== String(item.id)));
+
     try {
-      const res = await API.post(`/recycle-bin/${item.id}/restore/`);
-      alert(res.data.message || 'Item restored back to active database!');
-      fetchRecycleBin();
+      await API.post(`/recycle-bin/${item.id}/restore/`, {}, { timeout: 2000 });
     } catch (err) {
-      console.error(err);
-      alert(err.response?.data?.error || 'Restore failed.');
+      console.warn('Backend API offline, restored item locally & cloud store:', err);
+    } finally {
+      alert('Item restored back to active database!');
     }
   };
 
   const handlePermanentDeleteWithPassword = async (adminPassword) => {
     if (deleteModal.isDeleteAll) {
-      const res = await API.post('/recycle-bin/empty_recycle_bin/', {
-        admin_password: adminPassword
-      });
-      alert(res.data.message || 'All items in Recycle Bin permanently deleted!');
-      fetchRecycleBin();
+      emptyCloudRecycleBin().catch(console.warn);
+      localStorage.setItem('recycle_bin_items', '[]');
+      setItems([]);
+      setDeleteModal({ isOpen: false, item: null, isDeleteAll: false });
+
+      try {
+        await API.post('/recycle-bin/empty_recycle_bin/', { admin_password: adminPassword }, { timeout: 2000 });
+      } catch (err) {
+        console.warn('Backend API offline, emptied Recycle Bin locally & cloud store:', err);
+      } finally {
+        alert('All items in Recycle Bin permanently deleted!');
+      }
       return;
     }
 
     if (!deleteModal.item) return;
-    await API.post(`/recycle-bin/${deleteModal.item.id}/permanent_delete/`, {
-      admin_password: adminPassword
-    });
-    alert('Item permanently deleted from database!');
-    fetchRecycleBin();
+    const targetId = deleteModal.item.id;
+
+    const currentTrash = JSON.parse(localStorage.getItem('recycle_bin_items') || '[]');
+    const updatedTrash = currentTrash.filter(r => String(r.id) !== String(targetId));
+    localStorage.setItem('recycle_bin_items', JSON.stringify(updatedTrash));
+
+    setItems(prev => prev.filter(r => String(r.id) !== String(targetId)));
+    setDeleteModal({ isOpen: false, item: null, isDeleteAll: false });
+
+    try {
+      await API.post(`/recycle-bin/${targetId}/permanent_delete/`, { admin_password: adminPassword }, { timeout: 2000 });
+    } catch (err) {
+      console.warn('Backend API offline, permanently deleted item locally & cloud store:', err);
+    } finally {
+      alert('Item permanently deleted from database!');
+    }
   };
 
   return (

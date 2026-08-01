@@ -48,15 +48,25 @@ export default function KhataBookPage() {
   };
 
   const fetchKhata = async () => {
+    setLoading(true);
+    let backendData = null;
     try {
-      const res = await API.get('/khata-book/');
-      setDebtors(res.data.debtors || []);
-      setTotalPending(res.data.total_pending_amount || 0);
+      const res = await API.get('/khata-book/', { timeout: 1500 });
+      backendData = res.data;
     } catch (err) {
-      console.error('Fetch Khata Error:', err);
-    } finally {
-      setLoading(false);
+      console.warn('Backend API offline for Khata, using local memory fallback:', err);
     }
+
+    if (backendData) {
+      setDebtors(backendData.debtors || []);
+      setTotalPending(backendData.total_pending_amount || 0);
+    } else {
+      const localDebtors = JSON.parse(localStorage.getItem('khata_debtors') || '[]');
+      setDebtors(localDebtors);
+      const sum = localDebtors.reduce((acc, d) => acc + (parseFloat(d.balance || 0)), 0);
+      setTotalPending(sum);
+    }
+    setLoading(false);
   };
 
   useEffect(() => {

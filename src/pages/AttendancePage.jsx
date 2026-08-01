@@ -59,18 +59,20 @@ export default function AttendancePage() {
     setLoading(true);
     try {
       const [attRes, sumRes, calRes, salRes] = await Promise.all([
-        API.get('/attendance/'),
-        API.get(`/attendance/monthly_summary/?month=${selectedMonth}&year=${selectedYear}`),
-        API.get(`/attendance/monthly_calendar/?month=${selectedMonth}&year=${selectedYear}`),
-        API.get('/salary-payments/')
+        API.get('/attendance/', { timeout: 1500 }),
+        API.get(`/attendance/monthly_summary/?month=${selectedMonth}&year=${selectedYear}`, { timeout: 1500 }),
+        API.get(`/attendance/monthly_calendar/?month=${selectedMonth}&year=${selectedYear}`, { timeout: 1500 }),
+        API.get('/salary-payments/', { timeout: 1500 })
       ]);
-      setAttendanceList(attRes.data);
-      setSummaryList(sumRes.data.summary || []);
-      setCalendarData(calRes.data.calendar_data || []);
-      setTotalDaysInMonth(calRes.data.total_days_in_month || 31);
+      setAttendanceList(attRes.data || []);
+      setSummaryList(sumRes.data?.summary || []);
+      setCalendarData(calRes.data?.calendar_data || []);
+      setTotalDaysInMonth(calRes.data?.total_days_in_month || 31);
       setSalaryPayments(salRes.data || []);
     } catch (err) {
-      console.error(err);
+      console.warn('Backend API offline for Attendance, using fast local fallback:', err);
+      setAttendanceList(JSON.parse(localStorage.getItem('local_attendance') || '[]'));
+      setSalaryPayments(JSON.parse(localStorage.getItem('local_salary_payments') || '[]'));
     } finally {
       setLoading(false);
     }

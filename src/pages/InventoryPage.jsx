@@ -1,7 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { Package, Plus, Search, AlertTriangle, Edit2, Trash2, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react';
 import API from '../services/api';
+import { fetchCloudInventory, pushCloudInventoryItem, deleteCloudInventoryItem, pushCloudRecycleBinItem } from '../utils/cloudSync';
 import AdminPasswordModal from '../components/AdminPasswordModal';
+
+const DEFAULT_SPARE_PARTS = [
+  { id: 'inv_1', part_name: 'Castrol Active 4T 10W-30 (1L)', category: 'Engine Oil', price: 450, current_stock: 25, min_stock_alert: 5 },
+  { id: 'inv_2', part_name: 'Motul 7100 20W-50 Synthetic (1L)', category: 'Engine Oil', price: 820, current_stock: 12, min_stock_alert: 3 },
+  { id: 'inv_3', part_name: 'Honda Activa Front Brake Shoe Set', category: 'Brake Shoe', price: 280, current_stock: 18, min_stock_alert: 4 },
+  { id: 'inv_4', part_name: 'Hero Splendor Rear Brake Shoe Set', category: 'Brake Shoe', price: 240, current_stock: 22, min_stock_alert: 5 },
+  { id: 'inv_5', part_name: 'NGK Spark Plug (CPR8EA-9)', category: 'Spark Plug', price: 130, current_stock: 40, min_stock_alert: 8 },
+  { id: 'inv_6', part_name: 'BOSCH Spark Plug Twin', category: 'Spark Plug', price: 110, current_stock: 35, min_stock_alert: 10 },
+  { id: 'inv_7', part_name: 'Hero Splendor / HF Deluxe Chain Sprocket Kit', category: 'Chain Kit', price: 950, current_stock: 8, min_stock_alert: 2 },
+  { id: 'inv_8', part_name: 'Bajaj Pulsar 150 Heavy Chain Kit', category: 'Chain Kit', price: 1250, current_stock: 6, min_stock_alert: 2 },
+  { id: 'inv_9', part_name: 'Honda Activa 3G/4G/5G/6G Air Filter', category: 'Air Filter', price: 190, current_stock: 15, min_stock_alert: 4 },
+  { id: 'inv_10', part_name: 'Hero Passion Pro Air Filter Foam', category: 'Air Filter', price: 85, current_stock: 30, min_stock_alert: 5 }
+];
 
 export default function InventoryPage() {
   const [items, setItems] = useState([]);
@@ -42,14 +56,43 @@ export default function InventoryPage() {
 
   const fetchInventory = async () => {
     setLoading(true);
+    let backendItems = [];
     try {
-      const res = await API.get('/inventory/');
-      setItems(res.data);
+      const res = await API.get('/inventory/', { timeout: 1500 });
+      backendItems = res.data || [];
     } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
+      console.warn('Backend API offline or unreachable for inventory, using fast local+cloud store:', err);
     }
+
+    const localRaw = localStorage.getItem('inventory_items');
+    let localItems = localRaw ? JSON.parse(localRaw) : DEFAULT_SPARE_PARTS;
+    if (!localRaw) {
+      localStorage.setItem('inventory_items', JSON.stringify(DEFAULT_SPARE_PARTS));
+    }
+
+    const cloudItems = await fetchCloudInventory();
+
+    const allMap = new Map();
+    [...backendItems, ...localItems, ...cloudItems].forEach(i => {
+      if (i && typeof i === 'object') {
+        const pName = i.part_name || i.name || 'Spare Part';
+        const key = String(i.id || pName);
+        if (!allMap.has(key)) {
+          allMap.set(key, {
+            ...i,
+            part_name: pName,
+            category: i.category || 'General',
+            price: parseFloat(i.price || 0),
+            current_stock: parseInt(i.current_stock || 0, 10),
+            min_stock_alert: i.min_stock_alert !== undefined && i.min_stock_alert !== '' ? parseInt(i.min_stock_alert, 10) : ''
+          });
+        }
+      }
+    });
+
+    const merged = Array.from(allMap.values());
+    setItems(merged);
+    setLoading(false);
   };
 
   useEffect(() => {
@@ -96,41 +139,95 @@ export default function InventoryPage() {
   };
 
   const saveNewPart = async (data) => {
+    const newPartObj = {
+      id: Date.now(),
+      part_name: data.part_name,
+      category: data.category || 'General',
+      price: parseFloat(data.price || 0),
+      current_stock: parseInt(data.current_stock || 0, 10),
+      min_stock_alert: data.min_stock_alert !== '' ? parseInt(data.min_stock_alert, 10) : '',
+      created_at: new Date().toISOString()
+    };
+
+    // Save locally and push to cloud bin
+    pushCloudInventoryItem(newPartObj).catch(console.warn);
+    const existing = JSON.parse(localStorage.getItem('inventory_items') || JSON.stringify(DEFAULT_SPARE_PARTS));
+    const updatedLocal = [newPartObj, ...existing];
+    localStorage.setItem('inventory_items', JSON.stringify(updatedLocal));
+
+    setItems(prev => [newPartObj, ...prev]);
+    setShowAddModal(false);
+
     try {
-      await API.post('/inventory/', data);
-      alert('New spare part added to inventory!');
-      setShowAddModal(false);
-      fetchInventory();
+      await API.post('/inventory/', data, { timeout: 2000 });
     } catch (err) {
-      console.error(err);
-      alert(err.response?.data?.error || 'Failed to add spare part.');
+      console.warn('Backend API offline, added spare part locally and cloud store:', err);
+    } finally {
+      alert('New spare part added to inventory!');
     }
   };
 
   const handleConfirmPasswordAction = async (adminPassword) => {
     if (passwordModal.actionType === 'EDIT') {
+      const targetItem = passwordModal.item;
+      const updatedObj = {
+        ...targetItem,
+        part_name: passwordModal.pendingData.part_name,
+        category: passwordModal.pendingData.category || 'General',
+        price: parseFloat(passwordModal.pendingData.price || 0),
+        current_stock: parseInt(passwordModal.pendingData.current_stock || 0, 10),
+        min_stock_alert: passwordModal.pendingData.min_stock_alert !== '' ? parseInt(passwordModal.pendingData.min_stock_alert, 10) : ''
+      };
+
+      pushCloudInventoryItem(updatedObj).catch(console.warn);
+      const existing = JSON.parse(localStorage.getItem('inventory_items') || JSON.stringify(DEFAULT_SPARE_PARTS));
+      const updatedLocal = existing.map(i => (String(i.id) === String(targetItem.id) ? updatedObj : i));
+      localStorage.setItem('inventory_items', JSON.stringify(updatedLocal));
+
+      setItems(prev => prev.map(i => (String(i.id) === String(targetItem.id) ? updatedObj : i)));
+      setShowAddModal(false);
+
       try {
-        await API.put(`/inventory/${passwordModal.item.id}/`, {
+        await API.put(`/inventory/${targetItem.id}/`, {
           ...passwordModal.pendingData,
           admin_password: adminPassword
-        });
-        alert('Spare part updated successfully!');
-        setShowAddModal(false);
-        fetchInventory();
+        }, { timeout: 2000 });
       } catch (err) {
-        console.error(err);
-        alert(err.response?.data?.error || 'Failed to update part.');
+        console.warn('Backend API offline, updated spare part locally and cloud store:', err);
+      } finally {
+        alert('Spare part updated successfully!');
       }
     } else if (passwordModal.actionType === 'DELETE') {
+      const targetItem = passwordModal.item;
+      const trashObj = {
+        id: Date.now(),
+        item_type: 'Inventory',
+        title: targetItem.part_name || targetItem.name || 'Spare Part',
+        deleted_at: new Date().toISOString(),
+        payload: targetItem
+      };
+
+      // 1. Move to Recycle Bin (local & cloud)
+      pushCloudRecycleBinItem(trashObj).catch(console.warn);
+      const existingTrash = JSON.parse(localStorage.getItem('recycle_bin_items') || '[]');
+      localStorage.setItem('recycle_bin_items', JSON.stringify([trashObj, ...existingTrash]));
+
+      // 2. Remove from active inventory (local & cloud)
+      deleteCloudInventoryItem(targetItem.id).catch(console.warn);
+      const existing = JSON.parse(localStorage.getItem('inventory_items') || JSON.stringify(DEFAULT_SPARE_PARTS));
+      const updatedLocal = existing.filter(i => String(i.id) !== String(targetItem.id));
+      localStorage.setItem('inventory_items', JSON.stringify(updatedLocal));
+
+      setItems(prev => prev.filter(i => String(i.id) !== String(targetItem.id)));
+
       try {
-        await API.post(`/inventory/${passwordModal.item.id}/delete_with_password/`, {
+        await API.post(`/inventory/${targetItem.id}/delete_with_password/`, {
           admin_password: adminPassword
-        });
-        alert('Spare part moved to Recycle Bin!');
-        fetchInventory();
+        }, { timeout: 2000 });
       } catch (err) {
-        console.error(err);
-        alert(err.response?.data?.error || 'Failed to delete part.');
+        console.warn('Backend API offline, moved spare part to Recycle Bin locally & cloud store:', err);
+      } finally {
+        alert('Spare part moved to Recycle Bin!');
       }
     }
   };

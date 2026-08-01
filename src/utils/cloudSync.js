@@ -9,13 +9,15 @@ async function fetchMasterStore() {
       return {
         bookings: Array.isArray(res.data.data.bookings) ? res.data.data.bookings : [],
         messages: Array.isArray(res.data.data.messages) ? res.data.data.messages : [],
-        jobs: Array.isArray(res.data.data.jobs) ? res.data.data.jobs : []
+        jobs: Array.isArray(res.data.data.jobs) ? res.data.data.jobs : [],
+        inventory: Array.isArray(res.data.data.inventory) ? res.data.data.inventory : [],
+        recycleBin: Array.isArray(res.data.data.recycleBin) ? res.data.data.recycleBin : []
       };
     }
-    return { bookings: [], messages: [], jobs: [] };
+    return { bookings: [], messages: [], jobs: [], inventory: [], recycleBin: [] };
   } catch (err) {
     console.warn('Failed to fetch Master Cloud Store:', err);
-    return { bookings: [], messages: [], jobs: [] };
+    return { bookings: [], messages: [], jobs: [], inventory: [], recycleBin: [] };
   }
 }
 
@@ -131,4 +133,89 @@ export async function deleteCloudJob(jobId) {
   const existing = (store.jobs || []).filter(j => j && typeof j === 'object');
   const updated = existing.filter(j => j.id !== jobId && String(j.id) !== String(jobId));
   await saveMasterStore({ ...store, jobs: updated });
+}
+
+export async function deleteCloudBooking(bookingId) {
+  if (!bookingId) return;
+  const store = await fetchMasterStore();
+  const existing = (store.bookings || []).filter(b => b && typeof b === 'object');
+  const updated = existing.filter(b => b.id !== bookingId && String(b.id) !== String(bookingId));
+  await saveMasterStore({ ...store, bookings: updated });
+}
+
+export async function deleteCloudMessage(msgId) {
+  if (!msgId) return;
+  const store = await fetchMasterStore();
+  const existing = (store.messages || []).filter(m => m && typeof m === 'object');
+  const updated = existing.filter(m => m.id !== msgId && String(m.id) !== String(msgId));
+  await saveMasterStore({ ...store, messages: updated });
+}
+
+export async function markCloudMessageRead(msgId) {
+  if (!msgId) return;
+  const store = await fetchMasterStore();
+  const existing = (store.messages || []).filter(m => m && typeof m === 'object');
+  const updated = existing.map(m => (m.id === msgId || String(m.id) === String(msgId)) ? { ...m, is_read: true } : m);
+  await saveMasterStore({ ...store, messages: updated });
+}
+
+// ---------------- INVENTORY ----------------
+export async function fetchCloudInventory() {
+  const store = await fetchMasterStore();
+  return (store.inventory || []).filter(i => i && typeof i === 'object' && (i.id || i.part_name || i.name));
+}
+
+export async function pushCloudInventoryItem(newItem) {
+  if (!newItem || typeof newItem !== 'object') return;
+  const store = await fetchMasterStore();
+  const existing = (store.inventory || []).filter(i => i && typeof i === 'object');
+  const exists = existing.some(i => i.id === newItem.id || String(i.id) === String(newItem.id));
+  let updated = existing;
+  if (!exists) {
+    updated = [newItem, ...existing];
+  } else {
+    updated = existing.map(i => (i.id === newItem.id || String(i.id) === String(newItem.id)) ? { ...i, ...newItem } : i);
+  }
+  await saveMasterStore({ ...store, inventory: updated });
+}
+
+export async function deleteCloudInventoryItem(itemId) {
+  if (!itemId) return;
+  const store = await fetchMasterStore();
+  const existing = (store.inventory || []).filter(i => i && typeof i === 'object');
+  const updated = existing.filter(i => i.id !== itemId && String(i.id) !== String(itemId));
+  await saveMasterStore({ ...store, inventory: updated });
+}
+
+// ---------------- RECYCLE BIN ----------------
+export async function fetchCloudRecycleBin() {
+  const store = await fetchMasterStore();
+  return (store.recycleBin || []).filter(r => r && typeof r === 'object' && (r.id || r.item_type));
+}
+
+export async function pushCloudRecycleBinItem(trashObj) {
+  if (!trashObj || typeof trashObj !== 'object') return;
+  const store = await fetchMasterStore();
+  const existing = (store.recycleBin || []).filter(r => r && typeof r === 'object');
+  const updated = [trashObj, ...existing];
+  await saveMasterStore({ ...store, recycleBin: updated });
+}
+
+export async function restoreCloudRecycleBinItem(itemId) {
+  if (!itemId) return;
+  const store = await fetchMasterStore();
+  const existing = (store.recycleBin || []).filter(r => r && typeof r === 'object');
+  const target = existing.find(r => r.id === itemId || String(r.id) === String(itemId));
+  const updatedTrash = existing.filter(r => r.id !== itemId && String(r.id) !== String(itemId));
+  
+  let updatedInventory = store.inventory || [];
+  if (target && target.payload && target.item_type === 'Inventory') {
+    updatedInventory = [target.payload, ...updatedInventory];
+  }
+  await saveMasterStore({ ...store, recycleBin: updatedTrash, inventory: updatedInventory });
+}
+
+export async function emptyCloudRecycleBin() {
+  const store = await fetchMasterStore();
+  await saveMasterStore({ ...store, recycleBin: [] });
 }

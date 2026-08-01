@@ -77,8 +77,14 @@ export default function BillingPage() {
 
     const allMap = new Map();
     [...backendInvs, ...localInvs, ...cloudInvs, ...derivedInvs].forEach(inv => {
-      if (inv && typeof inv === 'object' && (inv.id || inv.invoice_number)) {
-        const key = String(inv.id || inv.invoice_number);
+      if (inv && typeof inv === 'object') {
+        const rawId = String(inv.id || '').replace(/^inv_/, '').replace(/^job_/, '');
+        const vehNum = (inv.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+        const dateMinute = inv.created_at ? new Date(inv.created_at).toISOString().slice(0, 16) : '';
+        
+        // Key uniquely identifies an exact service bill visit while preserving distinct visits of the same bike
+        const key = rawId ? `bill_${rawId}` : (inv.invoice_number ? `inv_${inv.invoice_number}_${vehNum}` : `${vehNum}_${dateMinute}`);
+
         const partsVal = parseFloat(inv.parts_total || 0);
         const labourVal = parseFloat(inv.labour_charge || 100);
         const discountVal = parseFloat(inv.discount_amount || 0);
@@ -92,12 +98,13 @@ export default function BillingPage() {
           total_amount: totalVal,
           paid_amount: paidVal,
           pending_amount: pendingVal,
-          payment_status: pendingVal > 0 ? 'PARTIAL' : 'PAID'
+          payment_status: pendingVal > 0 ? 'PENDING' : 'PAID'
         };
 
         if (!allMap.has(key)) {
           allMap.set(key, normalizedInv);
         } else {
+          // Merge rich details from both derived and local/cloud invoices
           allMap.set(key, { ...allMap.get(key), ...normalizedInv });
         }
       }

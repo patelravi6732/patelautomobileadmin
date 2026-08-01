@@ -388,7 +388,7 @@ export default function AttendancePage() {
               <div className="flex gap-3">
                 <button
                   type="button"
-                  onClick={handleMarkAttendance}
+                  onClick={handleCheckIn}
                   className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-md transition-colors flex items-center justify-center gap-1.5"
                 >
                   <LogIn className="w-4 h-4" /> Check In / Mark

@@ -4,6 +4,8 @@ import API from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { generateBillCanvasDataUrl, generateBillCanvasDataUrlAsync, generateBillCanvasBlob } from '../utils/billCardGenerator';
 
+import { fetchCloudKhataEntries, fetchCloudInvoices, pushCloudKhataEntry } from '../utils/cloudSync';
+
 const monthNames = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'
@@ -54,18 +56,98 @@ export default function KhataBookPage() {
       const res = await API.get('/khata-book/', { timeout: 1500 });
       backendData = res.data;
     } catch (err) {
-      console.warn('Backend API offline for Khata, using local memory fallback:', err);
+      console.warn('Backend API offline for Khata, aggregating from local and cloud stores:', err);
     }
 
-    if (backendData) {
+    if (backendData && backendData.debtors && backendData.debtors.length > 0) {
       setDebtors(backendData.debtors || []);
       setTotalPending(backendData.total_pending_amount || 0);
-    } else {
-      const localDebtors = JSON.parse(localStorage.getItem('khata_debtors') || '[]');
-      setDebtors(localDebtors);
-      const sum = localDebtors.reduce((acc, d) => acc + (parseFloat(d.balance || 0)), 0);
-      setTotalPending(sum);
+      setLoading(false);
+      return;
     }
+
+    // Aggregating Khata Entries and Unpaid Invoices
+    const localKhata = JSON.parse(localStorage.getItem('khata_entries') || '[]');
+    const cloudKhata = await fetchCloudKhataEntries();
+    const combinedKhata = [...localKhata, ...cloudKhata];
+
+    const localInvs = JSON.parse(localStorage.getItem('local_invoices') || '[]');
+    const cloudInvs = await fetchCloudInvoices();
+    const combinedInvs = [...localInvs, ...cloudInvs];
+
+    const legacyDebtors = JSON.parse(localStorage.getItem('khata_debtors') || '[]');
+
+    const debtorMap = new Map();
+
+    // 1. Process Khata Entries
+    combinedKhata.forEach(k => {
+      if (!k) return;
+      const key = (k.vehicle_number || `${k.customer_name}_${k.mobile_number}`).trim().toUpperCase();
+      const amt = parseFloat(k.amount || 0);
+      if (!debtorMap.has(key)) {
+        debtorMap.set(key, {
+          id: k.id || key,
+          customer_name: k.customer_name || 'Valued Customer',
+          mobile_number: k.mobile_number || 'N/A',
+          vehicle_number: k.vehicle_number || 'GJ-15',
+          bike_model: k.bike_model || 'Two Wheeler',
+          balance: k.type === 'DEBIT' ? amt : -amt,
+          total_pending_amount: k.type === 'DEBIT' ? amt : -amt,
+          last_visit_date: k.date || new Date().toISOString(),
+          notes: k.description || ''
+        });
+      } else {
+        const existing = debtorMap.get(key);
+        if (k.type === 'DEBIT') {
+          existing.balance += amt;
+          existing.total_pending_amount += amt;
+        } else {
+          existing.balance -= amt;
+          existing.total_pending_amount -= amt;
+        }
+      }
+    });
+
+    // 2. Process Unpaid Invoices
+    combinedInvs.forEach(inv => {
+      if (!inv) return;
+      const pending = parseFloat(inv.pending_amount || 0);
+      if (pending > 0) {
+        const key = (inv.vehicle_number || `${inv.customer_name}_${inv.mobile_number}`).trim().toUpperCase();
+        if (!debtorMap.has(key)) {
+          debtorMap.set(key, {
+            id: inv.id || key,
+            customer_name: inv.customer_name || 'Valued Customer',
+            mobile_number: inv.mobile_number || 'N/A',
+            vehicle_number: inv.vehicle_number || 'GJ-15',
+            bike_model: inv.bike_model || 'Two Wheeler',
+            balance: pending,
+            total_pending_amount: pending,
+            last_visit_date: inv.created_at || new Date().toISOString(),
+            notes: `Unpaid invoice balance (INV-${String(inv.id).slice(-4)})`
+          });
+        }
+      }
+    });
+
+    // 3. Process Legacy Debtors
+    legacyDebtors.forEach(d => {
+      if (!d) return;
+      const key = (d.vehicle_number || `${d.customer_name}_${d.mobile_number}`).trim().toUpperCase();
+      if (!debtorMap.has(key)) {
+        debtorMap.set(key, {
+          ...d,
+          balance: parseFloat(d.balance || 0),
+          total_pending_amount: parseFloat(d.balance || 0)
+        });
+      }
+    });
+
+    const activeDebtors = Array.from(debtorMap.values()).filter(d => d.balance > 0);
+    const sum = activeDebtors.reduce((acc, d) => acc + d.balance, 0);
+
+    setDebtors(activeDebtors);
+    setTotalPending(sum);
     setLoading(false);
   };
 

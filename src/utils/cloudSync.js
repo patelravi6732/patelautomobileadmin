@@ -313,6 +313,14 @@ export async function pushCloudKhataEntry(khataObj) {
   await saveMasterStore({ ...store, khataEntries: updated });
 }
 
+export async function deleteCloudKhataEntry(khataId) {
+  if (!khataId) return;
+  const store = await fetchMasterStore();
+  const existing = (store.khataEntries || []).filter(k => k && typeof k === 'object');
+  const updated = existing.filter(k => k.id !== khataId && String(k.id) !== String(khataId));
+  await saveMasterStore({ ...store, khataEntries: updated });
+}
+
 // ---------------- INVOICES & BILLING ----------------
 export async function fetchCloudInvoices() {
   const store = await fetchMasterStore();
@@ -333,6 +341,22 @@ export async function pushCloudInvoice(invObj) {
   await saveMasterStore({ ...store, invoices: updated });
 }
 
+export async function deleteCloudInvoice(invId) {
+  if (!invId) return;
+  const store = await fetchMasterStore();
+  const existing = (store.invoices || []).filter(i => i && typeof i === 'object');
+  const updated = existing.filter(i => i.id !== invId && String(i.id) !== String(invId) && i.invoice_number !== invId);
+  await saveMasterStore({ ...store, invoices: updated });
+}
+
+export async function deleteCloudCustomer(custId) {
+  if (!custId) return;
+  const store = await fetchMasterStore();
+  const existing = (store.customers || []).filter(c => c && typeof c === 'object');
+  const updated = existing.filter(c => c.id !== custId && String(c.id) !== String(custId));
+  await saveMasterStore({ ...store, customers: updated });
+}
+
 // ---------------- ATTENDANCE & SALARY PAYMENTS ----------------
 export async function fetchCloudAttendance() {
   const store = await fetchMasterStore();
@@ -347,6 +371,14 @@ export async function pushCloudAttendanceRecord(attObj) {
   await saveMasterStore({ ...store, attendance: updated });
 }
 
+export async function deleteCloudAttendanceRecord(attId) {
+  if (!attId) return;
+  const store = await fetchMasterStore();
+  const existing = (store.attendance || []).filter(a => a && typeof a === 'object');
+  const updated = existing.filter(a => a.id !== attId && String(a.id) !== String(attId));
+  await saveMasterStore({ ...store, attendance: updated });
+}
+
 export async function fetchCloudSalaryPayments() {
   const store = await fetchMasterStore();
   return (store.salaryPayments || []).filter(s => s && typeof s === 'object' && (s.id || s.mechanic_name || s.amount));
@@ -357,5 +389,13 @@ export async function pushCloudSalaryPayment(salObj) {
   const store = await fetchMasterStore();
   const existing = (store.salaryPayments || []).filter(s => s && typeof s === 'object');
   const updated = [salObj, ...existing];
+  await saveMasterStore({ ...store, salaryPayments: updated });
+}
+
+export async function deleteCloudSalaryPayment(salId) {
+  if (!salId) return;
+  const store = await fetchMasterStore();
+  const existing = (store.salaryPayments || []).filter(s => s && typeof s === 'object');
+  const updated = existing.filter(s => s.id !== salId && String(s.id) !== String(salId));
   await saveMasterStore({ ...store, salaryPayments: updated });
 }

@@ -243,14 +243,31 @@ export default function BookingsPage() {
     existingJobs.push(newJobCard);
     localStorage.setItem('workshop_jobs', JSON.stringify(existingJobs));
 
-    updateCloudBookingStatus(bookingObj.id, 'ACCEPTED').catch(console.warn);
+    // 1. Update local_bookings in localStorage to CONVERTED
+    const localBookings = JSON.parse(localStorage.getItem('local_bookings') || '[]');
+    const updatedLocal = localBookings.map(b => 
+      (String(b.id) === String(bookingObj.id) || (b.vehicle_number === bookingObj.vehicle_number && b.preferred_date === bookingObj.preferred_date))
+        ? { ...b, status: 'CONVERTED' }
+        : b
+    );
+    localStorage.setItem('local_bookings', JSON.stringify(updatedLocal));
+
+    // 2. Update Global Cloud Store to CONVERTED
+    updateCloudBookingStatus(bookingObj.id, 'CONVERTED', bookingObj.vehicle_number, bookingObj.preferred_date).catch(console.warn);
+
+    // 3. Update React state immediately
+    setBookings(prev => prev.map(b => 
+      (String(b.id) === String(bookingObj.id) || (b.vehicle_number === bookingObj.vehicle_number && b.preferred_date === bookingObj.preferred_date))
+        ? { ...b, status: 'CONVERTED' }
+        : b
+    ));
 
     try {
       await API.post(`/bookings/${bookingObj.id}/convert_to_service/`);
     } catch (err) {
       console.warn('Backend API offline or static host fallback for convert:', err);
     } finally {
-      alert('Successfully converted to active Workshop Job Card!');
+      alert('✅ Successfully converted to active Workshop Job Card!');
       const basePrefix = window.location.pathname.startsWith('/admin') ? '/admin' : '/app';
       navigate(`${basePrefix}/workshop`);
     }
@@ -384,11 +401,12 @@ export default function BookingsPage() {
                   </span>
                   <span className={`text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full ${
                     b.status === 'ACCEPTED' ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' :
+                    b.status === 'CONVERTED' ? 'bg-purple-100 text-purple-700 border border-purple-200' :
                     b.status === 'REJECTED' ? 'bg-red-100 text-red-700 border border-red-200' :
                     b.status === 'COMPLETED' ? 'bg-blue-100 text-blue-700 border border-blue-200' :
                     'bg-amber-100 text-amber-700 border border-amber-200 animate-pulse'
                   }`}>
-                    {b.status}
+                    {b.status === 'CONVERTED' ? 'CONVERTED TO WORKSHOP' : b.status}
                   </span>
                 </div>
 
@@ -449,7 +467,11 @@ export default function BookingsPage() {
                   </button>
                 )}
 
-                {(b.status === 'PENDING' || b.status === 'ACCEPTED') && (
+                {b.status === 'CONVERTED' ? (
+                  <div className="w-full py-2.5 bg-purple-50 border border-purple-200 text-purple-700 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-purple-600" /> Active Workshop Job Created
+                  </div>
+                ) : (b.status === 'PENDING' || b.status === 'ACCEPTED') && (
                   <button
                     onClick={() => handleConvert(b.id)}
                     className="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-extrabold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2"

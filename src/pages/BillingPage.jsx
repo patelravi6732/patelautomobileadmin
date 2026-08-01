@@ -43,7 +43,8 @@ export default function BillingPage() {
     }
 
     const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
-    const derivedInvs = localJobs.map((j, idx) => ({
+    const finishedJobs = localJobs.filter(j => j && (j.status === 'FINISHED' || j.status === 'COMPLETED'));
+    const derivedInvs = finishedJobs.map((j, idx) => ({
       id: j.id || `inv_local_${idx}`,
       invoice_number: `INV-${String(j.id || idx).slice(-4)}`,
       customer_name: j.customer_name || 'Valued Customer',

@@ -4,7 +4,7 @@ import API from '../services/api';
 import { fetchCloudInventory, pushCloudInventoryItem, deleteCloudInventoryItem, pushCloudRecycleBinItem } from '../utils/cloudSync';
 import AdminPasswordModal from '../components/AdminPasswordModal';
 
-const DEFAULT_SPARE_PARTS = [
+export const DEFAULT_SPARE_PARTS = [
   { id: 'inv_1', part_name: 'Castrol Active 4T 10W-30 (1L)', category: 'Engine Oil', price: 450, current_stock: 25, min_stock_alert: 5 },
   { id: 'inv_2', part_name: 'Motul 7100 20W-50 Synthetic (1L)', category: 'Engine Oil', price: 820, current_stock: 12, min_stock_alert: 3 },
   { id: 'inv_3', part_name: 'Honda Activa Front Brake Shoe Set', category: 'Brake Shoe', price: 280, current_stock: 18, min_stock_alert: 4 },

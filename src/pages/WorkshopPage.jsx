@@ -4,9 +4,10 @@ import {
   IndianRupee, Package, Bike, User, Phone, Check, Receipt, UserCheck, Users, Lock, Search, ChevronDown, Edit2, Tag
 } from 'lucide-react';
 import API from '../services/api';
-import { fetchCloudJobs, updateCloudJobStatus, deleteCloudJob } from '../utils/cloudSync';
+import { fetchCloudJobs, updateCloudJobStatus, deleteCloudJob, fetchCloudInventory, pushCloudJob } from '../utils/cloudSync';
 import { useAuth } from '../context/AuthContext';
 import AdminPasswordModal from '../components/AdminPasswordModal';
+import { DEFAULT_SPARE_PARTS } from './InventoryPage';
 
 export default function WorkshopPage() {
   const { garageInfo } = useAuth();
@@ -25,17 +26,16 @@ export default function WorkshopPage() {
   // Admin Password Delete Modal
   const [deleteJobModal, setDeleteJobModal] = useState({ isOpen: false, job: null });
   
-  // Form states inside modal
+  // Form states
+  const [assignedMechanic, setAssignedMechanic] = useState('');
+  const [secondaryMechanic, setSecondaryMechanic] = useState('');
   const [selectedPartId, setSelectedPartId] = useState('');
   const [partQty, setPartQty] = useState(1);
-  const [partSearchQuery, setPartSearchQuery] = useState('');
-  const [isPartDropdownOpen, setIsPartDropdownOpen] = useState(false);
   const [paidAmount, setPaidAmount] = useState(0);
   const [finishLabourCharge, setFinishLabourCharge] = useState(0);
   const [discountAmount, setDiscountAmount] = useState(0);
+  const [editingLabourJobId, setEditingLabourJobId] = useState(null);
   const [labourInputs, setLabourInputs] = useState({});
-  const [assignedMechanic, setAssignedMechanic] = useState('');
-  const [secondaryMechanic, setSecondaryMechanic] = useState('');
 
   const formatMoney = (val) => {
     const num = parseFloat(val || 0);
@@ -107,25 +107,29 @@ export default function WorkshopPage() {
     );
 
     setJobs(mergedJobs);
-    if (invData.length > 0) {
-      setInventory(invData);
-    }
+
+    // Fetch Inventory Fallback
+    let localInv = JSON.parse(localStorage.getItem('inventory_items') || '[]');
+    if (localInv.length === 0) localInv = DEFAULT_SPARE_PARTS;
+    let cloudInv = [];
+    try {
+      cloudInv = await fetchCloudInventory();
+    } catch (e) {}
+
+    const allInvMap = new Map();
+    [...invData, ...localInv, ...cloudInv].forEach(item => {
+      if (item && item.id) {
+        allInvMap.set(String(item.id), item);
+      }
+    });
+    const finalInvList = Array.from(allInvMap.values());
+    setInventory(finalInvList);
     setLoading(false);
   };
 
   useEffect(() => {
     fetchData();
   }, []);
-
-  const handleSilentUpdateLabourCharge = async (jobId, amount) => {
-    try {
-      await API.post(`/workshop/${jobId}/update_labour_charge/`, {
-        labour_charge: amount
-      });
-    } catch (err) {
-      console.error('Silent labour charge update error', err);
-    }
-  };
 
   const openAssignModal = (job) => {
     setSelectedJob(job);
@@ -144,15 +148,34 @@ export default function WorkshopPage() {
       alert('⚠️ Primary Mechanic assignment is COMPULSORY! Please select a valid mechanic.');
       return;
     }
+
+    const updatedJob = {
+      ...selectedJob,
+      assigned_mechanic: assignedMechanic,
+      secondary_mechanic: secondaryMechanic
+    };
+
+    setJobs(prev => prev.map(j => (String(j.id) === String(selectedJob.id) ? updatedJob : j)));
+    
+    const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
+    const updatedLocal = localJobs.map(j => (String(j.id) === String(selectedJob.id) ? updatedJob : j));
+    if (!updatedLocal.some(j => String(j.id) === String(selectedJob.id))) {
+      updatedLocal.push(updatedJob);
+    }
+    localStorage.setItem('workshop_jobs', JSON.stringify(updatedLocal));
+    pushCloudJob(updatedJob).catch(console.warn);
+
+    setShowAssignModal(false);
+
     try {
       await API.post(`/workshop/${selectedJob.id}/assign_mechanic/`, {
         assigned_mechanic: assignedMechanic,
         secondary_mechanic: secondaryMechanic
-      });
-      setShowAssignModal(false);
-      fetchData();
+      }, { timeout: 2000 });
     } catch (err) {
-      alert(err.response?.data?.error || 'Failed to assign mechanics');
+      console.warn('Backend API offline, assigned mechanic locally & cloud store:', err);
+    } finally {
+      alert(`Mechanic '${assignedMechanic}' assigned successfully!`);
     }
   };
 
@@ -166,15 +189,52 @@ export default function WorkshopPage() {
   const handleAddStagedPart = async (e) => {
     e.preventDefault();
     if (!selectedPartId || !selectedJob) return;
+
+    const partObj = inventory.find(p => String(p.id) === String(selectedPartId));
+    if (!partObj) return;
+
+    const newPartEntry = {
+      id: Date.now(),
+      part_name: partObj.part_name,
+      price: parseFloat(partObj.price || 0),
+      quantity: parseInt(partQty || 1, 10),
+      staged_total: parseFloat(partObj.price || 0) * parseInt(partQty || 1, 10),
+      is_confirmed: true
+    };
+
+    const existingParts = Array.isArray(selectedJob.parts) ? selectedJob.parts : [];
+    const updatedParts = [...existingParts, newPartEntry];
+    const newPartsTotal = updatedParts.reduce((acc, p) => acc + parseFloat(p.staged_total || (p.price * p.quantity)), 0);
+    const newLiveTotal = newPartsTotal + parseFloat(selectedJob.labour_charge || 0);
+
+    const updatedJob = {
+      ...selectedJob,
+      parts: updatedParts,
+      parts_total: newPartsTotal,
+      live_total: newLiveTotal
+    };
+
+    setJobs(prev => prev.map(j => (String(j.id) === String(selectedJob.id) ? updatedJob : j)));
+    
+    const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
+    const updatedLocal = localJobs.map(j => (String(j.id) === String(selectedJob.id) ? updatedJob : j));
+    if (!updatedLocal.some(j => String(j.id) === String(selectedJob.id))) {
+      updatedLocal.push(updatedJob);
+    }
+    localStorage.setItem('workshop_jobs', JSON.stringify(updatedLocal));
+    pushCloudJob(updatedJob).catch(console.warn);
+
+    setShowPartModal(false);
+
     try {
       await API.post(`/workshop/${selectedJob.id}/add_staged_part/`, {
         inventory_id: selectedPartId,
         quantity: partQty
-      });
-      setShowPartModal(false);
-      fetchData();
+      }, { timeout: 2000 });
     } catch (err) {
-      alert(err.response?.data?.error || 'Failed to add part');
+      console.warn('Backend API offline, added staged part locally & cloud store:', err);
+    } finally {
+      alert(`Part '${partObj.part_name}' added to Job Card!`);
     }
   };
 

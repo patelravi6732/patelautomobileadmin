@@ -24,7 +24,7 @@ export default function CustomersPage() {
       console.warn('Backend API offline for customers, deriving from local jobs and bookings:', err);
     }
 
-    const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
+    const localJobs = (JSON.parse(localStorage.getItem('workshop_jobs') || '[]')).filter(j => j && (j.status === 'FINISHED' || j.status === 'COMPLETED'));
     const localBookings = JSON.parse(localStorage.getItem('local_bookings') || '[]');
 
     const allMap = new Map();

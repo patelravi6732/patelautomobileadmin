@@ -196,7 +196,7 @@ export default function SettingsPage() {
         email: garageInfo.email || 'contact@patelautomobiles.com',
         timing_text: garageInfo.timing_text || 'Mon - Sat: 09:00 AM - 08:30 PM, Sun: 09:00 AM - 02:00 PM',
         safety_message: garageInfo.safety_message || 'Thank you for choosing us! Wish you a safe & smooth ride. 🛵⛑️',
-        mechanics_list: garageInfo.mechanics_list || 'Vijay Owner, Patel Owner, Ramesh Mechanic, Suresh Technician',
+        mechanics_list: garageInfo.mechanics_list || 'Unassigned, Amitbhai Mechanic, Vishalbhai Mechanic, Manojbhai Mechanic, Patel Owner, Ramesh Mechanic, Suresh Technician',
         default_labour_charge: garageInfo.default_labour_charge || 300.00,
         default_min_stock: garageInfo.default_min_stock !== undefined ? garageInfo.default_min_stock : '',
         upi_qr_code: garageInfo.upi_qr_code || '/upi_qr.jpg',

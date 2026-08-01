@@ -4,6 +4,8 @@ import { Wrench, Lock, User, ShieldCheck, AlertCircle, Clock, Smartphone, Key, A
 import { useAuth } from '../context/AuthContext';
 import API from '../services/api';
 
+import { fetchCloudAdminProfiles, pushCloudAdminProfile } from '../utils/cloudSync';
+
 export default function LoginPage() {
   const navigate = useNavigate();
   const { user, login } = useAuth();
@@ -12,6 +14,37 @@ export default function LoginPage() {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [lockoutSeconds, setLockoutSeconds] = useState(0);
+
+  // First-Time Setup Wizard State
+  const [isFirstTimeSetup, setIsFirstTimeSetup] = useState(false);
+  const [setupLoading, setSetupLoading] = useState(true);
+  const [setupForm, setSetupForm] = useState({
+    user_name: '',
+    username: '',
+    phone: '',
+    email: '',
+    password: '',
+    confirm_password: ''
+  });
+  const [setupError, setSetupError] = useState('');
+
+  // Check if system has 0 existing admin profiles
+  useEffect(() => {
+    async function checkAdminCount() {
+      try {
+        const cloudAdmins = await fetchCloudAdminProfiles();
+        const localAdmins = JSON.parse(localStorage.getItem('admin_profiles') || '[]');
+        if (cloudAdmins.length === 0 && localAdmins.length === 0) {
+          setIsFirstTimeSetup(true);
+        }
+      } catch (err) {
+        console.warn('Error checking initial admin setup:', err);
+      } finally {
+        setSetupLoading(false);
+      }
+    }
+    checkAdminCount();
+  }, []);
 
   // If already logged in, navigate directly to dashboard
   useEffect(() => {
@@ -161,10 +194,57 @@ export default function LoginPage() {
     }
   };
 
-  const formatLockoutTime = (seconds) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}m ${secs < 10 ? '0' : ''}${secs}s`;
+  const handleInitialAdminSetup = async (e) => {
+    e.preventDefault();
+    if (!setupForm.user_name.trim() || !setupForm.username.trim() || !setupForm.password.trim()) {
+      setSetupError('Please fill in Owner Name, Username, and Password.');
+      return;
+    }
+    if (setupForm.password !== setupForm.confirm_password) {
+      setSetupError('Passwords do not match!');
+      return;
+    }
+
+    setLoading(true);
+    setSetupError('');
+
+    const newOwnerAdmin = {
+      id: `admin_primary_${Date.now()}`,
+      user_name: setupForm.user_name.trim(),
+      username: setupForm.username.trim(),
+      phone: setupForm.phone.trim() || '+91 81403 71414',
+      email: setupForm.email.trim() || 'contact@patelautomobiles.com',
+      date_of_birth: '1990-01-01',
+      profile_photo: '/logo.png'
+    };
+
+    try {
+      // 1. Try Backend API creation
+      await API.post('/admin-profile/', {
+        ...setupForm,
+        password: setupForm.password
+      }, { timeout: 2000 });
+    } catch (err) {
+      console.warn('Backend API offline, saved primary admin locally & cloud store:', err);
+    } finally {
+      // 2. Save in Cloud Master Bin & LocalStorage
+      pushCloudAdminProfile(newOwnerAdmin).catch(console.warn);
+      localStorage.setItem('admin_profiles', JSON.stringify([newOwnerAdmin]));
+      
+      const adminSessionUser = {
+        username: newOwnerAdmin.username,
+        is_staff: true,
+        is_superuser: true,
+        role: 'ADMIN'
+      };
+      localStorage.setItem('access_token', 'static_admin_token');
+      localStorage.setItem('user', JSON.stringify(adminSessionUser));
+
+      setIsFirstTimeSetup(false);
+      alert(`🎉 Welcome ${newOwnerAdmin.user_name}! Primary Admin Account created & system is now LOCKED to your credentials!`);
+      navigate('/admin/dashboard', { replace: true });
+      setLoading(false);
+    }
   };
 
   return (
@@ -177,7 +257,113 @@ export default function LoginPage() {
       ></div>
       <div className="absolute inset-0 bg-slate-950/75"></div>
 
-      <div className="w-full max-w-md bg-slate-900/90 border border-slate-700/80 rounded-3xl p-8 shadow-2xl backdrop-blur-xl space-y-8 relative z-10">
+      {isFirstTimeSetup ? (
+        /* FIRST-TIME INITIAL ADMIN SETUP WIZARD */
+        <div className="w-full max-w-md bg-slate-900/95 border border-emerald-500/40 rounded-3xl p-8 shadow-2xl backdrop-blur-xl space-y-6 relative z-10 animate-in fade-in zoom-in duration-300">
+          <div className="text-center space-y-2">
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/20">
+              <ShieldCheck className="w-9 h-9" />
+            </div>
+            <h1 className="text-2xl font-bold text-white font-poppins">
+              Patel Automobiles
+            </h1>
+            <p className="text-xs text-emerald-400 font-semibold tracking-wide uppercase">🚀 Initial Admin Setup Wizard</p>
+            <p className="text-xs text-slate-400">Create your Primary Admin account to initialize & lock your garage portal.</p>
+          </div>
+
+          {setupError && (
+            <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{setupError}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleInitialAdminSetup} className="space-y-4">
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-300 uppercase tracking-wider mb-1">Owner Full Name *</label>
+              <input
+                type="text"
+                required
+                placeholder="e.g. Patel Owner"
+                value={setupForm.user_name}
+                onChange={(e) => setSetupForm(prev => ({ ...prev, user_name: e.target.value }))}
+                className="w-full px-4 py-2.5 bg-slate-900/80 border border-slate-700 rounded-xl text-white text-xs focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-300 uppercase tracking-wider mb-1">Admin Username *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. admin"
+                  value={setupForm.username}
+                  onChange={(e) => setSetupForm(prev => ({ ...prev, username: e.target.value }))}
+                  className="w-full px-4 py-2.5 bg-slate-900/80 border border-slate-700 rounded-xl text-white text-xs focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-300 uppercase tracking-wider mb-1">Mobile Number</label>
+                <input
+                  type="text"
+                  placeholder="+91 81403 71414"
+                  value={setupForm.phone}
+                  onChange={(e) => setSetupForm(prev => ({ ...prev, phone: e.target.value }))}
+                  className="w-full px-4 py-2.5 bg-slate-900/80 border border-slate-700 rounded-xl text-white text-xs focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-300 uppercase tracking-wider mb-1">Email Address</label>
+              <input
+                type="email"
+                placeholder="contact@patelautomobiles.com"
+                value={setupForm.email}
+                onChange={(e) => setSetupForm(prev => ({ ...prev, email: e.target.value }))}
+                className="w-full px-4 py-2.5 bg-slate-900/80 border border-slate-700 rounded-xl text-white text-xs focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-300 uppercase tracking-wider mb-1">Password *</label>
+                <input
+                  type="password"
+                  required
+                  placeholder="••••••••"
+                  value={setupForm.password}
+                  onChange={(e) => setSetupForm(prev => ({ ...prev, password: e.target.value }))}
+                  className="w-full px-4 py-2.5 bg-slate-900/80 border border-slate-700 rounded-xl text-white text-xs focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-300 uppercase tracking-wider mb-1">Confirm Password *</label>
+                <input
+                  type="password"
+                  required
+                  placeholder="••••••••"
+                  value={setupForm.confirm_password}
+                  onChange={(e) => setSetupForm(prev => ({ ...prev, confirm_password: e.target.value }))}
+                  className="w-full px-4 py-2.5 bg-slate-900/80 border border-slate-700 rounded-xl text-white text-xs focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl shadow-lg shadow-emerald-600/30 transition-all text-xs flex items-center justify-center gap-2 mt-2"
+            >
+              <ShieldCheck className="w-4 h-4" />
+              {loading ? 'Initializing Setup...' : 'Create Primary Admin & Lock System'}
+            </button>
+          </form>
+        </div>
+      ) : (
+        /* STANDARD LOGIN FORM */
+        <div className="w-full max-w-md bg-slate-900/90 border border-slate-700/80 rounded-3xl p-8 shadow-2xl backdrop-blur-xl space-y-8 relative z-10">
         
         {/* Header */}
         <div className="text-center space-y-3">
@@ -263,6 +449,7 @@ export default function LoginPage() {
         </form>
 
       </div>
+      )}
 
       {/* DIRECT PASSWORD RESET MODAL */}
       {showOtpModal && (

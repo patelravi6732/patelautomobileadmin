@@ -5,7 +5,7 @@ import API from '../services/api';
 import AdminPasswordModal from '../components/AdminPasswordModal';
 import { useAuth } from '../context/AuthContext';
 import { generateBookingNotificationMessage } from '../utils/aiMessageGenerator';
-import { fetchCloudBookings, updateCloudBookingStatus, deleteCloudBooking, pushCloudJob } from '../utils/cloudSync';
+import { fetchCloudBookings, updateCloudBookingStatus, deleteCloudBooking, pushCloudJob, pushCloudRecycleBinItem } from '../utils/cloudSync';
 
 const DEFAULT_BOOKING_DATE = new Date();
 

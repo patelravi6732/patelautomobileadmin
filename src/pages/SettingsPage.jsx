@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Settings, Save, MapPin, Phone, MessageSquare, Clock, Wrench, IndianRupee, Mail, Lock, ShieldCheck, User, Calendar, History, Trash2, Camera, Upload, Image as ImageIcon, Plus, Edit2, Key, Eye, EyeOff, CheckCircle2, XCircle, ShieldAlert, Sparkles, AlertCircle, Smartphone, QrCode } from 'lucide-react';
 import API from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { fetchCloudAdminProfiles, pushCloudAdminProfile, deleteCloudAdminProfile } from '../utils/cloudSync';
 import AdminPasswordModal from '../components/AdminPasswordModal';
 
 export const DEFAULT_ADMIN_PROFILES = [
@@ -152,9 +153,10 @@ export default function SettingsPage() {
     }
 
     const localAdmins = JSON.parse(localStorage.getItem('admin_profiles') || JSON.stringify(DEFAULT_ADMIN_PROFILES));
+    const cloudAdmins = await fetchCloudAdminProfiles();
 
     const map = new Map();
-    [...backendAdmins, ...localAdmins, ...DEFAULT_ADMIN_PROFILES].forEach(adm => {
+    [...backendAdmins, ...localAdmins, ...cloudAdmins, ...DEFAULT_ADMIN_PROFILES].forEach(adm => {
       if (adm && typeof adm === 'object' && (adm.username || adm.user_name)) {
         const key = String(adm.id || adm.username || adm.user_name);
         if (!map.has(key)) {
@@ -405,7 +407,8 @@ export default function SettingsPage() {
       profile_photo: adminForm.profile_photo || '/logo.png'
     };
 
-    // Save locally to local_storage
+    // Save locally to local_storage and cloud store
+    pushCloudAdminProfile(newOrUpdatedAdmin).catch(console.warn);
     const existingLocal = JSON.parse(localStorage.getItem('admin_profiles') || JSON.stringify(DEFAULT_ADMIN_PROFILES));
     let updatedLocal = [];
     if (editingAdmin) {
@@ -439,7 +442,7 @@ export default function SettingsPage() {
         alert(`✅ New Admin account '${adminForm.user_name}' created successfully!`);
       }
     } catch (err) {
-      console.warn('Backend API offline, saved admin profile locally:', err);
+      console.warn('Backend API offline, saved admin profile locally & cloud store:', err);
       alert(`✅ Admin account '${adminForm.user_name}' saved successfully!`);
     } finally {
       fetchAdminProfiles();
@@ -470,6 +473,7 @@ export default function SettingsPage() {
     } else if (passwordModal.actionType === 'DELETE_ADMIN') {
       const targetId = passwordModal.targetItem.id;
       
+      deleteCloudAdminProfile(targetId).catch(console.warn);
       const existingLocal = JSON.parse(localStorage.getItem('admin_profiles') || JSON.stringify(DEFAULT_ADMIN_PROFILES));
       const updatedLocal = existingLocal.filter(a => String(a.id) !== String(targetId));
       localStorage.setItem('admin_profiles', JSON.stringify(updatedLocal));

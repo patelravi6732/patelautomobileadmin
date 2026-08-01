@@ -249,3 +249,32 @@ export async function pushCloudGarageInfo(infoObj) {
   const store = await fetchMasterStore();
   await saveMasterStore({ ...store, garageInfo: infoObj });
 }
+
+// ---------------- ADMIN PROFILES (MONGODB / CLOUD SYNC) ----------------
+export async function fetchCloudAdminProfiles() {
+  const store = await fetchMasterStore();
+  return (store.adminProfiles || []).filter(a => a && typeof a === 'object' && (a.id || a.username || a.user_name));
+}
+
+export async function pushCloudAdminProfile(adminObj) {
+  if (!adminObj || typeof adminObj !== 'object') return;
+  const store = await fetchMasterStore();
+  const existing = (store.adminProfiles || []).filter(a => a && typeof a === 'object');
+  const exists = existing.some(a => a.id === adminObj.id || (a.username && adminObj.username && a.username === adminObj.username));
+  
+  let updated = existing;
+  if (!exists) {
+    updated = [adminObj, ...existing];
+  } else {
+    updated = existing.map(a => (a.id === adminObj.id || a.username === adminObj.username) ? { ...a, ...adminObj } : a);
+  }
+  await saveMasterStore({ ...store, adminProfiles: updated });
+}
+
+export async function deleteCloudAdminProfile(adminId) {
+  if (!adminId) return;
+  const store = await fetchMasterStore();
+  const existing = (store.adminProfiles || []).filter(a => a && typeof a === 'object');
+  const updated = existing.filter(a => a.id !== adminId && String(a.id) !== String(adminId));
+  await saveMasterStore({ ...store, adminProfiles: updated });
+}

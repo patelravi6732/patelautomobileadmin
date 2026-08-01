@@ -9,7 +9,7 @@ export default function NewServicePage() {
   const { garageInfo } = useAuth();
   const navigate = useNavigate();
 
-  const [mechanicOptions, setMechanicOptions] = useState(['Patel Owner', 'Ramesh Mechanic', 'Suresh Technician']);
+  const [mechanicOptions, setMechanicOptions] = useState(['Unassigned', 'Amitbhai Mechanic', 'Vishalbhai Mechanic', 'Manojbhai Mechanic', 'Patel Owner', 'Ramesh Mechanic', 'Suresh Technician']);
 
   const [formData, setFormData] = useState({
     customer_name: '',
@@ -17,7 +17,7 @@ export default function NewServicePage() {
     vehicle_number: '',
     bike_model: '',
     complaint: '',
-    assigned_mechanic: 'Vijay Owner',
+    assigned_mechanic: 'Unassigned',
     secondary_mechanic: '',
     labour_charge: 300.00
   });

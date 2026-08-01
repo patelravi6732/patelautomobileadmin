@@ -229,7 +229,7 @@ export default function BookingsPage() {
       vehicle_number: bookingObj.vehicle_number,
       bike_model: bookingObj.bike_model || 'Commuter Bike',
       complaint: bookingObj.complaint || 'General Service & Repair',
-      assigned_mechanic: 'Vijay Owner',
+      assigned_mechanic: 'Unassigned',
       labour_charge: 300.00,
       parts_total: 0.00,
       live_total: 300.00,

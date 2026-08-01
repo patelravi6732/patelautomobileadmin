@@ -12,7 +12,7 @@ export const DEFAULT_GARAGE_INFO = {
   upi_id: 'pritpatel9397@oksbi',
   upi_payee_name: 'Prit Patel',
   timing_text: 'Mon - Sat: 09:00 AM - 08:30 PM, Sun: 09:00 AM - 02:00 PM',
-  mechanics_list: 'Vijay Owner, Patel Owner, Ramesh Mechanic, Suresh Technician'
+  mechanics_list: 'Unassigned, Amitbhai Mechanic, Vishalbhai Mechanic, Manojbhai Mechanic, Patel Owner, Ramesh Mechanic, Suresh Technician'
 };
 
 const AuthContext = createContext();

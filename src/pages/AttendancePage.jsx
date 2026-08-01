@@ -13,8 +13,8 @@ export default function AttendancePage() {
   const [attendanceList, setAttendanceList] = useState([]);
   const [summaryList, setSummaryList] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [mechanicOptions, setMechanicOptions] = useState(['Patel Owner', 'Ramesh Mechanic', 'Suresh Technician']);
-  const [selectedMechanic, setSelectedMechanic] = useState('Patel Owner');
+  const [mechanicOptions, setMechanicOptions] = useState(['Amitbhai Mechanic', 'Vishalbhai Mechanic', 'Manojbhai Mechanic', 'Patel Owner', 'Ramesh Mechanic', 'Suresh Technician']);
+  const [selectedMechanic, setSelectedMechanic] = useState('Amitbhai Mechanic');
   const [selectedStatus, setSelectedStatus] = useState('PRESENT');
 
   // Dynamic Year Selector starting from 2026 onwards

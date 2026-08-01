@@ -31,6 +31,7 @@ export default function WorkshopPage() {
   const [secondaryMechanic, setSecondaryMechanic] = useState('');
   const [selectedPartId, setSelectedPartId] = useState('');
   const [partQty, setPartQty] = useState(1);
+  const [partSearchQuery, setPartSearchQuery] = useState('');
   const [paidAmount, setPaidAmount] = useState(0);
   const [finishLabourCharge, setFinishLabourCharge] = useState(0);
   const [discountAmount, setDiscountAmount] = useState(0);
@@ -181,7 +182,9 @@ export default function WorkshopPage() {
 
   const openAddPartModal = (job) => {
     setSelectedJob(job);
-    setSelectedPartId(inventory[0]?.id || '');
+    setPartSearchQuery('');
+    const firstPartId = inventory.length > 0 ? String(inventory[0].id) : '';
+    setSelectedPartId(firstPartId);
     setPartQty(1);
     setShowPartModal(true);
   };
@@ -722,18 +725,30 @@ export default function WorkshopPage() {
 
               {/* INVENTORY LIST BOX */}
               <div className="flex-1 overflow-y-auto space-y-2 pr-1 border border-slate-100 rounded-2xl p-2 bg-slate-50/50 max-h-60 min-h-40">
-                {inventory.filter(item => item.part_name.toLowerCase().includes(partSearchQuery.toLowerCase())).length === 0 ? (
-                  <div className="p-8 text-center text-xs text-slate-400 font-medium">
-                    No spare parts found matching "{partSearchQuery}"
-                  </div>
-                ) : (
-                  inventory.filter(item => item.part_name.toLowerCase().includes(partSearchQuery.toLowerCase())).map((item) => {
-                    const isSelected = selectedPartId.toString() === item.id.toString();
-                    const cleanItemName = item.part_name.split('#')[0].trim();
+                {(() => {
+                  const filtered = inventory.filter(item => {
+                    if (!item) return false;
+                    const name = (item.part_name || item.name || '').toLowerCase();
+                    const query = (partSearchQuery || '').toLowerCase();
+                    return name.includes(query);
+                  });
+
+                  if (filtered.length === 0) {
+                    return (
+                      <div className="p-8 text-center text-xs text-slate-400 font-medium">
+                        No spare parts found matching "{partSearchQuery}"
+                      </div>
+                    );
+                  }
+
+                  return filtered.map((item) => {
+                    const isSelected = String(selectedPartId) === String(item.id);
+                    const rawName = item.part_name || item.name || 'Spare Part';
+                    const cleanItemName = rawName.split('#')[0].trim();
                     return (
                       <div
-                        key={item.id}
-                        onClick={() => setSelectedPartId(item.id.toString())}
+                        key={item.id || Math.random()}
+                        onClick={() => setSelectedPartId(String(item.id))}
                         className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between text-xs ${
                           isSelected 
                             ? 'bg-blue-50/90 border-blue-500 shadow-xs text-blue-900 font-bold' 
@@ -743,7 +758,7 @@ export default function WorkshopPage() {
                         <div className="space-y-0.5 pr-2 min-w-0">
                           <div className="font-bold text-slate-900 truncate text-xs">{cleanItemName}</div>
                           <div className="text-[11px] text-slate-500 flex items-center gap-2">
-                            <span>Stock: <strong className="text-slate-700">{item.current_stock}</strong></span>
+                            <span>Stock: <strong className="text-slate-700">{item.current_stock !== undefined ? item.current_stock : 10}</strong></span>
                             <span>•</span>
                             <span className="text-emerald-600 font-bold">₹{formatMoney(item.price)}</span>
                           </div>
@@ -758,8 +773,8 @@ export default function WorkshopPage() {
                         </div>
                       </div>
                     );
-                  })
-                )}
+                  });
+                })()}
               </div>
 
               {/* QUANTITY STEPPER */}

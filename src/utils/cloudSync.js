@@ -1,35 +1,52 @@
 import axios from 'axios';
 
-const MASTER_BIN_URL = 'https://api.restful-api.dev/objects/ff8081819f7e10ae019fbcb185ca5b9e';
+// Primary & Backup Master Cloud Storage Endpoints
+const PRIMARY_BIN_URL = 'https://api.npoint.io/87b4fa8d9e2a4a754b2a';
+const BACKUP_BIN_URL = 'https://api.restful-api.dev/objects/ff8081819f7e10ae019fbcb185ca5b9e';
 
 async function fetchMasterStore() {
   try {
-    const res = await axios.get(MASTER_BIN_URL);
-    if (res.data && res.data.data) {
+    const res = await axios.get(PRIMARY_BIN_URL, { timeout: 2000 });
+    if (res.data) {
       return {
-        bookings: Array.isArray(res.data.data.bookings) ? res.data.data.bookings : [],
-        messages: Array.isArray(res.data.data.messages) ? res.data.data.messages : [],
-        jobs: Array.isArray(res.data.data.jobs) ? res.data.data.jobs : [],
-        inventory: Array.isArray(res.data.data.inventory) ? res.data.data.inventory : [],
-        recycleBin: Array.isArray(res.data.data.recycleBin) ? res.data.data.recycleBin : [],
-        garageInfo: res.data.data.garageInfo || null
+        bookings: Array.isArray(res.data.bookings) ? res.data.bookings : [],
+        messages: Array.isArray(res.data.messages) ? res.data.messages : [],
+        jobs: Array.isArray(res.data.jobs) ? res.data.jobs : [],
+        inventory: Array.isArray(res.data.inventory) ? res.data.inventory : [],
+        recycleBin: Array.isArray(res.data.recycleBin) ? res.data.recycleBin : [],
+        garageInfo: res.data.garageInfo || null
       };
     }
-    return { bookings: [], messages: [], jobs: [], inventory: [], recycleBin: [], garageInfo: null };
-  } catch (err) {
-    console.warn('Failed to fetch Master Cloud Store:', err);
-    return { bookings: [], messages: [], jobs: [], inventory: [], recycleBin: [], garageInfo: null };
+  } catch (e1) {
+    // Attempt Backup endpoint silently
+    try {
+      const res = await axios.get(BACKUP_BIN_URL, { timeout: 1500 });
+      if (res.data && res.data.data) {
+        return {
+          bookings: Array.isArray(res.data.data.bookings) ? res.data.data.bookings : [],
+          messages: Array.isArray(res.data.data.messages) ? res.data.data.messages : [],
+          jobs: Array.isArray(res.data.data.jobs) ? res.data.data.jobs : [],
+          inventory: Array.isArray(res.data.data.inventory) ? res.data.data.inventory : [],
+          recycleBin: Array.isArray(res.data.data.recycleBin) ? res.data.data.recycleBin : [],
+          garageInfo: res.data.data.garageInfo || null
+        };
+      }
+    } catch (e2) {
+      // Offline or cloud endpoint down, return empty store without spamming console
+    }
   }
+  return { bookings: [], messages: [], jobs: [], inventory: [], recycleBin: [], garageInfo: null };
 }
 
 async function saveMasterStore(storeData) {
   try {
-    await axios.put(MASTER_BIN_URL, {
-      name: 'PatelAutomobilesMasterBin',
-      data: storeData
-    });
+    await axios.post(PRIMARY_BIN_URL, storeData, { timeout: 2500 });
   } catch (err) {
-    console.warn('Failed to save Master Cloud Store:', err);
+    try {
+      await axios.put(BACKUP_BIN_URL, { name: 'PatelAutomobilesMasterBin', data: storeData }, { timeout: 2000 });
+    } catch (e2) {
+      // Saved locally in caller
+    }
   }
 }
 

@@ -24,11 +24,11 @@ export default function CustomersPage() {
       console.warn('Backend API offline for customers, deriving from local jobs and bookings:', err);
     }
 
-    const localJobs = (JSON.parse(localStorage.getItem('workshop_jobs') || '[]')).filter(j => j && (j.status === 'FINISHED' || j.status === 'COMPLETED'));
-    const localBookings = JSON.parse(localStorage.getItem('local_bookings') || '[]');
+    const finishedJobs = (JSON.parse(localStorage.getItem('workshop_jobs') || '[]')).filter(j => j && (j.status === 'FINISHED' || j.status === 'COMPLETED'));
+    const savedCustomers = JSON.parse(localStorage.getItem('local_customers') || '[]');
 
     const allMap = new Map();
-    [...backendCusts, ...localJobs, ...localBookings].forEach(c => {
+    [...backendCusts, ...finishedJobs, ...savedCustomers].forEach(c => {
       if (c && typeof c === 'object' && (c.customer_name || c.name || c.mobile_number || c.phone)) {
         const name = c.customer_name || c.name || 'Valued Customer';
         const phone = c.mobile_number || c.phone || 'N/A';

@@ -1,0 +1,279 @@
+import React, { useState, useEffect } from 'react';
+import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
+import { 
+  LayoutDashboard, CalendarCheck, PlusCircle, Wrench, Package, 
+  Users, History, Receipt, BookOpen, Clock, BarChart3, Settings, 
+  LogOut, Menu, X, Shield, ChevronRight, MessageSquare, Trash2,
+  Globe, ExternalLink, Smartphone, Download
+} from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import ThemeToggle from './ThemeToggle';
+import API from '../services/api';
+
+export default function DashboardLayout() {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { user, logout, garageInfo } = useAuth();
+  const [adminProfile, setAdminProfile] = useState(null);
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [isInstalled, setIsInstalled] = useState(false);
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    if (window.matchMedia('(display-mode: standalone)').matches) {
+      setIsInstalled(true);
+    }
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  const handleInstallApp = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setIsInstalled(true);
+      }
+      setDeferredPrompt(null);
+    } else {
+      alert('To install Patel Automobiles Admin App:\n\n• Android (Chrome): Tap browser menu (⋮) -> "Add to Home screen" or "Install App".\n• iPhone (Safari): Tap Share (⎋) -> "Add to Home Screen".');
+    }
+  };
+
+  useEffect(() => {
+    API.get('/admin-profile/').then(res => {
+      if (res.data && res.data.length > 0) {
+        setAdminProfile(res.data[0]);
+      }
+    }).catch(err => console.error(err));
+  }, []);
+
+  const basePrefix = location.pathname.startsWith('/admin') ? '/admin' : '/app';
+
+  const menuItems = [
+    { name: 'Dashboard', path: `${basePrefix}/dashboard`, icon: LayoutDashboard },
+    { name: 'Bookings', path: `${basePrefix}/bookings`, icon: CalendarCheck },
+    { name: 'Messages', path: `${basePrefix}/messages`, icon: MessageSquare },
+    { name: 'New Service', path: `${basePrefix}/new-service`, icon: PlusCircle },
+    { name: 'Workshop', path: `${basePrefix}/workshop`, icon: Wrench },
+    { name: 'Inventory', path: `${basePrefix}/inventory`, icon: Package },
+    { name: 'Customers', path: `${basePrefix}/customers`, icon: Users },
+    { name: 'Vehicle History', path: `${basePrefix}/vehicle-history`, icon: History },
+    { name: 'Billing', path: `${basePrefix}/billing`, icon: Receipt },
+    { name: 'Khata Book', path: `${basePrefix}/khata-book`, icon: BookOpen },
+    { name: 'Attendance', path: `${basePrefix}/attendance`, icon: Clock },
+    { name: 'Reports', path: `${basePrefix}/reports`, icon: BarChart3 },
+    { name: 'Settings', path: `${basePrefix}/settings`, icon: Settings },
+    { name: 'Recycle Bin', path: `${basePrefix}/recycle-bin`, icon: Trash2 },
+  ];
+
+  const handleLogout = () => {
+    logout();
+    navigate('/');
+  };
+
+  const isActive = (path) => location.pathname === path;
+
+  // Active Admin Details
+  const displayName = adminProfile?.user_name || user?.admin_profile?.user_name || user?.username || 'Ravi Patel';
+  const displayPhoto = adminProfile?.profile_photo || user?.admin_profile?.profile_photo || '/logo.png';
+  const displayUsername = adminProfile?.username || user?.username || 'admin';
+
+  return (
+    <div className="min-h-screen bg-slate-50 flex">
+      
+      {/* SIDEBAR (Desktop & Mobile) */}
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 w-64 bg-slate-900 text-slate-300 flex flex-col justify-between border-r border-slate-800 transform transition-transform duration-200 ease-in-out md:translate-x-0 ${
+          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
+        <div className="flex flex-col h-full">
+          
+          {/* Header / Logo */}
+          <div className="h-20 px-6 flex items-center justify-between border-b border-slate-800">
+            <Link to="/app/dashboard" className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-slate-800 text-white flex items-center justify-center font-bold shadow-md overflow-hidden border border-slate-700 shrink-0">
+                {garageInfo?.logo ? (
+                  <img src={garageInfo.logo} alt="Logo" className="w-full h-full object-cover" />
+                ) : (
+                  <Wrench className="w-5 h-5 text-blue-400" />
+                )}
+              </div>
+              <div>
+                <span className="font-bold text-white text-base tracking-tight font-poppins block leading-none">
+                  {garageInfo?.garage_name || 'Patel Automobiles'}
+                </span>
+                <span className="text-[10px] text-blue-400 font-semibold tracking-wider uppercase mt-1 block">
+                  Garage Admin Portal
+                </span>
+              </div>
+            </Link>
+            <button
+              onClick={() => setSidebarOpen(false)}
+              className="md:hidden text-slate-400 hover:text-white"
+            >
+              <X className="w-6 h-6" />
+            </button>
+          </div>
+
+          {/* Direct Link to Public Website */}
+          <div className="px-4 pt-4 pb-1">
+            <Link
+              to="/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 hover:text-emerald-300 text-xs font-bold transition-all group"
+              title="Open Main Website in New Tab"
+            >
+              <div className="flex items-center gap-2.5">
+                <Globe className="w-4 h-4 text-emerald-400 group-hover:rotate-12 transition-transform" />
+                <span>Visit Main Website</span>
+              </div>
+              <ExternalLink className="w-3.5 h-3.5 opacity-80" />
+            </Link>
+          </div>
+
+          {/* Navigation Links */}
+          <nav className="flex-1 px-4 py-4 space-y-1.5 overflow-y-auto scrollbar-none">
+            {menuItems.map((item) => {
+              const Icon = item.icon;
+              const active = isActive(item.path);
+              return (
+                <Link
+                  key={item.path}
+                  to={item.path}
+                  onClick={() => setSidebarOpen(false)}
+                  className={`flex items-center justify-between px-4 py-3 rounded-xl font-medium text-xs transition-all ${
+                    active
+                      ? 'bg-blue-600 text-white font-bold shadow-md shadow-blue-600/20'
+                      : 'hover:bg-slate-800 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <Icon className={`w-4 h-4 ${active ? 'text-white' : 'text-slate-400'}`} />
+                    <span>{item.name}</span>
+                  </div>
+                  {active && <ChevronRight className="w-4 h-4 text-white/70" />}
+                </Link>
+              );
+            })}
+          </nav>
+
+          {/* User Profile Footer */}
+          <div className="p-4 border-t border-slate-800 bg-slate-950/40">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl overflow-hidden bg-blue-600 border border-slate-700 flex items-center justify-center shrink-0 text-white font-extrabold text-sm shadow-inner">
+                  {displayPhoto && displayPhoto !== '/logo.png' && !displayPhoto.includes('undefined') ? (
+                    <img
+                      src={displayPhoto}
+                      alt="Admin Avatar"
+                      className="w-full h-full object-cover"
+                      onError={(e) => { e.target.style.display = 'none'; }}
+                    />
+                  ) : (
+                    <span>{displayName ? displayName.charAt(0).toUpperCase() : 'A'}</span>
+                  )}
+                </div>
+                <div className="truncate max-w-[110px]">
+                  <span className="text-xs font-bold text-white block truncate">
+                    {displayName}
+                  </span>
+                  <span className="text-[10px] text-blue-400 font-semibold block truncate">
+                    @{displayUsername}
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={handleLogout}
+                className="p-2 text-slate-400 hover:text-red-400 hover:bg-slate-800 rounded-lg transition-colors"
+                title="Logout"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+        </div>
+      </aside>
+
+      {/* MAIN CONTENT AREA */}
+      <div className="flex-1 md:ml-64 flex flex-col min-h-screen max-w-full overflow-x-hidden">
+        
+        {/* Top Navbar */}
+        <header className="h-20 bg-white border-b border-slate-200/80 px-4 sm:px-6 flex items-center justify-between sticky top-0 z-40 shadow-xs">
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="md:hidden p-2 rounded-xl text-slate-600 hover:bg-slate-100"
+          >
+            <Menu className="w-6 h-6" />
+          </button>
+
+          <div className="flex items-center gap-3">
+            <div className="hidden sm:flex items-center gap-2 text-xs text-slate-500 font-medium bg-slate-100 px-3 py-1.5 rounded-full border border-slate-200">
+              <Shield className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Session Active • Secured</span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 sm:gap-4">
+            {!isInstalled && (
+              <button
+                onClick={handleInstallApp}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-xl border border-indigo-200 transition-all shadow-xs"
+                title="Install Admin Mobile App on phone home screen"
+              >
+                <Smartphone className="w-4 h-4 text-indigo-600 shrink-0" />
+                <span className="hidden sm:inline">Install App</span>
+                <Download className="w-3 h-3 text-indigo-500 shrink-0" />
+              </button>
+            )}
+
+            <Link
+              to="/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-3 py-1.5 sm:px-3.5 sm:py-2 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200/80 rounded-xl transition-all shadow-xs"
+              title="Open Public Website in New Tab"
+            >
+              <Globe className="w-4 h-4 text-blue-600 shrink-0" />
+              <span className="hidden sm:inline">Visit Website</span>
+              <ExternalLink className="w-3 h-3 text-slate-400 shrink-0" />
+            </Link>
+
+            <Link
+              to="/app/recycle-bin"
+              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-xl border border-rose-200 transition-colors"
+            >
+              <Trash2 className="w-3.5 h-3.5" /> Recycle Bin
+            </Link>
+
+            <Link
+              to="/app/new-service"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs rounded-xl shadow-md shadow-blue-600/20 transition-all hover:scale-105 active:scale-95"
+            >
+              <PlusCircle className="w-4 h-4" />
+              <span>New Service Job</span>
+            </Link>
+          </div>
+        </header>
+
+        {/* Page Content */}
+        <main className="flex-1 p-4 sm:p-6 overflow-x-hidden">
+          <Outlet />
+        </main>
+
+      </div>
+
+    </div>
+  );
+}

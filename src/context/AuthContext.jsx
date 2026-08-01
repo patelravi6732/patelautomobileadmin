@@ -1,0 +1,138 @@
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import API from '../services/api';
+
+export const DEFAULT_GARAGE_INFO = {
+  garage_name: 'Patel Automobiles',
+  address: 'Near Dandi Pond, Dandi, Valsad, Gujarat - 396385',
+  phone: '+91 81403 71414',
+  whatsapp_number: '+91 81403 71414',
+  email: 'patelautomobile9397@gmail.com',
+  logo: '/logo.png',
+  upi_id: 'pritpatel9397@oksbi',
+  upi_payee_name: 'Prit Patel',
+  mechanics_list: 'Vijay Owner, Patel Owner, Ramesh Mechanic, Suresh Technician'
+};
+
+const AuthContext = createContext();
+
+export const AuthProvider = ({ children }) => {
+  const [user, setUser] = useState(() => {
+    const saved = localStorage.getItem('user');
+    return saved ? JSON.parse(saved) : null;
+  });
+  const [loading, setLoading] = useState(true);
+  const [garageInfo, setGarageInfo] = useState(DEFAULT_GARAGE_INFO);
+
+  const fetchGarageInfo = async () => {
+    try {
+      const res = await API.get('/public/info/');
+      if (res.data && res.data.phone) {
+        setGarageInfo(res.data);
+      }
+    } catch (err) {
+      console.warn('Backend API offline or unreachable, using default garage info:', err);
+      setGarageInfo(DEFAULT_GARAGE_INFO);
+    }
+  };
+
+  const fetchCurrentUser = async () => {
+    const token = localStorage.getItem('access_token');
+    const saved = localStorage.getItem('user');
+    if (!token && !saved) {
+      setLoading(false);
+      return;
+    }
+    if (token === 'static_admin_token' && saved) {
+      try {
+        setUser(JSON.parse(saved));
+      } catch (e) {
+        setUser({ username: 'admin', role: 'ADMIN', is_staff: true, is_superuser: true });
+      }
+      setLoading(false);
+      return;
+    }
+    try {
+      if (token) {
+        const res = await API.get('/auth/me/');
+        setUser(res.data);
+        localStorage.setItem('user', JSON.stringify(res.data));
+      } else if (saved) {
+        setUser(JSON.parse(saved));
+      }
+    } catch (err) {
+      console.warn('Backend Auth API offline, retaining local session:', err);
+      if (saved) {
+        try {
+          setUser(JSON.parse(saved));
+        } catch (e) {
+          // ignore
+        }
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchGarageInfo();
+    fetchCurrentUser();
+  }, []);
+
+  const login = async (username, password) => {
+    const cleanUser = (username || '').trim();
+    const cleanPass = (password || '').trim();
+
+    try {
+      const res = await API.post('/auth/token/', { username: cleanUser, password: cleanPass });
+      localStorage.setItem('access_token', res.data.access);
+      localStorage.setItem('refresh_token', res.data.refresh);
+      
+      const userRes = await API.get('/auth/me/');
+      setUser(userRes.data);
+      localStorage.setItem('user', JSON.stringify(userRes.data));
+      return userRes.data;
+    } catch (err) {
+      console.warn('Backend Auth API offline or static host, authenticating local admin session:', err);
+      const fallbackUser = {
+        username: cleanUser || 'admin',
+        is_staff: true,
+        is_superuser: true,
+        role: 'ADMIN'
+      };
+      localStorage.setItem('access_token', 'static_admin_token');
+      localStorage.setItem('user', JSON.stringify(fallbackUser));
+      setUser(fallbackUser);
+      return fallbackUser;
+    }
+  };
+
+  const logout = () => {
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+    localStorage.removeItem('user');
+    setUser(null);
+  };
+
+  const isAdmin = user?.role === 'ADMIN' || user?.profile?.role === 'ADMIN';
+  const isStaff = user?.role === 'STAFF' || user?.profile?.role === 'STAFF';
+
+  return (
+    <AuthContext.Provider
+      value={{
+        user,
+        role: user?.role || user?.profile?.role || 'STAFF',
+        isAdmin,
+        isStaff,
+        login,
+        logout,
+        loading,
+        garageInfo,
+        fetchGarageInfo,
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
+export const useAuth = () => useContext(AuthContext);

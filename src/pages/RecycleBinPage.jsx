@@ -1,0 +1,158 @@
+import React, { useState, useEffect } from 'react';
+import { Trash2, RotateCcw, ShieldAlert, Clock, User, FileText, CheckCircle2, AlertTriangle } from 'lucide-react';
+import API from '../services/api';
+import AdminPasswordModal from '../components/AdminPasswordModal';
+
+export default function RecycleBinPage() {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [deleteModal, setDeleteModal] = useState({ isOpen: false, item: null, isDeleteAll: false });
+
+  const fetchRecycleBin = async () => {
+    setLoading(true);
+    try {
+      const res = await API.get('/recycle-bin/');
+      setItems(res.data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchRecycleBin();
+  }, []);
+
+  const handleRestore = async (item) => {
+    try {
+      const res = await API.post(`/recycle-bin/${item.id}/restore/`);
+      alert(res.data.message || 'Item restored back to active database!');
+      fetchRecycleBin();
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.error || 'Restore failed.');
+    }
+  };
+
+  const handlePermanentDeleteWithPassword = async (adminPassword) => {
+    if (deleteModal.isDeleteAll) {
+      const res = await API.post('/recycle-bin/empty_recycle_bin/', {
+        admin_password: adminPassword
+      });
+      alert(res.data.message || 'All items in Recycle Bin permanently deleted!');
+      fetchRecycleBin();
+      return;
+    }
+
+    if (!deleteModal.item) return;
+    await API.post(`/recycle-bin/${deleteModal.item.id}/permanent_delete/`, {
+      admin_password: adminPassword
+    });
+    alert('Item permanently deleted from database!');
+    fetchRecycleBin();
+  };
+
+  return (
+    <div className="space-y-8 max-w-6xl mx-auto">
+      
+      {/* HEADER */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900 font-poppins flex items-center gap-2.5">
+            <Trash2 className="w-7 h-7 text-rose-600" /> Admin Recycle Bin
+          </h1>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <span className="px-4 py-1.5 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
+            Items in Trash: {items.length}
+          </span>
+
+          {items.length > 0 && (
+            <button
+              onClick={() => setDeleteModal({ isOpen: true, item: null, isDeleteAll: true })}
+              className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs rounded-2xl shadow-md hover:shadow-lg transition-all flex items-center gap-1.5"
+            >
+              <Trash2 className="w-4 h-4" /> Delete All (Empty Bin)
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* RECYCLE BIN ITEMS LIST */}
+      <div className="bg-white rounded-3xl border border-slate-200/80 soft-shadow overflow-hidden">
+        {loading ? (
+          <div className="p-12 text-center text-slate-400 font-medium">Loading Recycle Bin...</div>
+        ) : items.length === 0 ? (
+          <div className="p-12 text-center text-slate-400 font-medium">
+            <Trash2 className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+            Recycle Bin is currently empty. No deleted items found.
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {items.map((item) => (
+              <div key={item.id} className="p-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 hover:bg-slate-50/80 transition-colors">
+                
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2.5">
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-rose-100 text-rose-700 border border-rose-200">
+                      {item.item_type}
+                    </span>
+                    <h3 className="font-bold text-slate-900 text-sm font-poppins">{item.title}</h3>
+                  </div>
+
+                  {item.details && (
+                    <p className="text-xs text-slate-600 leading-relaxed">{item.details}</p>
+                  )}
+
+                  <div className="flex items-center gap-4 text-[11px] text-slate-400 pt-1">
+                    <span className="flex items-center gap-1 font-semibold">
+                      <User className="w-3.5 h-3.5 text-slate-400" /> Deleted By: {item.deleted_by}
+                    </span>
+                    <span className="flex items-center gap-1 font-semibold">
+                      <Clock className="w-3.5 h-3.5 text-slate-400" /> {new Date(item.deleted_at).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+
+                {/* RESTORE & PERMANENT DELETE BUTTONS */}
+                <div className="flex items-center gap-3 w-full sm:w-auto shrink-0">
+                  <button
+                    onClick={() => handleRestore(item)}
+                    className="flex-1 sm:flex-initial px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5"
+                  >
+                    <RotateCcw className="w-4 h-4" /> Restore Item
+                  </button>
+
+                  <button
+                    onClick={() => setDeleteModal({ isOpen: true, item, isDeleteAll: false })}
+                    className="flex-1 sm:flex-initial px-4 py-2.5 bg-red-50 hover:bg-red-100 text-red-600 font-bold text-xs rounded-xl border border-red-200 transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    <Trash2 className="w-4 h-4" /> Permanent Delete
+                  </button>
+                </div>
+
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ADMIN PASSWORD PERMANENT DELETE MODAL */}
+      <AdminPasswordModal
+        isOpen={deleteModal.isOpen}
+        onClose={() => setDeleteModal({ isOpen: false, item: null, isDeleteAll: false })}
+        onConfirm={handlePermanentDeleteWithPassword}
+        title={deleteModal.isDeleteAll ? "Empty Entire Recycle Bin" : "Permanent Delete"}
+        itemDescription={
+          deleteModal.isDeleteAll 
+            ? `permanently deleting ALL ${items.length} items` 
+            : (deleteModal.item ? `permanently deleting "${deleteModal.item.title}"` : 'this item')
+        }
+        actionLabel={deleteModal.isDeleteAll ? "Delete All Items" : "Delete Item"}
+      />
+
+    </div>
+  );
+}

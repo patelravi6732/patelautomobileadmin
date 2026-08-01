@@ -25,14 +25,18 @@ export default function RecycleBinPage() {
     const allMap = new Map();
     [...backendItems, ...localTrash, ...cloudTrash].forEach(r => {
       if (r && typeof r === 'object') {
-        const key = String(r.id || r.title || Date.now());
+        const key = String(r.id || `${r.title}_${r.deleted_at}`);
         if (!allMap.has(key)) {
-          allMap.set(key, r);
+          allMap.set(key, {
+            ...r,
+            deleted_by: r.deleted_by || 'Patel Owner (Admin)',
+            details: r.details || (r.payload ? `Category: ${r.payload.category || 'General'} • Price: ₹${r.payload.price || 0}` : 'Deleted item')
+          });
         }
       }
     });
 
-    setItems(Array.from(allMap.values()));
+    setItems(Array.from(allMap.values()).sort((a, b) => new Date(b.deleted_at || Date.now()) - new Date(a.deleted_at || Date.now())));
     setLoading(false);
   };
 

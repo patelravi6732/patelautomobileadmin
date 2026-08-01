@@ -5,16 +5,83 @@ import { fetchCloudInventory, pushCloudInventoryItem, deleteCloudInventoryItem, 
 import AdminPasswordModal from '../components/AdminPasswordModal';
 
 export const DEFAULT_SPARE_PARTS = [
+  // --- ENGINE OIL ---
   { id: 'inv_1', part_name: 'Castrol Active 4T 10W-30 (1L)', category: 'Engine Oil', price: 450, current_stock: 25, min_stock_alert: 5 },
   { id: 'inv_2', part_name: 'Motul 7100 20W-50 Synthetic (1L)', category: 'Engine Oil', price: 820, current_stock: 12, min_stock_alert: 3 },
-  { id: 'inv_3', part_name: 'Honda Activa Front Brake Shoe Set', category: 'Brake Shoe', price: 280, current_stock: 18, min_stock_alert: 4 },
-  { id: 'inv_4', part_name: 'Hero Splendor Rear Brake Shoe Set', category: 'Brake Shoe', price: 240, current_stock: 22, min_stock_alert: 5 },
-  { id: 'inv_5', part_name: 'NGK Spark Plug (CPR8EA-9)', category: 'Spark Plug', price: 130, current_stock: 40, min_stock_alert: 8 },
-  { id: 'inv_6', part_name: 'BOSCH Spark Plug Twin', category: 'Spark Plug', price: 110, current_stock: 35, min_stock_alert: 10 },
-  { id: 'inv_7', part_name: 'Hero Splendor / HF Deluxe Chain Sprocket Kit', category: 'Chain Kit', price: 950, current_stock: 8, min_stock_alert: 2 },
-  { id: 'inv_8', part_name: 'Bajaj Pulsar 150 Heavy Chain Kit', category: 'Chain Kit', price: 1250, current_stock: 6, min_stock_alert: 2 },
-  { id: 'inv_9', part_name: 'Honda Activa 3G/4G/5G/6G Air Filter', category: 'Air Filter', price: 190, current_stock: 15, min_stock_alert: 4 },
-  { id: 'inv_10', part_name: 'Hero Passion Pro Air Filter Foam', category: 'Air Filter', price: 85, current_stock: 30, min_stock_alert: 5 }
+  { id: 'inv_3', part_name: 'Motul 3100 4T Gold 20W-40 (1L)', category: 'Engine Oil', price: 420, current_stock: 20, min_stock_alert: 5 },
+  { id: 'inv_4', part_name: 'Gulf Pride 4T Plus 10W-30 (900ml)', category: 'Engine Oil', price: 380, current_stock: 25, min_stock_alert: 5 },
+  { id: 'inv_5', part_name: 'Shell Advance AX7 10W-40 4T (1L)', category: 'Engine Oil', price: 460, current_stock: 18, min_stock_alert: 4 },
+  { id: 'inv_6', part_name: 'Servo 4T Synthetic 10W-30 (900ml)', category: 'Engine Oil', price: 360, current_stock: 22, min_stock_alert: 5 },
+  { id: 'inv_7', part_name: 'Honda Genuine Engine Oil 10W-30 (800ml)', category: 'Engine Oil', price: 390, current_stock: 40, min_stock_alert: 8 },
+  { id: 'inv_8', part_name: 'Hero Genuine Engine Oil 10W-30 (900ml)', category: 'Engine Oil', price: 380, current_stock: 35, min_stock_alert: 8 },
+  { id: 'inv_9', part_name: 'Yamalube 4T 10W-40 (1L)', category: 'Engine Oil', price: 440, current_stock: 15, min_stock_alert: 4 },
+  { id: 'inv_10', part_name: 'HP Racer 4T 20W-40 (1L)', category: 'Engine Oil', price: 350, current_stock: 15, min_stock_alert: 4 },
+
+  // --- BRAKE SHOE & PAD ---
+  { id: 'inv_11', part_name: 'Honda Activa Front Brake Shoe Set', category: 'Brake Shoe', price: 280, current_stock: 18, min_stock_alert: 4 },
+  { id: 'inv_12', part_name: 'Hero Splendor Rear Brake Shoe Set', category: 'Brake Shoe', price: 240, current_stock: 22, min_stock_alert: 5 },
+  { id: 'inv_13', part_name: 'Hero Splendor / Passion Front Brake Shoe (ASK)', category: 'Brake Shoe', price: 180, current_stock: 35, min_stock_alert: 8 },
+  { id: 'inv_14', part_name: 'Honda Activa Rear Brake Shoe (Minda)', category: 'Brake Shoe', price: 210, current_stock: 40, min_stock_alert: 10 },
+  { id: 'inv_15', part_name: 'TVS Jupiter Front / Rear Brake Shoe', category: 'Brake Shoe', price: 200, current_stock: 25, min_stock_alert: 5 },
+  { id: 'inv_16', part_name: 'Bajaj Pulsar 150 Front Disc Brake Pads (Endurance)', category: 'Brake Pad', price: 320, current_stock: 20, min_stock_alert: 5 },
+  { id: 'inv_17', part_name: 'TVS Apache RTR 160/180 Front Disc Brake Pads', category: 'Brake Pad', price: 350, current_stock: 18, min_stock_alert: 4 },
+  { id: 'inv_18', part_name: 'Royal Enfield Classic 350 Front Disc Pads (ByBre)', category: 'Brake Pad', price: 550, current_stock: 12, min_stock_alert: 3 },
+  { id: 'inv_19', part_name: 'Yamaha FZ / R15 Front Disc Pads', category: 'Brake Pad', price: 450, current_stock: 15, min_stock_alert: 3 },
+  { id: 'inv_20', part_name: 'Suzuki Access 125 Front Disc Pads', category: 'Brake Pad', price: 280, current_stock: 15, min_stock_alert: 4 },
+
+  // --- SPARK PLUG ---
+  { id: 'inv_21', part_name: 'NGK Spark Plug (CPR8EA-9)', category: 'Spark Plug', price: 130, current_stock: 40, min_stock_alert: 8 },
+  { id: 'inv_22', part_name: 'BOSCH Spark Plug Twin', category: 'Spark Plug', price: 110, current_stock: 35, min_stock_alert: 10 },
+  { id: 'inv_23', part_name: 'Spark Plug Bosch UR4AC (Splendor/HF Deluxe)', category: 'Spark Plug', price: 95, current_stock: 50, min_stock_alert: 10 },
+  { id: 'inv_24', part_name: 'Spark Plug NGK Laser Iridium (High Performance)', category: 'Spark Plug', price: 650, current_stock: 10, min_stock_alert: 2 },
+
+  // --- CHAIN KIT & TRANSMISSION ---
+  { id: 'inv_25', part_name: 'Hero Splendor / HF Deluxe Chain Sprocket Kit', category: 'Chain Kit', price: 950, current_stock: 8, min_stock_alert: 2 },
+  { id: 'inv_26', part_name: 'Bajaj Pulsar 150 Heavy Chain Kit', category: 'Chain Kit', price: 1250, current_stock: 6, min_stock_alert: 2 },
+  { id: 'inv_27', part_name: 'Honda CB Shine Chain & Sprocket Kit (Rolon)', category: 'Chain Kit', price: 980, current_stock: 12, min_stock_alert: 3 },
+  { id: 'inv_28', part_name: 'TVS Apache RTR 160 Chain Sprocket Kit', category: 'Chain Kit', price: 1350, current_stock: 10, min_stock_alert: 3 },
+  { id: 'inv_29', part_name: 'Royal Enfield Classic 350 Chain Sprocket Kit', category: 'Chain Kit', price: 1850, current_stock: 8, min_stock_alert: 2 },
+
+  // --- AIR FILTER & OIL FILTER ---
+  { id: 'inv_30', part_name: 'Honda Activa 3G/4G/5G/6G Air Filter', category: 'Air Filter', price: 190, current_stock: 15, min_stock_alert: 4 },
+  { id: 'inv_31', part_name: 'Hero Passion Pro Air Filter Foam', category: 'Air Filter', price: 85, current_stock: 30, min_stock_alert: 5 },
+  { id: 'inv_32', part_name: 'Hero Splendor / HF Deluxe Air Filter Element', category: 'Air Filter', price: 120, current_stock: 35, min_stock_alert: 6 },
+  { id: 'inv_33', part_name: 'Bajaj Pulsar 150/180 Air Filter Assembly', category: 'Air Filter', price: 160, current_stock: 20, min_stock_alert: 4 },
+  { id: 'inv_34', part_name: 'TVS Jupiter / WEGO Air Filter', category: 'Air Filter', price: 175, current_stock: 20, min_stock_alert: 4 },
+  { id: 'inv_35', part_name: 'Royal Enfield Classic 350 Oil Filter Element', category: 'Oil Filter', price: 95, current_stock: 30, min_stock_alert: 5 },
+  { id: 'inv_36', part_name: 'Bajaj Pulsar 220 / Dominar Oil Filter', category: 'Oil Filter', price: 75, current_stock: 25, min_stock_alert: 5 },
+  { id: 'inv_37', part_name: 'TVS Apache RTR Oil Filter O-Ring Assembly', category: 'Oil Filter', price: 65, current_stock: 30, min_stock_alert: 5 },
+
+  // --- CLUTCH PLATE & CABLES ---
+  { id: 'inv_38', part_name: 'Clutch Friction Plate Set Hero Splendor (FCC)', category: 'Clutch Plate', price: 380, current_stock: 15, min_stock_alert: 4 },
+  { id: 'inv_39', part_name: 'Clutch Plate Set Bajaj Pulsar 150', category: 'Clutch Plate', price: 580, current_stock: 12, min_stock_alert: 3 },
+  { id: 'inv_40', part_name: 'Scooter Clutch Shoe Assembly (Activa 5G/6G)', category: 'Clutch Plate', price: 1200, current_stock: 8, min_stock_alert: 2 },
+  { id: 'inv_41', part_name: 'Hero Splendor Clutch Cable (Uno Minda)', category: 'Clutch Cable', price: 120, current_stock: 25, min_stock_alert: 5 },
+  { id: 'inv_42', part_name: 'Bajaj Pulsar 150 Heavy Clutch Cable', category: 'Clutch Cable', price: 160, current_stock: 15, min_stock_alert: 4 },
+  { id: 'inv_43', part_name: 'TVS Apache RTR Clutch Cable', category: 'Clutch Cable', price: 170, current_stock: 15, min_stock_alert: 4 },
+  { id: 'inv_44', part_name: 'Royal Enfield Classic 350 Clutch Cable', category: 'Clutch Cable', price: 220, current_stock: 10, min_stock_alert: 3 },
+  { id: 'inv_45', part_name: 'Hero Splendor Accelerator Cable', category: 'Accelerator Cable', price: 110, current_stock: 20, min_stock_alert: 5 },
+  { id: 'inv_46', part_name: 'Honda Activa Accelerator Throttle Cable', category: 'Accelerator Cable', price: 140, current_stock: 25, min_stock_alert: 5 },
+
+  // --- BULBS & ELECTRICAL ---
+  { id: 'inv_47', part_name: 'Headlight Bulb Halogen 12V 35/35W HS1 (Philips)', category: 'Bulbs', price: 140, current_stock: 30, min_stock_alert: 6 },
+  { id: 'inv_48', part_name: 'LED Headlight Bulb 12V Universal High Beam', category: 'Bulbs', price: 350, current_stock: 15, min_stock_alert: 4 },
+  { id: 'inv_49', part_name: 'Indicator Light Assembly Universal (Clear Lens)', category: 'Bulbs', price: 85, current_stock: 40, min_stock_alert: 8 },
+  { id: 'inv_50', part_name: 'Tail Light Bulb 12V (Philips)', category: 'Bulbs', price: 40, current_stock: 40, min_stock_alert: 10 },
+
+  // --- BATTERY ---
+  { id: 'inv_51', part_name: 'Exide Rider 12V 4Ah Maintenance Free Battery (XLTZ4)', category: 'Battery', price: 1150, current_stock: 15, min_stock_alert: 3 },
+  { id: 'inv_52', part_name: 'Amaron Beta 12V 4Ah Maintenance Free Battery (ABTZ4L)', category: 'Battery', price: 1180, current_stock: 15, min_stock_alert: 3 },
+  { id: 'inv_53', part_name: 'Exide Xplore 12V 5Ah Battery (Activa 5G/6G/Jupiter)', category: 'Battery', price: 1350, current_stock: 12, min_stock_alert: 3 },
+  { id: 'inv_54', part_name: 'Amaron Pro Rider 12V 5Ah Battery', category: 'Battery', price: 1380, current_stock: 12, min_stock_alert: 3 },
+  { id: 'inv_55', part_name: 'Exide Rider 12V 9Ah Heavy Duty Battery (Pulsar/Bullet)', category: 'Battery', price: 1950, current_stock: 8, min_stock_alert: 2 },
+
+  // --- TYRES ---
+  { id: 'inv_56', part_name: 'MRF Zapper 90/90-12 Tubeless Scooter Tyre', category: 'Tyres', price: 1250, current_stock: 15, min_stock_alert: 3 },
+  { id: 'inv_57', part_name: 'CEAT Gripp X3 90/90-12 Tubeless Scooter Tyre', category: 'Tyres', price: 1180, current_stock: 15, min_stock_alert: 3 },
+  { id: 'inv_58', part_name: 'MRF Nylogrip Zapper 2.75-18 Tube Type Front Tyre', category: 'Tyres', price: 1450, current_stock: 12, min_stock_alert: 3 },
+  { id: 'inv_59', part_name: 'CEAT Gripp X3 100/90-17 Tubeless Rear Tyre (Pulsar/Apache)', category: 'Tyres', price: 1950, current_stock: 8, min_stock_alert: 2 },
+  { id: 'inv_60', part_name: 'Heavy Duty Butyl Inner Tube 2.75-18', category: 'Tyres', price: 280, current_stock: 30, min_stock_alert: 6 }
 ];
 
 export default function InventoryPage() {
@@ -49,9 +116,9 @@ export default function InventoryPage() {
   });
 
   const categories = [
-    'ALL', 'Engine Oil', 'Air Filter', 'Oil Filter', 'Spark Plug', 
-    'Brake Shoe', 'Brake Pad', 'Chain Kit', 'Clutch Plate', 
-    'Clutch Cable', 'Accelerator Cable', 'Bulbs', 'Battery', 'Tyres', 'General'
+    'ALL', 'Engine Oil', 'Air Filter', 'Oil Filter', 'Spark Plug', 'Brake Shoe', 
+    'Brake Pad', 'Chain Kit', 'Clutch Plate', 'Clutch Cable', 'Accelerator Cable', 
+    'Bulbs', 'Battery', 'Tyres', 'General'
   ];
 
   const fetchInventory = async () => {
@@ -61,37 +128,30 @@ export default function InventoryPage() {
       const res = await API.get('/inventory/', { timeout: 1500 });
       backendItems = res.data || [];
     } catch (err) {
-      console.warn('Backend API offline or unreachable for inventory, using fast local+cloud store:', err);
+      console.warn('Backend API offline for inventory, using fast local+cloud store:', err);
     }
 
-    const localRaw = localStorage.getItem('inventory_items');
-    let localItems = localRaw ? JSON.parse(localRaw) : DEFAULT_SPARE_PARTS;
-    if (!localRaw) {
-      localStorage.setItem('inventory_items', JSON.stringify(DEFAULT_SPARE_PARTS));
-    }
-
-    const cloudItems = await fetchCloudInventory();
+    const localInv = JSON.parse(localStorage.getItem('inventory_items') || JSON.stringify(DEFAULT_SPARE_PARTS));
+    const cloudInv = await fetchCloudInventory();
 
     const allMap = new Map();
-    [...backendItems, ...localItems, ...cloudItems].forEach(i => {
-      if (i && typeof i === 'object') {
-        const pName = i.part_name || i.name || 'Spare Part';
-        const key = String(i.id || pName);
+    [...backendItems, ...localInv, ...cloudInv, ...DEFAULT_SPARE_PARTS].forEach(item => {
+      if (item && typeof item === 'object' && (item.part_name || item.name)) {
+        const key = String(item.id || item.part_name || item.name);
         if (!allMap.has(key)) {
           allMap.set(key, {
-            ...i,
-            part_name: pName,
-            category: i.category || 'General',
-            price: parseFloat(i.price || 0),
-            current_stock: parseInt(i.current_stock || 0, 10),
-            min_stock_alert: i.min_stock_alert !== undefined && i.min_stock_alert !== '' ? parseInt(i.min_stock_alert, 10) : ''
+            id: item.id || key,
+            part_name: item.part_name || item.name,
+            category: item.category || 'General',
+            price: parseFloat(item.price || 0),
+            current_stock: parseInt(item.current_stock || 0, 10),
+            min_stock_alert: item.min_stock_alert !== undefined && item.min_stock_alert !== '' ? parseInt(item.min_stock_alert, 10) : 2
           });
         }
       }
     });
 
-    const merged = Array.from(allMap.values());
-    setItems(merged);
+    setItems(Array.from(allMap.values()));
     setLoading(false);
   };
 
@@ -99,7 +159,7 @@ export default function InventoryPage() {
     fetchInventory();
   }, []);
 
-  const handleOpenAdd = () => {
+  const openAddModal = () => {
     setEditingItem(null);
     setFormData({
       part_name: '',
@@ -140,12 +200,12 @@ export default function InventoryPage() {
 
   const saveNewPart = async (data) => {
     const newPartObj = {
-      id: Date.now(),
+      id: `inv_${Date.now()}`,
       part_name: data.part_name,
       category: data.category || 'General',
       price: parseFloat(data.price || 0),
       current_stock: parseInt(data.current_stock || 0, 10),
-      min_stock_alert: data.min_stock_alert !== '' ? parseInt(data.min_stock_alert, 10) : '',
+      min_stock_alert: data.min_stock_alert !== '' ? parseInt(data.min_stock_alert, 10) : 2,
       created_at: new Date().toISOString()
     };
 
@@ -176,7 +236,7 @@ export default function InventoryPage() {
         category: passwordModal.pendingData.category || 'General',
         price: parseFloat(passwordModal.pendingData.price || 0),
         current_stock: parseInt(passwordModal.pendingData.current_stock || 0, 10),
-        min_stock_alert: passwordModal.pendingData.min_stock_alert !== '' ? parseInt(passwordModal.pendingData.min_stock_alert, 10) : ''
+        min_stock_alert: passwordModal.pendingData.min_stock_alert !== '' ? parseInt(passwordModal.pendingData.min_stock_alert, 10) : 2
       };
 
       pushCloudInventoryItem(updatedObj).catch(console.warn);
@@ -200,17 +260,20 @@ export default function InventoryPage() {
     } else if (passwordModal.actionType === 'DELETE') {
       const targetItem = passwordModal.item;
       const trashObj = {
-        id: Date.now(),
+        id: `trash_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
         item_type: 'Inventory',
         title: targetItem.part_name || targetItem.name || 'Spare Part',
+        deleted_by: 'Patel Owner (Admin)',
         deleted_at: new Date().toISOString(),
+        details: `Category: ${targetItem.category || 'General'} • Price: ₹${targetItem.price || 0} • Stock: ${targetItem.current_stock || 0} Units`,
         payload: targetItem
       };
 
       // 1. Move to Recycle Bin (local & cloud)
-      pushCloudRecycleBinItem(trashObj).catch(console.warn);
       const existingTrash = JSON.parse(localStorage.getItem('recycle_bin_items') || '[]');
-      localStorage.setItem('recycle_bin_items', JSON.stringify([trashObj, ...existingTrash]));
+      const updatedTrash = [trashObj, ...existingTrash];
+      localStorage.setItem('recycle_bin_items', JSON.stringify(updatedTrash));
+      pushCloudRecycleBinItem(trashObj).catch(console.warn);
 
       // 2. Remove from active inventory (local & cloud)
       deleteCloudInventoryItem(targetItem.id).catch(console.warn);

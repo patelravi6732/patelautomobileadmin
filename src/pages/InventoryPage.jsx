@@ -327,7 +327,7 @@ export default function InventoryPage() {
 
         <button
           type="button"
-          onClick={handleOpenAdd}
+          onClick={openAddModal}
           className="inline-flex items-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-extrabold text-xs px-6 py-3.5 rounded-2xl shadow-lg shadow-blue-600/20 transition-all hover:scale-105 active:scale-95 shrink-0"
         >
           <Plus className="w-4.5 h-4.5 stroke-[3]" /> + Add New Part

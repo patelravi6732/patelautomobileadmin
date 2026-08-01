@@ -22,9 +22,9 @@ export function generateBookingNotificationMessage(booking, isAccepted, lang = '
 
 આપના વાહન ${vehicleNumber} (${bikeModel}) માટેની સર્વિસ એપોઇન્ટમેન્ટ સફળતાપૂર્વક સ્વીકારવામાં (ACCEPT) આવી છે.
 
-📅 તારીખ: ${prefDate}
-⏰ સમય: ${prefTime}
-📍 સરનામું: પટેલ ઓટોમોબાઇલ્સ, દાંડી તળાવ પાસે, દાંડી, વલસાડ
+🔹 તારીખ: ${prefDate}
+🔹 સમય: ${prefTime}
+🔹 સરનામું: પટેલ ઓટોમોબાઇલ્સ, દાંડી તળાવ પાસે, દાંડી, વલસાડ
 
 કૃપા કરીને નિયત સમયે આપનું વાહન વર્કશોપ પર લાવવા નમ્ર વિનંતી. કોઈ પણ સહાય માટે સંપર્ક કરો: ${phone}.
 
@@ -35,9 +35,9 @@ export function generateBookingNotificationMessage(booking, isAccepted, lang = '
 
 આપને જણાવતાં આનંદ થાય છે કે આપના વાહન ${vehicleNumber} નું સર્વિસ બુકિંગ પટેલ ઓટોમોબાઇલ્સ (દાંડી, વલસાડ) દ્વારા કન્ફર્મ કરવામાં આવ્યું છે.
 
-📅 બુકિંગ તારીખ: ${prefDate}
-⏰ ટાઇમ સ્લોટ: ${prefTime}
-🛠️ મોડેલ: ${bikeModel}
+🔹 બુકિંગ તારીખ: ${prefDate}
+🔹 ટાઇમ સ્લોટ: ${prefTime}
+🔹 મોડેલ: ${bikeModel}
 
 કૃપા કરી સમયસર પધારવા વિનંતી. વધુ માહિતી માટે સંપર્ક કરો: ${phone}.
 
@@ -50,8 +50,8 @@ export function generateBookingNotificationMessage(booking, isAccepted, lang = '
 
 આપનું ${vehicleNumber} (${bikeModel}) નું સર્વિસ બુકિંગ સ્વીકારાઈ ગયું છે.
 
-📅 તારીખ: ${prefDate} (${prefTime})
-📍 સ્થળ: પટેલ ઓટોમોબાઇલ્સ, દાંડી તળાવ પાસે, વલસાડ
+🔹 તારીખ: ${prefDate} (${prefTime})
+🔹 સ્થળ: પટેલ ઓટોમોબાઇલ્સ, દાંડી તળાવ પાસે, વલસાડ
 
 આપના આગમન સમયે વર્કશોપ બે તૈયાર રાખવામાં આવશે. સંપર્ક: ${phone}.
 
@@ -97,9 +97,9 @@ Greetings from Patel Automobiles (Dandi, Valsad)!
 
 We are pleased to inform you that your service appointment for vehicle ${vehicleNumber} (${bikeModel}) has been ACCEPTED & CONFIRMED.
 
-📅 Date: ${prefDate}
-⏰ Preferred Slot: ${prefTime}
-📍 Location: Patel Automobiles, Near Dandi Pond, Dandi, Valsad
+🔹 Date: ${prefDate}
+🔹 Preferred Slot: ${prefTime}
+🔹 Location: Patel Automobiles, Near Dandi Pond, Dandi, Valsad
 
 Please bring your vehicle to our workshop at your scheduled time. For any queries, contact us at ${phone}.
 
@@ -121,8 +121,8 @@ Patel Automobiles`,
 
 Your service bay reservation at Patel Automobiles (Dandi, Valsad) is APPROVED!
 
-🏍️ Vehicle: ${vehicleNumber} (${bikeModel})
-📅 Date: ${prefDate} (${prefTime})
+🔹 Vehicle: ${vehicleNumber} (${bikeModel})
+🔹 Date: ${prefDate} (${prefTime})
 
 We look forward to serving your vehicle. Contact: ${phone}.
 

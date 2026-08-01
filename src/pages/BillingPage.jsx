@@ -3,6 +3,7 @@ import { Receipt, Printer, Eye, Wrench, Calendar, Phone, MapPin, Trash2, Camera,
 import html2canvas from 'html2canvas';
 import API from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { pushCloudRecycleBinItem } from '../utils/cloudSync';
 import AdminPasswordModal from '../components/AdminPasswordModal';
 import { LOGO_BASE64 } from '../assets/logoBase64';
 import { sharePhotoToWhatsApp } from '../utils/whatsappPhotoSharer';
@@ -211,8 +212,25 @@ export default function BillingPage() {
 
   const handleDeleteWithPassword = async (adminPassword) => {
     if (!deleteModal.invoice) return;
-    const targetId = deleteModal.invoice.id;
+    const targetInv = deleteModal.invoice;
+    const targetId = targetInv.id;
 
+    // 1. Move to Recycle Bin (local & cloud)
+    const trashObj = {
+      id: `trash_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      item_type: 'Billing Invoice',
+      title: `Invoice: ${targetInv.invoice_number || targetId} (${targetInv.customer_name})`,
+      deleted_by: 'Patel Owner (Admin)',
+      deleted_at: new Date().toISOString(),
+      details: `Customer: ${targetInv.customer_name} • Phone: ${targetInv.mobile_number} • Bike: ${targetInv.vehicle_number} • Total: ₹${targetInv.total_amount || 0}`,
+      payload: targetInv
+    };
+
+    const existingTrash = JSON.parse(localStorage.getItem('recycle_bin_items') || '[]');
+    localStorage.setItem('recycle_bin_items', JSON.stringify([trashObj, ...existingTrash]));
+    pushCloudRecycleBinItem(trashObj).catch(console.warn);
+
+    // 2. Remove locally
     setInvoices(prev => prev.filter(inv => String(inv.id) !== String(targetId)));
     setDeleteModal({ isOpen: false, invoice: null });
 
@@ -221,9 +239,9 @@ export default function BillingPage() {
         admin_password: adminPassword
       }, { timeout: 2000 });
     } catch (err) {
-      console.warn('Backend API offline, deleted invoice locally:', err);
+      console.warn('Backend API offline, moved invoice to Recycle Bin locally:', err);
     } finally {
-      alert('Invoice deleted successfully!');
+      alert('Invoice moved to Recycle Bin!');
     }
   };
 

@@ -4,7 +4,7 @@ import API from '../services/api';
 import AdminPasswordModal from '../components/AdminPasswordModal';
 import { useAuth } from '../context/AuthContext';
 import { generateInquiryReplyMessage } from '../utils/aiMessageGenerator';
-import { fetchCloudMessages, markCloudMessageRead, deleteCloudMessage } from '../utils/cloudSync';
+import { fetchCloudMessages, markCloudMessageRead, deleteCloudMessage, pushCloudRecycleBinItem } from '../utils/cloudSync';
 
 export default function MessagesPage() {
   const { garageInfo } = useAuth();
@@ -126,9 +126,25 @@ export default function MessagesPage() {
 
   const handleDeleteWithPassword = async (adminPassword) => {
     if (!deleteModal.messageObj) return;
-    const targetId = deleteModal.messageObj.id;
+    const targetMsg = deleteModal.messageObj;
+    const targetId = targetMsg.id;
 
-    // Delete locally and from cloud bin
+    // 1. Move to Recycle Bin (local & cloud)
+    const trashObj = {
+      id: `trash_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      item_type: 'Customer Inquiry Message',
+      title: `Message: ${targetMsg.name || 'Customer'} (${targetMsg.phone || 'N/A'})`,
+      deleted_by: 'Patel Owner (Admin)',
+      deleted_at: new Date().toISOString(),
+      details: `Sender: ${targetMsg.name || 'Customer'} • Phone: ${targetMsg.phone} • Text: "${(targetMsg.message || '').slice(0, 50)}..."`,
+      payload: targetMsg
+    };
+
+    const existingTrash = JSON.parse(localStorage.getItem('recycle_bin_items') || '[]');
+    localStorage.setItem('recycle_bin_items', JSON.stringify([trashObj, ...existingTrash]));
+    pushCloudRecycleBinItem(trashObj).catch(console.warn);
+
+    // 2. Delete locally and from cloud bin
     deleteCloudMessage(targetId).catch(console.warn);
     const localMsgs = JSON.parse(localStorage.getItem('local_messages') || '[]');
     const updatedLocal = localMsgs.filter(m => String(m.id) !== String(targetId));
@@ -142,9 +158,9 @@ export default function MessagesPage() {
         admin_password: adminPassword
       }, { timeout: 2000 });
     } catch (err) {
-      console.warn('Backend API offline, deleted message locally and cloud store:', err);
+      console.warn('Backend API offline, moved message to Recycle Bin locally and cloud store:', err);
     } finally {
-      alert('Message deleted successfully!');
+      alert('Message moved to Recycle Bin!');
     }
   };
 

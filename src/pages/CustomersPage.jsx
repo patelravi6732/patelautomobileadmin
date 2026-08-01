@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Users, Search, Phone, Bike, Calendar, IndianRupee, Trash2, Lock, ShieldCheck, AlertTriangle } from 'lucide-react';
 import API from '../services/api';
+import { pushCloudRecycleBinItem } from '../utils/cloudSync';
 
 export default function CustomersPage() {
   const [customers, setCustomers] = useState([]);
@@ -70,8 +71,25 @@ export default function CustomersPage() {
 
     setDeleting(true);
     setModalError(null);
-    const targetId = selectedCustomer.id;
+    const targetCust = selectedCustomer;
+    const targetId = targetCust.id;
 
+    // 1. Move to Recycle Bin (local & cloud)
+    const trashObj = {
+      id: `trash_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      item_type: 'Customer Record',
+      title: `Customer: ${targetCust.customer_name} (${targetCust.vehicle_number || 'N/A'})`,
+      deleted_by: 'Patel Owner (Admin)',
+      deleted_at: new Date().toISOString(),
+      details: `Name: ${targetCust.customer_name} • Phone: ${targetCust.mobile_number || 'N/A'} • Bike Model: ${targetCust.bike_model || 'Two Wheeler'}`,
+      payload: targetCust
+    };
+
+    const existingTrash = JSON.parse(localStorage.getItem('recycle_bin_items') || '[]');
+    localStorage.setItem('recycle_bin_items', JSON.stringify([trashObj, ...existingTrash]));
+    pushCloudRecycleBinItem(trashObj).catch(console.warn);
+
+    // 2. Remove locally
     setCustomers(prev => prev.filter(c => String(c.id) !== String(targetId)));
     setShowPasswordModal(false);
 
@@ -80,10 +98,10 @@ export default function CustomersPage() {
         admin_password: adminPassword
       }, { timeout: 2000 });
     } catch (err) {
-      console.warn('Backend API offline, deleted customer locally:', err);
+      console.warn('Backend API offline, moved customer to Recycle Bin locally:', err);
     } finally {
       setDeleting(false);
-      alert('Customer deleted successfully!');
+      alert('Customer moved to Recycle Bin!');
     }
   };
 

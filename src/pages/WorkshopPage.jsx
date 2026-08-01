@@ -4,7 +4,7 @@ import {
   IndianRupee, Package, Bike, User, Phone, Check, Receipt, UserCheck, Users, Lock, Search, ChevronDown, Edit2, Tag
 } from 'lucide-react';
 import API from '../services/api';
-import { fetchCloudJobs, updateCloudJobStatus, deleteCloudJob, fetchCloudInventory, pushCloudJob } from '../utils/cloudSync';
+import { fetchCloudJobs, updateCloudJobStatus, deleteCloudJob, fetchCloudInventory, pushCloudJob, pushCloudRecycleBinItem } from '../utils/cloudSync';
 import { useAuth } from '../context/AuthContext';
 import AdminPasswordModal from '../components/AdminPasswordModal';
 import { DEFAULT_SPARE_PARTS } from './InventoryPage';
@@ -337,9 +337,25 @@ export default function WorkshopPage() {
 
   const handleDeleteJobWithPassword = async (adminPassword) => {
     if (!deleteJobModal.job) return;
-    const targetId = deleteJobModal.job.id;
+    const targetJob = deleteJobModal.job;
+    const targetId = targetJob.id;
 
-    // Delete from cloud store & local memory immediately
+    // 1. Move to Recycle Bin (local & cloud)
+    const trashObj = {
+      id: `trash_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      item_type: 'Workshop Job',
+      title: `Service Job: ${targetJob.vehicle_number} (${targetJob.customer_name})`,
+      deleted_by: 'Patel Owner (Admin)',
+      deleted_at: new Date().toISOString(),
+      details: `Customer: ${targetJob.customer_name} • Phone: ${targetJob.mobile_number} • Model: ${targetJob.bike_model || 'Bike'} • Total: ₹${targetJob.live_total || 0}`,
+      payload: targetJob
+    };
+
+    const existingTrash = JSON.parse(localStorage.getItem('recycle_bin_items') || '[]');
+    localStorage.setItem('recycle_bin_items', JSON.stringify([trashObj, ...existingTrash]));
+    pushCloudRecycleBinItem(trashObj).catch(console.warn);
+
+    // 2. Delete from cloud store & local memory
     deleteCloudJob(targetId).catch(console.warn);
     const currentJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
     const updatedLocal = currentJobs.filter(j => String(j.id) !== String(targetId));
@@ -353,9 +369,9 @@ export default function WorkshopPage() {
         admin_password: adminPassword
       }, { timeout: 2000 });
     } catch (err) {
-      console.warn('Backend API offline, deleted service job locally & cloud');
+      console.warn('Backend API offline, moved service job to Recycle Bin locally & cloud');
     } finally {
-      alert('Service job deleted successfully!');
+      alert('Service job moved to Recycle Bin!');
     }
   };
 

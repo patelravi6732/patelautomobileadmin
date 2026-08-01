@@ -236,9 +236,25 @@ export default function BookingsPage() {
 
   const handleDeleteWithPassword = async (adminPassword) => {
     if (!deleteModal.booking) return;
-    const targetId = deleteModal.booking.id;
+    const targetBooking = deleteModal.booking;
+    const targetId = targetBooking.id;
 
-    // Delete locally and from cloud bin
+    // 1. Move to Recycle Bin (local & cloud)
+    const trashObj = {
+      id: `trash_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      item_type: 'Booking',
+      title: `Booking: ${targetBooking.customer_name} (${targetBooking.vehicle_number})`,
+      deleted_by: 'Patel Owner (Admin)',
+      deleted_at: new Date().toISOString(),
+      details: `Customer: ${targetBooking.customer_name} • Phone: ${targetBooking.mobile_number} • Date: ${targetBooking.preferred_date} (${targetBooking.preferred_time || 'Morning'})`,
+      payload: targetBooking
+    };
+
+    const existingTrash = JSON.parse(localStorage.getItem('recycle_bin_items') || '[]');
+    localStorage.setItem('recycle_bin_items', JSON.stringify([trashObj, ...existingTrash]));
+    pushCloudRecycleBinItem(trashObj).catch(console.warn);
+
+    // 2. Delete locally and from cloud store
     deleteCloudBooking(targetId).catch(console.warn);
     const localBookings = JSON.parse(localStorage.getItem('local_bookings') || '[]');
     const updatedLocal = localBookings.filter(b => String(b.id) !== String(targetId));
@@ -252,9 +268,9 @@ export default function BookingsPage() {
         admin_password: adminPassword
       }, { timeout: 2000 });
     } catch (err) {
-      console.warn('Backend API offline, deleted booking locally & cloud store:', err);
+      console.warn('Backend API offline, moved booking to Recycle Bin locally & cloud store:', err);
     } finally {
-      alert('Booking deleted successfully!');
+      alert('Booking moved to Recycle Bin!');
     }
   };
 

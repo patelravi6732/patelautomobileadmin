@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Clock, LogIn, LogOut, CheckCircle2, UserCheck, Calendar, Undo2, Trash2, XCircle, AlertCircle, Award, Eye, DollarSign, PlusCircle, CreditCard, ChevronLeft, ChevronRight } from 'lucide-react';
 import API from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { pushCloudRecycleBinItem } from '../utils/cloudSync';
 import AdminPasswordModal from '../components/AdminPasswordModal';
 import MechanicProfileModal from '../components/MechanicProfileModal';
 
@@ -124,15 +125,39 @@ export default function AttendancePage() {
 
   const handleDeleteWithPassword = async (adminPassword) => {
     if (!deleteModal.item) return;
+    const targetItem = deleteModal.item;
 
-    if (deleteModal.type === 'ATTENDANCE') {
-      await API.post(`/attendance/${deleteModal.item.id}/delete_with_password/`, { admin_password: adminPassword });
-      alert('Attendance log moved to Recycle Bin!');
-    } else if (deleteModal.type === 'SALARY') {
-      await API.post(`/salary-payments/${deleteModal.item.id}/delete_with_password/`, { admin_password: adminPassword });
-      alert('Salary payout record moved to Recycle Bin!');
+    const trashObj = {
+      id: `trash_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      item_type: deleteModal.type === 'ATTENDANCE' ? 'Attendance Log' : 'Salary Payout',
+      title: deleteModal.type === 'ATTENDANCE' 
+        ? `Attendance: ${targetItem.mechanic_name || 'Mechanic'} (${targetItem.date || 'Log'})` 
+        : `Salary: ₹${targetItem.amount || 0} (${targetItem.mechanic_name || 'Mechanic'})`,
+      deleted_by: 'Patel Owner (Admin)',
+      deleted_at: new Date().toISOString(),
+      details: deleteModal.type === 'ATTENDANCE'
+        ? `Mechanic: ${targetItem.mechanic_name} • Check-In: ${targetItem.check_in || 'N/A'} • Check-Out: ${targetItem.check_out || 'N/A'}`
+        : `Mechanic: ${targetItem.mechanic_name} • Amount: ₹${targetItem.amount} • Type: ${targetItem.payment_type || 'Advance'}`,
+      payload: targetItem
+    };
+
+    const existingTrash = JSON.parse(localStorage.getItem('recycle_bin_items') || '[]');
+    localStorage.setItem('recycle_bin_items', JSON.stringify([trashObj, ...existingTrash]));
+    pushCloudRecycleBinItem(trashObj).catch(console.warn);
+
+    try {
+      if (deleteModal.type === 'ATTENDANCE') {
+        await API.post(`/attendance/${targetItem.id}/delete_with_password/`, { admin_password: adminPassword }, { timeout: 2000 });
+      } else if (deleteModal.type === 'SALARY') {
+        await API.post(`/salary-payments/${targetItem.id}/delete_with_password/`, { admin_password: adminPassword }, { timeout: 2000 });
+      }
+    } catch (err) {
+      console.warn('Backend API offline, moved record to Recycle Bin locally:', err);
+    } finally {
+      alert(`${deleteModal.type === 'ATTENDANCE' ? 'Attendance log' : 'Salary payout'} moved to Recycle Bin!`);
+      setDeleteModal({ isOpen: false, item: null, type: null });
+      fetchData();
     }
-    fetchData();
   };
 
   const openMechanicProfile = (name) => {

@@ -106,6 +106,29 @@ export async function pushCloudJob(newJob) {
   let updated = existing;
   if (!exists) {
     updated = [newJob, ...existing];
+  } else {
+    updated = existing.map(j => (j.id === newJob.id || String(j.id) === String(newJob.id)) ? { ...j, ...newJob } : j);
   }
+  await saveMasterStore({ ...store, jobs: updated });
+}
+
+export async function updateCloudJobStatus(jobId, newStatus) {
+  if (!jobId) return;
+  const store = await fetchMasterStore();
+  const existing = (store.jobs || []).filter(j => j && typeof j === 'object');
+  const updated = existing.map(j => {
+    if (j.id === jobId || String(j.id) === String(jobId)) {
+      return { ...j, status: newStatus };
+    }
+    return j;
+  });
+  await saveMasterStore({ ...store, jobs: updated });
+}
+
+export async function deleteCloudJob(jobId) {
+  if (!jobId) return;
+  const store = await fetchMasterStore();
+  const existing = (store.jobs || []).filter(j => j && typeof j === 'object');
+  const updated = existing.filter(j => j.id !== jobId && String(j.id) !== String(jobId));
   await saveMasterStore({ ...store, jobs: updated });
 }

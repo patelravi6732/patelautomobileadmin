@@ -238,6 +238,10 @@ export default function KhataBookPage() {
         d.balance = d.pending_amount;
         const strId = String(d.id || '');
         const cleanVeh = (d.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+        
+        // Active pending dues from bills MUST ALWAYS display in KhataBook!
+        if (d.pending_amount > 0) return true;
+        
         return !deletedIds.includes(strId) && !deletedIds.includes(cleanVeh);
       });
 

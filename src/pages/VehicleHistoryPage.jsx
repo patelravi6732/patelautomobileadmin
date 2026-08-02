@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Search, Bike, Calendar, CheckCircle2, ShieldCheck, Wrench, Clock, FileText, Sparkles, AlertCircle, ArrowRight, Phone, User, Lock } from 'lucide-react';
 import API from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { fetchCloudJobs, fetchCloudBookings, fetchCloudInvoices, fetchCloudDeletedIds } from '../utils/cloudSync';
+import { fetchCloudJobs, fetchCloudBookings, fetchCloudInvoices, fetchCloudDeletedIds, fetchCloudKhataEntries } from '../utils/cloudSync';
 import { formatDateDMY } from '../utils/dateFormatter';
 
 export default function VehicleHistoryPage() {
@@ -50,15 +50,19 @@ export default function VehicleHistoryPage() {
     const deletedIds = await fetchCloudDeletedIds().catch(() => []);
 
     const allJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
-    const cloudJobs = await fetchCloudJobs();
+    const cloudJobs = await fetchCloudJobs().catch(() => []);
     const combinedJobs = [...allJobs, ...cloudJobs];
 
     const localInvoices = JSON.parse(localStorage.getItem('local_invoices') || '[]');
-    const cloudInvoices = await fetchCloudInvoices();
+    const cloudInvoices = await fetchCloudInvoices().catch(() => []);
     const combinedInvoices = [...localInvoices, ...cloudInvoices];
 
+    const localKhata = JSON.parse(localStorage.getItem('khata_entries') || '[]');
+    const cloudKhata = await fetchCloudKhataEntries().catch(() => []);
+    const combinedKhata = [...localKhata, ...cloudKhata];
+
     const localBookings = JSON.parse(localStorage.getItem('local_bookings') || '[]');
-    const cloudBookings = await fetchCloudBookings();
+    const cloudBookings = await fetchCloudBookings().catch(() => []);
     const combinedBookings = [...localBookings, ...cloudBookings];
 
     const matchedJobs = combinedJobs.filter(j => {
@@ -79,6 +83,15 @@ export default function VehicleHistoryPage() {
       return isVehMatch || isPhoneMatch;
     });
 
+    const matchedKhata = combinedKhata.filter(k => {
+      if (!k || deletedIds.includes(String(k.id))) return false;
+      const kVeh = (k.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+      const kPhone = (k.mobile_number || k.phone || '').replace(/\D/g, '').slice(-10);
+      const isVehMatch = Boolean(kVeh && cleanInputVeh && (kVeh === cleanInputVeh || kVeh.includes(cleanInputVeh) || cleanInputVeh.includes(kVeh)));
+      const isPhoneMatch = Boolean(kPhone && cleanInputPhone && (kPhone === cleanInputPhone || kPhone.includes(cleanInputPhone)));
+      return isVehMatch || isPhoneMatch;
+    });
+
     const matchedBookings = combinedBookings.filter(b => {
       if (!b || deletedIds.includes(String(b.id))) return false;
       const bVeh = (b.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
@@ -88,19 +101,19 @@ export default function VehicleHistoryPage() {
       return isVehMatch || isPhoneMatch;
     });
 
-    if (matchedJobs.length === 0 && matchedInvs.length === 0 && matchedBookings.length === 0) {
+    if (matchedJobs.length === 0 && matchedInvs.length === 0 && matchedKhata.length === 0 && matchedBookings.length === 0) {
       setHistoryData(null);
       setErrorMsg(`No service history records found matching vehicle ${vehicleNumber.toUpperCase()} and mobile number ${mobileNumber}. Please verify details.`);
       setLoading(false);
       return;
     }
 
-    const firstMatch = matchedJobs[0] || matchedInvs[0] || matchedBookings[0];
+    const firstMatch = matchedJobs[0] || matchedInvs[0] || matchedKhata[0] || matchedBookings[0];
     const customerName = firstMatch.customer_name || 'Valued Customer';
     const bikeModel = firstMatch.bike_model || 'Two Wheeler';
-    const regPhone = firstMatch.mobile_number || mobileNumber;
+    const regPhone = firstMatch.mobile_number || firstMatch.phone || mobileNumber;
 
-    const timelineHistory = [...matchedJobs, ...matchedInvs].map((item, idx) => {
+    const timelineHistory = [...matchedJobs, ...matchedInvs, ...matchedKhata].map((item, idx) => {
       const labour = parseFloat(item.labour_charge || 100);
       const partsVal = parseFloat(item.parts_total || 0);
       const totalBill = parseFloat(item.grand_total || item.live_total || item.total_amount || (partsVal + labour));

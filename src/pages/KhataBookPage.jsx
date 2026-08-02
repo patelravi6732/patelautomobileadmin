@@ -101,143 +101,148 @@ export default function KhataBookPage() {
 
   const fetchKhata = async () => {
     setLoading(true);
-    let backendData = null;
     try {
-      const res = await API.get('/khata-book/', { timeout: 1500 });
-      backendData = res.data;
-    } catch (err) {
-      console.warn('Backend API offline for Khata, aggregating from local and cloud stores:', err);
-    }
-
-    // Read all records across stores
-    const localKhata = JSON.parse(localStorage.getItem('khata_entries') || '[]');
-    const cloudKhata = await fetchCloudKhataEntries();
-    const combinedKhata = [...localKhata, ...cloudKhata];
-
-    const localInvs = JSON.parse(localStorage.getItem('local_invoices') || '[]');
-    const cloudInvs = await fetchCloudInvoices();
-    const combinedInvs = [...localInvs, ...cloudInvs];
-
-    const allJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
-    const cloudJobs = await fetchCloudJobs();
-    const combinedJobs = [...allJobs, ...cloudJobs];
-
-    const legacyDebtors = backendData?.debtors || JSON.parse(localStorage.getItem('khata_debtors') || '[]');
-
-    const debtorMap = new Map();
-
-    // Helper to get or init debtor object
-    const getDebtor = (name, phone, vehicle, model) => {
-      const cleanVeh = (vehicle || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-      const cleanPhone = (phone || '').replace(/\D/g, '').slice(-10);
-      const key = cleanVeh || (cleanPhone ? `${name.toLowerCase()}_${cleanPhone}` : name.toLowerCase());
-
-      if (!debtorMap.has(key)) {
-        debtorMap.set(key, {
-          id: key,
-          customer_name: name || 'Valued Customer',
-          phone: phone || 'N/A',
-          mobile_number: phone || 'N/A',
-          vehicle_number: vehicle || 'GJ-15',
-          bike_model: model || 'Two Wheeler',
-          total_billed: 0,
-          total_paid: 0,
-          pending_amount: 0,
-          balance: 0,
-          visit_date: 'N/A',
-          notes: ''
-        });
+      let backendData = null;
+      try {
+        const res = await API.get('/khata-book/', { timeout: 1200 });
+        backendData = res.data;
+      } catch (err) {
+        console.warn('Backend API offline for Khata, aggregating from local and cloud stores:', err);
       }
-      return debtorMap.get(key);
-    };
 
-    // 1. Process Workshop Jobs & Invoices for total_billed & total_paid
-    [...combinedJobs, ...combinedInvs].forEach(item => {
-      if (!item) return;
-      const name = item.customer_name || 'Valued Customer';
-      const phone = item.mobile_number || item.phone || item.phone_number || '';
-      const vehicle = item.vehicle_number || '';
-      const model = item.bike_model || '';
+      // Read all records across stores safely
+      const localKhata = JSON.parse(localStorage.getItem('khata_entries') || '[]');
+      const cloudKhata = await fetchCloudKhataEntries().catch(() => []);
+      const combinedKhata = [...localKhata, ...cloudKhata];
 
-      const d = getDebtor(name, phone, vehicle, model);
-      const partsVal = parseFloat(item.parts_total || 0);
-      const labourVal = parseFloat(item.labour_charge || 100);
-      const discountVal = parseFloat(item.discount_amount || 0);
-      const totalVal = parseFloat(item.grand_total || item.total_amount || item.live_total || Math.max(0, partsVal + labourVal - discountVal));
-      const paidVal = item.paid_amount !== undefined ? parseFloat(item.paid_amount) : totalVal;
+      const localInvs = JSON.parse(localStorage.getItem('local_invoices') || '[]');
+      const cloudInvs = await fetchCloudInvoices().catch(() => []);
+      const combinedInvs = [...localInvs, ...cloudInvs];
 
-      d.total_billed += totalVal;
-      d.total_paid += paidVal;
-      d.pending_amount += Math.max(0, totalVal - paidVal);
+      const allJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
+      const cloudJobs = await fetchCloudJobs().catch(() => []);
+      const combinedJobs = [...allJobs, ...cloudJobs];
 
-      const itemDate = item.finished_at || item.completed_at || item.created_at || item.date;
-      if (itemDate && itemDate !== 'N/A') {
-        const formattedDate = new Date(itemDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-        if (d.visit_date === 'N/A' || new Date(itemDate) > new Date(d.visit_date)) {
-          d.visit_date = formattedDate;
+      const legacyDebtors = backendData?.debtors || JSON.parse(localStorage.getItem('khata_debtors') || '[]');
+
+      const debtorMap = new Map();
+
+      // Helper to get or init debtor object
+      const getDebtor = (name, phone, vehicle, model) => {
+        const cleanVeh = (vehicle || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+        const cleanPhone = (phone || '').replace(/\D/g, '').slice(-10);
+        const key = cleanVeh || (cleanPhone ? `${name.toLowerCase()}_${cleanPhone}` : name.toLowerCase());
+
+        if (!debtorMap.has(key)) {
+          debtorMap.set(key, {
+            id: key,
+            customer_name: name || 'Valued Customer',
+            phone: phone || 'N/A',
+            mobile_number: phone || 'N/A',
+            vehicle_number: vehicle || 'GJ-15',
+            bike_model: model || 'Two Wheeler',
+            total_billed: 0,
+            total_paid: 0,
+            pending_amount: 0,
+            balance: 0,
+            visit_date: 'N/A',
+            notes: ''
+          });
         }
-      }
-    });
+        return debtorMap.get(key);
+      };
 
-    // 2. Process Khata Entries (Debit / Credit)
-    combinedKhata.forEach(k => {
-      if (!k) return;
-      const name = k.customer_name || 'Valued Customer';
-      const phone = k.mobile_number || k.phone || '';
-      const vehicle = k.vehicle_number || '';
-      const model = k.bike_model || '';
+      // 1. Process Workshop Jobs & Invoices for total_billed & total_paid
+      [...combinedJobs, ...combinedInvs].forEach(item => {
+        if (!item) return;
+        const name = item.customer_name || 'Valued Customer';
+        const phone = item.mobile_number || item.phone || item.phone_number || '';
+        const vehicle = item.vehicle_number || '';
+        const model = item.bike_model || '';
 
-      const d = getDebtor(name, phone, vehicle, model);
-      const amt = parseFloat(k.amount || 0);
+        const d = getDebtor(name, phone, vehicle, model);
+        const partsVal = parseFloat(item.parts_total || 0);
+        const labourVal = parseFloat(item.labour_charge || 100);
+        const discountVal = parseFloat(item.discount_amount || 0);
+        const totalVal = parseFloat(item.grand_total || item.total_amount || item.live_total || Math.max(0, partsVal + labourVal - discountVal));
+        const paidVal = item.paid_amount !== undefined ? parseFloat(item.paid_amount) : totalVal;
 
-      if (k.type === 'DEBIT') {
-        d.total_billed += amt;
-        d.pending_amount += amt;
-      } else if (k.type === 'CREDIT') {
-        d.total_paid += amt;
-        d.pending_amount = Math.max(0, d.pending_amount - amt);
-      }
+        d.total_billed += totalVal;
+        d.total_paid += paidVal;
+        d.pending_amount += Math.max(0, totalVal - paidVal);
 
-      if (k.date) {
-        const formattedDate = new Date(k.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-        d.visit_date = formattedDate;
-      }
-    });
-
-    // 3. Process Legacy Debtors if needed
-    legacyDebtors.forEach(leg => {
-      if (!leg) return;
-      const amt = parseFloat(leg.pending_amount || leg.balance || leg.total_pending_amount || 0);
-      if (amt > 0) {
-        const d = getDebtor(leg.customer_name, leg.phone || leg.mobile_number, leg.vehicle_number, leg.bike_model);
-        if (d.pending_amount <= 0) {
-          d.pending_amount = amt;
-          d.total_billed = Math.max(d.total_billed, parseFloat(leg.total_billed || amt));
-          d.total_paid = parseFloat(leg.total_paid || 0);
-          if (leg.visit_date && leg.visit_date !== 'N/A') {
-            d.visit_date = leg.visit_date;
+        const itemDate = item.finished_at || item.completed_at || item.created_at || item.date;
+        if (itemDate && itemDate !== 'N/A') {
+          const formattedDate = new Date(itemDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+          if (d.visit_date === 'N/A' || new Date(itemDate) > new Date(d.visit_date)) {
+            d.visit_date = formattedDate;
           }
         }
-      }
-    });
+      });
 
-    const deletedIds = await fetchCloudDeletedIds();
+      // 2. Process Khata Entries (Debit / Credit)
+      combinedKhata.forEach(k => {
+        if (!k) return;
+        const name = k.customer_name || 'Valued Customer';
+        const phone = k.mobile_number || k.phone || '';
+        const vehicle = k.vehicle_number || '';
+        const model = k.bike_model || '';
 
-    const allDebtorsList = Array.from(debtorMap.values()).filter(d => {
-      d.balance = d.pending_amount;
-      const strId = String(d.id || '');
-      const cleanVeh = (d.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-      return !deletedIds.includes(strId) && !deletedIds.includes(cleanVeh);
-    });
+        const d = getDebtor(name, phone, vehicle, model);
+        const amt = parseFloat(k.amount || 0);
 
-    const pendingDebtors = allDebtorsList.filter(d => d.pending_amount > 0);
-    const finalDebtors = pendingDebtors.length > 0 ? pendingDebtors : allDebtorsList;
+        if (k.type === 'DEBIT') {
+          d.total_billed += amt;
+          d.pending_amount += amt;
+        } else if (k.type === 'CREDIT') {
+          d.total_paid += amt;
+          d.pending_amount = Math.max(0, d.pending_amount - amt);
+        }
 
-    const totalSum = pendingDebtors.reduce((acc, d) => acc + d.pending_amount, 0);
+        if (k.date) {
+          const formattedDate = new Date(k.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+          d.visit_date = formattedDate;
+        }
+      });
 
-    setDebtors(finalDebtors);
-    setTotalPending(totalSum);
-    setLoading(false);
+      // 3. Process Legacy Debtors if needed
+      legacyDebtors.forEach(leg => {
+        if (!leg) return;
+        const amt = parseFloat(leg.pending_amount || leg.balance || leg.total_pending_amount || 0);
+        if (amt > 0) {
+          const d = getDebtor(leg.customer_name, leg.phone || leg.mobile_number, leg.vehicle_number, leg.bike_model);
+          if (d.pending_amount <= 0) {
+            d.pending_amount = amt;
+            d.total_billed = Math.max(d.total_billed, parseFloat(leg.total_billed || amt));
+            d.total_paid = parseFloat(leg.total_paid || 0);
+            if (leg.visit_date && leg.visit_date !== 'N/A') {
+              d.visit_date = leg.visit_date;
+            }
+          }
+        }
+      });
+
+      const deletedIds = await fetchCloudDeletedIds().catch(() => []);
+
+      const allDebtorsList = Array.from(debtorMap.values()).filter(d => {
+        d.balance = d.pending_amount;
+        const strId = String(d.id || '');
+        const cleanVeh = (d.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+        return !deletedIds.includes(strId) && !deletedIds.includes(cleanVeh);
+      });
+
+      const pendingDebtors = allDebtorsList.filter(d => d.pending_amount > 0);
+      const finalDebtors = pendingDebtors.length > 0 ? pendingDebtors : allDebtorsList;
+
+      const totalSum = pendingDebtors.reduce((acc, d) => acc + d.pending_amount, 0);
+
+      setDebtors(finalDebtors);
+      setTotalPending(totalSum);
+    } catch (err) {
+      console.error('Error fetching Khata debtors:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {

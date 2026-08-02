@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Users, Search, Phone, Bike, Calendar, IndianRupee, Trash2, Lock, ShieldCheck, AlertTriangle } from 'lucide-react';
 import API from '../services/api';
-import { pushCloudRecycleBinItem, fetchCloudKhataEntries, fetchCloudJobs, fetchCloudBookings, fetchCloudInvoices } from '../utils/cloudSync';
+import { pushCloudRecycleBinItem, fetchCloudKhataEntries, fetchCloudJobs, fetchCloudBookings, fetchCloudInvoices, fetchCloudDeletedIds, deleteCloudCustomer, markIdAsDeleted } from '../utils/cloudSync';
 
 export default function CustomersPage() {
   const [customers, setCustomers] = useState([]);
@@ -25,20 +25,22 @@ export default function CustomersPage() {
       console.warn('Backend API offline for customers, deriving from local jobs, khata, and bookings:', err);
     }
 
+    const deletedIds = await fetchCloudDeletedIds().catch(() => []);
+
     const allJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
-    const cloudJobs = await fetchCloudJobs();
+    const cloudJobs = await fetchCloudJobs().catch(() => []);
     const combinedJobs = [...allJobs, ...cloudJobs];
 
     const localBookings = JSON.parse(localStorage.getItem('local_bookings') || '[]');
-    const cloudBookings = await fetchCloudBookings();
+    const cloudBookings = await fetchCloudBookings().catch(() => []);
     const combinedBookings = [...localBookings, ...cloudBookings];
 
     const localKhata = JSON.parse(localStorage.getItem('khata_entries') || '[]');
-    const cloudKhata = await fetchCloudKhataEntries();
+    const cloudKhata = await fetchCloudKhataEntries().catch(() => []);
     const combinedKhata = [...localKhata, ...cloudKhata];
 
     const localInvoices = JSON.parse(localStorage.getItem('local_invoices') || '[]');
-    const cloudInvoices = await fetchCloudInvoices();
+    const cloudInvoices = await fetchCloudInvoices().catch(() => []);
     const combinedInvoices = [...localInvoices, ...cloudInvoices];
 
     const savedCustomers = JSON.parse(localStorage.getItem('local_customers') || '[]');
@@ -76,7 +78,10 @@ export default function CustomersPage() {
       }
     });
 
-    const customerList = Array.from(allMap.values()).map(cust => {
+    const customerList = Array.from(allMap.values()).filter(cust => {
+      const strId = String(cust.id || '');
+      return !deletedIds.includes(strId);
+    }).map(cust => {
       const custVeh = (cust.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
       const custName = (cust.customer_name || '').toLowerCase();
 
@@ -167,7 +172,11 @@ export default function CustomersPage() {
     localStorage.setItem('recycle_bin_items', JSON.stringify([trashObj, ...existingTrash]));
     pushCloudRecycleBinItem(trashObj).catch(console.warn);
 
-    // 2. Remove locally
+    // 2. Delete customer record locally and from cloud store
+    await deleteCloudCustomer(targetId).catch(console.warn);
+    await markIdAsDeleted(targetId).catch(console.warn);
+
+    // 3. Update React state
     setCustomers(prev => prev.filter(c => String(c.id) !== String(targetId)));
     setShowPasswordModal(false);
 

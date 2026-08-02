@@ -487,6 +487,9 @@ export default function WorkshopPage() {
 
   const activeJobs = jobs.filter(j => j && j.status === 'IN_PROGRESS');
   const finishedJobs = jobs.filter(j => j && (j.status === 'FINISHED' || j.status === 'CANCELLED'));
+  const onlineBookingJobs = jobs.filter(j => j && (j.is_online_booking || j.booking_id || j.source === 'ONLINE_BOOKING' || String(j.complaint || '').toLowerCase().includes('booking')));
+
+  const displayedJobs = tab === 'ONLINE_BOOKINGS' ? onlineBookingJobs : (tab === 'FINISHED' ? finishedJobs : activeJobs);
 
   return (
     <div className="space-y-8">
@@ -510,6 +513,17 @@ export default function WorkshopPage() {
           </button>
 
           <button
+            onClick={() => setTab('ONLINE_BOOKINGS')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+              tab === 'ONLINE_BOOKINGS'
+                ? 'bg-blue-600 text-white shadow-md'
+                : 'bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100'
+            }`}
+          >
+            🌐 Online Bookings ({onlineBookingJobs.length})
+          </button>
+
+          <button
             onClick={() => setTab('FINISHED')}
             className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
               tab === 'FINISHED'
@@ -522,19 +536,20 @@ export default function WorkshopPage() {
         </div>
       </div>
 
-      {loading ? (
-        <div className="p-8 text-center text-slate-500 font-medium">Loading Workshop Floor...</div>
-      ) : tab === 'ACTIVE' ? (
-        activeJobs.length === 0 ? (
-          <div className="bg-white p-12 rounded-3xl text-center text-slate-400 border border-slate-200">
-            No bikes currently on the workshop floor. Click "New Service" to create a job card.
-          </div>
-        ) : (
-          /* ACTIVE BIKE CARDS GRID */
+      {tab !== 'FINISHED' && (
+        loading ? (
+          <div className="p-8 text-center text-slate-500 font-medium">Loading Workshop Floor...</div>
+      ) : displayedJobs.length === 0 ? (
+        <div className="bg-white p-12 rounded-3xl text-center text-slate-400 border border-slate-200 font-medium">
+          No {tab === 'ONLINE_BOOKINGS' ? 'online booking' : (tab === 'FINISHED' ? 'finished' : 'active')} bikes found on workshop floor.
+        </div>
+      ) : (
+          /* BIKE CARDS GRID */
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {activeJobs.map((job) => {
+            {displayedJobs.map((job) => {
               const partsList = Array.isArray(job.parts) ? job.parts : [];
               const hasStagedParts = partsList.some(p => p && p.status === 'STAGED');
+              const isOnline = Boolean(job.is_online_booking || job.booking_id || job.source === 'ONLINE_BOOKING' || String(job.complaint || '').toLowerCase().includes('booking'));
               const rawLabour = labourInputs[job.id] !== undefined
                 ? labourInputs[job.id]
                 : (job.labour_charge && parseFloat(job.labour_charge) > 0 ? formatMoney(job.labour_charge) : '');
@@ -547,9 +562,16 @@ export default function WorkshopPage() {
                   {/* Header info */}
                   <div className="space-y-4">
                     <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                      <span className="font-mono text-base font-extrabold px-3 py-1 bg-slate-900 text-amber-400 rounded-xl tracking-wider">
-                        {job.vehicle_number}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-base font-extrabold px-3 py-1 bg-slate-900 text-amber-400 rounded-xl tracking-wider">
+                          {job.vehicle_number}
+                        </span>
+                        {isOnline && (
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-blue-100 text-blue-800 border border-blue-200">
+                            🌐 ONLINE BOOKING
+                          </span>
+                        )}
+                      </div>
                       <button
                         onClick={() => openAssignModal(job)}
                         className="text-xs font-semibold text-purple-700 hover:text-purple-900 bg-purple-50 hover:bg-purple-100 px-3 py-1 rounded-full border border-purple-200 transition-colors flex items-center gap-1"
@@ -712,14 +734,14 @@ export default function WorkshopPage() {
                       </button>
                     </div>
                   </div>
-
                 </div>
               );
             })}
           </div>
         )
-      ) : (
-        /* FINISHED / CLOSED JOBS LIST WITH PASSWORD DELETE */
+      )}
+
+      {tab === 'FINISHED' && (
         <div className="bg-white rounded-3xl border border-slate-200/80 p-6 space-y-6">
           <h2 className="text-lg font-bold text-slate-900 font-poppins">Finished & Closed Service Jobs</h2>
           {finishedJobs.length === 0 ? (

@@ -456,9 +456,25 @@ export async function pushCloudCustomer(custObj) {
 
 export async function deleteCloudCustomer(custId) {
   if (!custId) return;
+  const strId = String(custId);
+  const cleanVeh = strId.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+
+  // 1. Remove from local_customers
+  const localCusts = JSON.parse(localStorage.getItem('local_customers') || '[]');
+  const updatedLocal = localCusts.filter(c => {
+    if (!c) return false;
+    const cVeh = (c.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+    return String(c.id) !== strId && cVeh !== cleanVeh;
+  });
+  localStorage.setItem('local_customers', JSON.stringify(updatedLocal));
+
+  // 2. Remove from master_cloud_cache store.customers
   const store = await fetchMasterStore();
   const existing = (store.customers || []).filter(c => c && typeof c === 'object');
-  const updated = existing.filter(c => c.id !== custId && String(c.id) !== String(custId));
+  const updated = existing.filter(c => {
+    const cVeh = (c.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+    return String(c.id) !== strId && cVeh !== cleanVeh;
+  });
   await saveMasterStore({ ...store, customers: updated });
 }
 

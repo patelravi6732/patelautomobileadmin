@@ -62,21 +62,27 @@ export default function VehicleHistoryPage() {
       if (!j) return false;
       const jVeh = (j.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
       const jPhone = (j.mobile_number || j.phone || '').replace(/\D/g, '').slice(-10);
-      return jVeh === cleanInputVeh || (jPhone && cleanInputPhone && jPhone === cleanInputPhone);
+      const isVehMatch = jVeh && (jVeh === cleanInputVeh || jVeh.includes(cleanInputVeh) || cleanInputVeh.includes(jVeh));
+      const isPhoneMatch = jPhone && cleanInputPhone && (jPhone === cleanInputPhone || jPhone.includes(cleanInputPhone));
+      return isVehMatch || isPhoneMatch;
     });
 
     const matchedInvs = combinedInvoices.filter(i => {
       if (!i) return false;
       const iVeh = (i.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
       const iPhone = (i.mobile_number || i.phone || '').replace(/\D/g, '').slice(-10);
-      return iVeh === cleanInputVeh || (iPhone && cleanInputPhone && iPhone === cleanInputPhone);
+      const isVehMatch = iVeh && (iVeh === cleanInputVeh || iVeh.includes(cleanInputVeh) || cleanInputVeh.includes(iVeh));
+      const isPhoneMatch = iPhone && cleanInputPhone && (iPhone === cleanInputPhone || iPhone.includes(cleanInputPhone));
+      return isVehMatch || isPhoneMatch;
     });
 
     const matchedBookings = combinedBookings.filter(b => {
       if (!b) return false;
       const bVeh = (b.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
       const bPhone = (b.mobile_number || b.phone || '').replace(/\D/g, '').slice(-10);
-      return bVeh === cleanInputVeh || (bPhone && cleanInputPhone && bPhone === cleanInputPhone);
+      const isVehMatch = bVeh && (bVeh === cleanInputVeh || bVeh.includes(cleanInputVeh) || cleanInputVeh.includes(bVeh));
+      const isPhoneMatch = bPhone && cleanInputPhone && (bPhone === cleanInputPhone || bPhone.includes(cleanInputPhone));
+      return isVehMatch || isPhoneMatch;
     });
 
     if (matchedJobs.length === 0 && matchedInvs.length === 0 && matchedBookings.length === 0) {

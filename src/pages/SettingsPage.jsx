@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Settings, Save, MapPin, Phone, MessageSquare, Clock, Wrench, IndianRupee, Mail, Lock, ShieldCheck, User, Calendar, History, Trash2, Camera, Upload, Image as ImageIcon, Plus, Edit2, Key, Eye, EyeOff, CheckCircle2, XCircle, ShieldAlert, Sparkles, AlertCircle, Smartphone, QrCode } from 'lucide-react';
 import API from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { fetchCloudAdminProfiles, pushCloudAdminProfile, deleteCloudAdminProfile } from '../utils/cloudSync';
+import { fetchCloudAdminProfiles, pushCloudAdminProfile, deleteCloudAdminProfile, fetchCloudAuditLogs } from '../utils/cloudSync';
 import AdminPasswordModal from '../components/AdminPasswordModal';
 
 export const DEFAULT_ADMIN_PROFILES = [
@@ -177,12 +177,27 @@ export default function SettingsPage() {
   };
 
   const fetchAuditLogs = async (m = auditMonth, y = auditYear) => {
+    let backendLogs = [];
     try {
-      const res = await API.get(`/admin-audit-logs/?month=${m}&year=${y}`);
-      setAuditLogs(res.data || []);
+      const res = await API.get(`/admin-audit-logs/?month=${m}&year=${y}`, { timeout: 1200 });
+      backendLogs = res.data || [];
     } catch (err) {
-      console.error(err);
+      console.warn('Backend API offline for Audit Logs, fetching from local and cloud stores:', err);
     }
+
+    const cloudLogs = await fetchCloudAuditLogs();
+    const map = new Map();
+    [...backendLogs, ...cloudLogs].forEach(l => {
+      if (l && typeof l === 'object') {
+        const dt = new Date(l.timestamp || l.created_at || Date.now());
+        if (!isNaN(dt.getTime()) && (dt.getMonth() + 1) === Number(m) && dt.getFullYear() === Number(y)) {
+          const key = l.id || `${l.action}_${l.timestamp}`;
+          if (!map.has(key)) map.set(key, l);
+        }
+      }
+    });
+
+    setAuditLogs(Array.from(map.values()).sort((a, b) => new Date(b.timestamp || Date.now()) - new Date(a.timestamp || Date.now())));
   };
 
   useEffect(() => {

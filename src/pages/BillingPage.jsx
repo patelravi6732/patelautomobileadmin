@@ -3,7 +3,7 @@ import { Receipt, Printer, Eye, Wrench, Calendar, Phone, MapPin, Trash2, Camera,
 import html2canvas from 'html2canvas';
 import API from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { pushCloudRecycleBinItem, fetchCloudInvoices, markIdAsDeleted, fetchCloudDeletedIds, deleteCloudInvoice, deleteCloudJob } from '../utils/cloudSync';
+import { pushCloudRecycleBinItem, fetchCloudInvoices, markIdAsDeleted, fetchCloudDeletedIds, deleteCloudInvoice, deleteCloudJob, pushAuditLog } from '../utils/cloudSync';
 import AdminPasswordModal from '../components/AdminPasswordModal';
 import { LOGO_BASE64 } from '../assets/logoBase64';
 import { sharePhotoToWhatsApp } from '../utils/whatsappPhotoSharer';
@@ -270,6 +270,7 @@ export default function BillingPage() {
     const existingTrash = JSON.parse(localStorage.getItem('recycle_bin_items') || '[]');
     localStorage.setItem('recycle_bin_items', JSON.stringify([trashObj, ...existingTrash]));
     pushCloudRecycleBinItem(trashObj).catch(console.warn);
+    pushAuditLog('DELETE', 'Billing', `Deleted bill #${targetInv.invoice_number || targetId} for ${targetInv.customer_name || 'Customer'}`).catch(console.warn);
 
     // 2. Mark as permanently deleted & purge from stores
     markIdAsDeleted(targetId).catch(console.warn);

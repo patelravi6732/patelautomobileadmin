@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Trash2, RotateCcw, ShieldAlert, Clock, User, FileText, CheckCircle2, AlertTriangle } from 'lucide-react';
 import API from '../services/api';
-import { fetchCloudRecycleBin, restoreCloudRecycleBinItem, emptyCloudRecycleBin, pushCloudInventoryItem, pushCloudJob, pushCloudInvoice, pushCloudKhataEntry, unmarkDeletedId } from '../utils/cloudSync';
+import { fetchCloudRecycleBin, restoreCloudRecycleBinItem, emptyCloudRecycleBin, pushCloudInventoryItem, pushCloudJob, pushCloudInvoice, pushCloudKhataEntry, pushCloudCustomer, pushAuditLog, unmarkDeletedId } from '../utils/cloudSync';
 import AdminPasswordModal from '../components/AdminPasswordModal';
 
 export default function RecycleBinPage() {
@@ -50,12 +50,34 @@ export default function RecycleBinPage() {
     unmarkDeletedId(targetPayloadId).catch(console.warn);
     if (item.payload?.invoice_number) unmarkDeletedId(item.payload.invoice_number).catch(console.warn);
 
+    // Write to Audit Logs
+    pushAuditLog('RESTORE', 'Recycle Bin', `Restored ${item.item_type || 'item'}: ${item.title || targetPayloadId}`).catch(console.warn);
+
     // Restore locally
     const currentTrash = JSON.parse(localStorage.getItem('recycle_bin_items') || '[]');
     const updatedTrash = currentTrash.filter(r => String(r.id) !== String(item.id));
     localStorage.setItem('recycle_bin_items', JSON.stringify(updatedTrash));
 
     if (item.payload) {
+      // Create/update customer record if customer info exists
+      const custName = item.payload.customer_name;
+      const custPhone = item.payload.mobile_number || item.payload.phone;
+      const custVeh = item.payload.vehicle_number;
+      if (custName && custVeh) {
+        const custObj = {
+          id: `cust_${custVeh.replace(/[^A-Za-z0-9]/g, '')}`,
+          customer_name: custName,
+          mobile_number: custPhone || 'N/A',
+          vehicle_number: custVeh,
+          bike_model: item.payload.bike_model || 'Two Wheeler',
+          created_at: new Date().toISOString()
+        };
+        const currentCusts = JSON.parse(localStorage.getItem('local_customers') || '[]');
+        const updatedCusts = [custObj, ...currentCusts.filter(c => c.vehicle_number !== custVeh)];
+        localStorage.setItem('local_customers', JSON.stringify(updatedCusts));
+        pushCloudCustomer(custObj).catch(console.warn);
+      }
+
       if (item.item_type === 'Inventory') {
         const currentInv = JSON.parse(localStorage.getItem('inventory_items') || '[]');
         localStorage.setItem('inventory_items', JSON.stringify([item.payload, ...currentInv]));

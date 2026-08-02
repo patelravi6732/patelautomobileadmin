@@ -44,7 +44,7 @@ export default function CustomersPage() {
     const savedCustomers = JSON.parse(localStorage.getItem('local_customers') || '[]');
 
     const allMap = new Map();
-    [...backendCusts, ...combinedJobs, ...combinedBookings, ...savedCustomers].forEach(c => {
+    [...backendCusts, ...combinedJobs, ...combinedInvoices, ...combinedKhata, ...combinedBookings, ...savedCustomers].forEach(c => {
       if (c && typeof c === 'object') {
         const name = (c.customer_name || c.name || '').trim();
         const vehicle = (c.vehicle_number || '').trim();

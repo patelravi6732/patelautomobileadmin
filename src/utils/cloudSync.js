@@ -412,6 +412,20 @@ export async function deleteCloudInvoice(invId) {
   await saveMasterStore({ ...store, invoices: updated });
 }
 
+export async function fetchCloudCustomers() {
+  const store = await fetchMasterStore();
+  return (store.customers || []).filter(c => c && typeof c === 'object' && (c.id || c.customer_name || c.vehicle_number));
+}
+
+export async function pushCloudCustomer(custObj) {
+  if (!custObj || typeof custObj !== 'object') return;
+  const store = await fetchMasterStore();
+  const existing = (store.customers || []).filter(c => c && typeof c === 'object');
+  const cleanVeh = (custObj.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+  const updated = [custObj, ...existing.filter(c => (c.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase() !== cleanVeh)];
+  await saveMasterStore({ ...store, customers: updated });
+}
+
 export async function deleteCloudCustomer(custId) {
   if (!custId) return;
   const store = await fetchMasterStore();
@@ -501,4 +515,39 @@ export async function unmarkDeletedId(targetId) {
   const existing = (store.deletedIds || []).map(d => String(d));
   const updatedCloud = existing.filter(d => !idsToRemove.has(String(d)));
   await saveMasterStore({ ...store, deletedIds: updatedCloud });
+}
+
+// ---------------- AUDIT LOGS TRACKER ----------------
+export async function pushAuditLog(action, moduleName, details, performedBy = 'Patel Owner (Admin)') {
+  const logObj = {
+    id: `audit_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+    action: action || 'UPDATE',
+    module_name: moduleName || 'General',
+    details: details || 'Administrative action performed',
+    performed_by: performedBy,
+    timestamp: new Date().toISOString(),
+    created_at: new Date().toISOString()
+  };
+
+  const localLogs = JSON.parse(localStorage.getItem('admin_audit_logs') || '[]');
+  localStorage.setItem('admin_audit_logs', JSON.stringify([logObj, ...localLogs]));
+
+  const store = await fetchMasterStore();
+  const existing = (store.auditLogs || []).filter(l => l && typeof l === 'object');
+  await saveMasterStore({ ...store, auditLogs: [logObj, ...existing] });
+}
+
+export async function fetchCloudAuditLogs() {
+  const store = await fetchMasterStore();
+  const cloudLogs = (store.auditLogs || []).filter(l => l && typeof l === 'object');
+  const localLogs = JSON.parse(localStorage.getItem('admin_audit_logs') || '[]');
+
+  const map = new Map();
+  [...cloudLogs, ...localLogs].forEach(l => {
+    if (l && typeof l === 'object') {
+      const key = l.id || `${l.action}_${l.timestamp}`;
+      if (!map.has(key)) map.set(key, l);
+    }
+  });
+  return Array.from(map.values()).sort((a, b) => new Date(b.timestamp || Date.now()) - new Date(a.timestamp || Date.now()));
 }

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { UserCheck, Calendar, Clock, Award, X, CheckCircle2, AlertCircle, Wrench } from 'lucide-react';
 import API from '../services/api';
+import { fetchCloudAttendance, fetchCloudSalaryPayments } from '../utils/cloudSync';
 
 export default function MechanicProfileModal({ isOpen, onClose, mechanicName }) {
   const [profileData, setProfileData] = useState(null);
@@ -9,16 +10,67 @@ export default function MechanicProfileModal({ isOpen, onClose, mechanicName }) 
   useEffect(() => {
     if (isOpen && mechanicName) {
       setLoading(true);
-      API.get(`/attendance/mechanic_profile/?mechanic_name=${encodeURIComponent(mechanicName)}`)
-        .then(res => {
-          setProfileData(res.data);
-        })
-        .catch(err => {
-          console.error(err);
-        })
-        .finally(() => {
+      
+      const loadProfile = async () => {
+        let backendData = null;
+        try {
+          const res = await API.get(`/attendance/mechanic_profile/?mechanic_name=${encodeURIComponent(mechanicName)}`, { timeout: 1200 });
+          backendData = res.data;
+        } catch (err) {
+          console.warn('Backend API offline for Mechanic Profile, aggregating from local & cloud stores:', err);
+        }
+
+        if (backendData && backendData.mechanic_name) {
+          setProfileData(backendData);
           setLoading(false);
+          return;
+        }
+
+        // Aggregate local & cloud attendance & salary records
+        const localAtt = JSON.parse(localStorage.getItem('local_attendance') || '[]');
+        const cloudAtt = await fetchCloudAttendance();
+        const combinedAtt = [...localAtt, ...cloudAtt].filter(a => a && a.mechanic_name === mechanicName);
+
+        const localSal = JSON.parse(localStorage.getItem('local_salary_payments') || '[]');
+        const cloudSal = await fetchCloudSalaryPayments();
+        const combinedSal = [...localSal, ...cloudSal].filter(s => s && s.mechanic_name === mechanicName);
+
+        const now = new Date();
+        const curMonth = now.getMonth() + 1;
+        const curYear = now.getFullYear();
+
+        const monthAtt = combinedAtt.filter(a => {
+          const d = new Date(a.date);
+          return !isNaN(d.getTime()) && (d.getMonth() + 1) === curMonth && d.getFullYear() === curYear;
         });
+
+        const presentCount = monthAtt.filter(a => a.status === 'PRESENT').length;
+        const halfDayCount = monthAtt.filter(a => a.status === 'HALF_DAY').length;
+        const absentCount = monthAtt.filter(a => a.status === 'ABSENT').length;
+        const daysWorked = presentCount + (halfDayCount * 0.5);
+
+        const monthSal = combinedSal.filter(s => {
+          const dt = new Date(s.payment_date || s.created_at || s.date);
+          return !isNaN(dt.getTime()) && (dt.getMonth() + 1) === curMonth && dt.getFullYear() === curYear;
+        });
+
+        const totalSalaryPaid = monthSal.reduce((acc, s) => acc + parseFloat(s.amount || 0), 0);
+
+        setProfileData({
+          mechanic_name: mechanicName,
+          current_month: `${now.toLocaleString('en-US', { month: 'long' })} ${curYear}`,
+          present: presentCount,
+          half_day: halfDayCount,
+          absent: absentCount,
+          total_days_worked: daysWorked,
+          total_salary_paid: totalSalaryPaid,
+          attendance_logs: combinedAtt.slice(0, 10),
+          salary_history: combinedSal.slice(0, 10)
+        });
+        setLoading(false);
+      };
+
+      loadProfile();
     }
   }, [isOpen, mechanicName]);
 

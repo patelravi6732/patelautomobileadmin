@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { BookOpen, Send, CheckCircle2, IndianRupee, Phone, Bike, Search, Camera, AlertCircle, QrCode, Image as ImageIcon, Wrench, Eye, Download, Sparkles, Printer, Calendar, Filter } from 'lucide-react';
+import { BookOpen, Send, CheckCircle2, IndianRupee, Phone, Bike, Search, Camera, AlertCircle, QrCode, Image as ImageIcon, Wrench, Eye, Download, Sparkles, Printer, Calendar, Filter, Trash2 } from 'lucide-react';
 import API from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { generateBillCanvasDataUrl, generateBillCanvasDataUrlAsync, generateBillCanvasBlob } from '../utils/billCardGenerator';
 
-import { fetchCloudKhataEntries, fetchCloudInvoices, pushCloudKhataEntry } from '../utils/cloudSync';
+import { fetchCloudKhataEntries, fetchCloudInvoices, pushCloudKhataEntry, pushCloudRecycleBinItem, markIdAsDeleted, deleteCloudKhataEntry } from '../utils/cloudSync';
+import AdminPasswordModal from '../components/AdminPasswordModal';
 
 const monthNames = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -35,13 +36,61 @@ export default function KhataBookPage() {
   const [statementPreviewUrl, setStatementPreviewUrl] = useState(null);
   const statementCaptureRef = useRef(null);
   const offscreenStatementRef = useRef(null);
-  const [toast, setToast] = useState(null);
+  // Password protected delete modal state
+  const [deleteModal, setDeleteModal] = useState({ isOpen: false, debtor: null });
 
   const showToast = (title, message, type = 'success') => {
     setToast({ title, message, type });
     setTimeout(() => {
       setToast(null);
     }, 4500);
+  };
+
+  const handleDeleteWithPassword = async (adminPassword) => {
+    if (!deleteModal.debtor) return;
+    const targetDebtor = deleteModal.debtor;
+    const targetId = targetDebtor.id;
+
+    // 1. Move to Recycle Bin
+    const trashObj = {
+      id: `trash_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      item_type: 'Khata Account',
+      title: `Khata Account: ${targetDebtor.customer_name} (${targetDebtor.vehicle_number})`,
+      deleted_by: 'Patel Owner (Admin)',
+      deleted_at: new Date().toISOString(),
+      details: `Customer: ${targetDebtor.customer_name} • Phone: ${targetDebtor.phone || targetDebtor.mobile_number} • Bike: ${targetDebtor.vehicle_number} • Pending: ₹${targetDebtor.pending_amount || 0}`,
+      payload: targetDebtor
+    };
+
+    const existingTrash = JSON.parse(localStorage.getItem('recycle_bin_items') || '[]');
+    localStorage.setItem('recycle_bin_items', JSON.stringify([trashObj, ...existingTrash]));
+    pushCloudRecycleBinItem(trashObj).catch(console.warn);
+
+    // 2. Mark as deleted & purge locally & cloud
+    markIdAsDeleted(targetId).catch(console.warn);
+    deleteCloudKhataEntry(targetId).catch(console.warn);
+
+    const localKhata = JSON.parse(localStorage.getItem('khata_entries') || '[]');
+    const updatedLocalKhata = localKhata.filter(k => (k.vehicle_number !== targetDebtor.vehicle_number && String(k.id) !== String(targetId)));
+    localStorage.setItem('khata_entries', JSON.stringify(updatedLocalKhata));
+
+    const localDebtors = JSON.parse(localStorage.getItem('khata_debtors') || '[]');
+    const updatedLocalDebtors = localDebtors.filter(d => (d.vehicle_number !== targetDebtor.vehicle_number && String(d.id) !== String(targetId)));
+    localStorage.setItem('khata_debtors', JSON.stringify(updatedLocalDebtors));
+
+    setDebtors(prev => prev.filter(d => String(d.id) !== String(targetId) && d.vehicle_number !== targetDebtor.vehicle_number));
+    setDeleteModal({ isOpen: false, debtor: null });
+
+    try {
+      await API.post(`/khata-book/${targetId}/delete_with_password/`, {
+        admin_password: adminPassword
+      }, { timeout: 1500 });
+    } catch (err) {
+      console.warn('Backend API offline, deleted Khata record locally & cloud store:', err);
+    } finally {
+      showToast('🗑️ Account Moved to Recycle Bin', `Khata account for ${targetDebtor.customer_name} deleted!`);
+      fetchKhata();
+    }
   };
 
   const cleanPartName = (name) => {
@@ -518,6 +567,15 @@ export default function KhataBookPage() {
                         >
                           + Payment
                         </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setDeleteModal({ isOpen: true, debtor: d })}
+                          className="h-8 px-2 bg-red-50 hover:bg-red-100 text-red-600 font-bold text-[11px] rounded-lg border border-red-200 flex items-center justify-center gap-1 transition-all hover:scale-105"
+                          title="Delete Khata Account (Password Protected)"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -787,6 +845,15 @@ export default function KhataBookPage() {
           </div>
         </div>
       )}
+
+      {/* ADMIN PASSWORD PROTECTED DELETE MODAL */}
+      <AdminPasswordModal
+        isOpen={deleteModal.isOpen}
+        onClose={() => setDeleteModal({ isOpen: false, debtor: null })}
+        onConfirm={handleDeleteWithPassword}
+        title="Delete Khata Account"
+        itemDescription={deleteModal.debtor ? `${deleteModal.debtor.customer_name} (${deleteModal.debtor.vehicle_number}) • Pending Dues: ₹${deleteModal.debtor.pending_amount}` : ''}
+      />
 
     </div>
   );

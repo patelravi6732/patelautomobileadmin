@@ -6,7 +6,7 @@ const BACKUP_BIN_URL = 'https://api.restful-api.dev/objects/ff8081819f7e10ae019f
 
 async function fetchMasterStore() {
   try {
-    const res = await axios.get(PRIMARY_BIN_URL, { timeout: 2000 });
+    const res = await axios.get(PRIMARY_BIN_URL, { timeout: 800 });
     if (res.data) {
       return {
         bookings: Array.isArray(res.data.bookings) ? res.data.bookings : [],
@@ -20,13 +20,14 @@ async function fetchMasterStore() {
         customers: Array.isArray(res.data.customers) ? res.data.customers : [],
         invoices: Array.isArray(res.data.invoices) ? res.data.invoices : [],
         attendance: Array.isArray(res.data.attendance) ? res.data.attendance : [],
-        salaryPayments: Array.isArray(res.data.salaryPayments) ? res.data.salaryPayments : []
+        salaryPayments: Array.isArray(res.data.salaryPayments) ? res.data.salaryPayments : [],
+        deletedIds: Array.isArray(res.data.deletedIds) ? res.data.deletedIds : []
       };
     }
   } catch (e1) {
-    // Attempt Backup endpoint silently
+    // Attempt Backup endpoint silently with fast timeout
     try {
-      const res = await axios.get(BACKUP_BIN_URL, { timeout: 1500 });
+      const res = await axios.get(BACKUP_BIN_URL, { timeout: 800 });
       if (res.data && res.data.data) {
         return {
           bookings: Array.isArray(res.data.data.bookings) ? res.data.data.bookings : [],
@@ -40,14 +41,15 @@ async function fetchMasterStore() {
           customers: Array.isArray(res.data.data.customers) ? res.data.data.customers : [],
           invoices: Array.isArray(res.data.data.invoices) ? res.data.data.invoices : [],
           attendance: Array.isArray(res.data.data.attendance) ? res.data.data.attendance : [],
-          salaryPayments: Array.isArray(res.data.data.salaryPayments) ? res.data.data.salaryPayments : []
+          salaryPayments: Array.isArray(res.data.data.salaryPayments) ? res.data.data.salaryPayments : [],
+          deletedIds: Array.isArray(res.data.data.deletedIds) ? res.data.data.deletedIds : []
         };
       }
     } catch (e2) {
-      // Offline or cloud endpoint down
+      // Fast fallback to caller
     }
   }
-  return { bookings: [], messages: [], jobs: [], inventory: [], recycleBin: [], garageInfo: null, adminProfiles: [], khataEntries: [], customers: [], invoices: [], attendance: [], salaryPayments: [] };
+  return { bookings: [], messages: [], jobs: [], inventory: [], recycleBin: [], garageInfo: null, adminProfiles: [], khataEntries: [], customers: [], invoices: [], attendance: [], salaryPayments: [], deletedIds: [] };
 }
 
 async function saveMasterStore(storeData) {
@@ -398,4 +400,28 @@ export async function deleteCloudSalaryPayment(salId) {
   const existing = (store.salaryPayments || []).filter(s => s && typeof s === 'object');
   const updated = existing.filter(s => s.id !== salId && String(s.id) !== String(salId));
   await saveMasterStore({ ...store, salaryPayments: updated });
+}
+
+// ---------------- PERMANENT DELETED IDS TRACKER ----------------
+export async function fetchCloudDeletedIds() {
+  const store = await fetchMasterStore();
+  const cloudDeleted = (store.deletedIds || []).map(d => String(d));
+  const localDeleted = JSON.parse(localStorage.getItem('deleted_item_ids') || '[]').map(d => String(d));
+  return Array.from(new Set([...cloudDeleted, ...localDeleted]));
+}
+
+export async function markIdAsDeleted(targetId) {
+  if (!targetId) return;
+  const strId = String(targetId);
+  const rawId = strId.replace(/^inv_/, '').replace(/^job_/, '').replace(/^khata_/, '');
+  const idsToMark = [strId, rawId, `inv_${rawId}`, `job_${rawId}`, `khata_${rawId}`];
+
+  const localDeleted = JSON.parse(localStorage.getItem('deleted_item_ids') || '[]');
+  const updatedLocal = Array.from(new Set([...localDeleted, ...idsToMark]));
+  localStorage.setItem('deleted_item_ids', JSON.stringify(updatedLocal));
+
+  const store = await fetchMasterStore();
+  const existing = (store.deletedIds || []).map(d => String(d));
+  const updatedCloud = Array.from(new Set([...existing, ...idsToMark]));
+  await saveMasterStore({ ...store, deletedIds: updatedCloud });
 }

@@ -3,7 +3,7 @@ import { Receipt, Printer, Eye, Wrench, Calendar, Phone, MapPin, Trash2, Camera,
 import html2canvas from 'html2canvas';
 import API from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { pushCloudRecycleBinItem, fetchCloudInvoices } from '../utils/cloudSync';
+import { pushCloudRecycleBinItem, fetchCloudInvoices, markIdAsDeleted, fetchCloudDeletedIds, deleteCloudInvoice, deleteCloudJob } from '../utils/cloudSync';
 import AdminPasswordModal from '../components/AdminPasswordModal';
 import { LOGO_BASE64 } from '../assets/logoBase64';
 import { sharePhotoToWhatsApp } from '../utils/whatsappPhotoSharer';
@@ -37,11 +37,13 @@ export default function BillingPage() {
     setLoading(true);
     let backendInvs = [];
     try {
-      const res = await API.get('/billing/', { timeout: 1500 });
+      const res = await API.get('/billing/', { timeout: 800 });
       backendInvs = res.data || [];
     } catch (err) {
       console.warn('Backend API offline for billing, deriving from local & cloud invoices:', err);
     }
+
+    const deletedIds = await fetchCloudDeletedIds();
 
     const localInvs = JSON.parse(localStorage.getItem('local_invoices') || '[]');
     const cloudInvs = await fetchCloudInvoices();
@@ -69,7 +71,7 @@ export default function BillingPage() {
         paid_amount: paidVal,
         pending_amount: pendingVal,
         discount_amount: discountVal,
-        payment_status: pendingVal > 0 ? 'PARTIAL' : 'PAID',
+        payment_status: pendingVal > 0 ? 'PENDING' : 'PAID',
         created_at: j.finished_at || j.completed_at || j.created_at || new Date().toISOString(),
         parts: j.parts || []
       };
@@ -78,12 +80,18 @@ export default function BillingPage() {
     const allMap = new Map();
     [...backendInvs, ...localInvs, ...cloudInvs, ...derivedInvs].forEach(inv => {
       if (inv && typeof inv === 'object') {
-        const rawId = String(inv.id || '').replace(/^inv_/, '').replace(/^job_/, '');
+        const strId = String(inv.id || '');
+        const rawId = strId.replace(/^inv_/, '').replace(/^job_/, '');
+        const invNum = inv.invoice_number || '';
         const vehNum = (inv.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
         const dateMinute = inv.created_at ? new Date(inv.created_at).toISOString().slice(0, 16) : '';
+
+        // Check if deleted
+        if (deletedIds.includes(strId) || deletedIds.includes(rawId) || deletedIds.includes(invNum)) {
+          return;
+        }
         
-        // Key uniquely identifies an exact service bill visit while preserving distinct visits of the same bike
-        const key = rawId ? `bill_${rawId}` : (inv.invoice_number ? `inv_${inv.invoice_number}_${vehNum}` : `${vehNum}_${dateMinute}`);
+        const key = rawId ? `bill_${rawId}` : (invNum ? `inv_${invNum}_${vehNum}` : `${vehNum}_${dateMinute}`);
 
         const partsVal = parseFloat(inv.parts_total || 0);
         const labourVal = parseFloat(inv.labour_charge || 100);
@@ -104,7 +112,6 @@ export default function BillingPage() {
         if (!allMap.has(key)) {
           allMap.set(key, normalizedInv);
         } else {
-          // Merge rich details from both derived and local/cloud invoices
           allMap.set(key, { ...allMap.get(key), ...normalizedInv });
         }
       }
@@ -264,18 +271,32 @@ export default function BillingPage() {
     localStorage.setItem('recycle_bin_items', JSON.stringify([trashObj, ...existingTrash]));
     pushCloudRecycleBinItem(trashObj).catch(console.warn);
 
-    // 2. Remove locally
-    setInvoices(prev => prev.filter(inv => String(inv.id) !== String(targetId)));
+    // 2. Mark as permanently deleted & purge from stores
+    markIdAsDeleted(targetId).catch(console.warn);
+    if (targetInv.invoice_number) markIdAsDeleted(targetInv.invoice_number).catch(console.warn);
+    deleteCloudInvoice(targetId).catch(console.warn);
+    deleteCloudJob(targetId).catch(console.warn);
+
+    const localInvoices = JSON.parse(localStorage.getItem('local_invoices') || '[]');
+    const updatedLocalInvs = localInvoices.filter(inv => String(inv.id) !== String(targetId) && inv.invoice_number !== targetInv.invoice_number);
+    localStorage.setItem('local_invoices', JSON.stringify(updatedLocalInvs));
+
+    const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
+    const updatedJobs = localJobs.filter(j => String(j.id) !== String(targetId) && String(j.id) !== String(targetId).replace('inv_', ''));
+    localStorage.setItem('workshop_jobs', JSON.stringify(updatedJobs));
+
+    setInvoices(prev => prev.filter(inv => String(inv.id) !== String(targetId) && inv.invoice_number !== targetInv.invoice_number));
     setDeleteModal({ isOpen: false, invoice: null });
 
     try {
       await API.post(`/billing/${targetId}/delete_with_password/`, {
         admin_password: adminPassword
-      }, { timeout: 2000 });
+      }, { timeout: 1500 });
     } catch (err) {
       console.warn('Backend API offline, moved invoice to Recycle Bin locally:', err);
     } finally {
-      alert('Invoice moved to Recycle Bin!');
+      alert('🗑️ Invoice moved to Recycle Bin permanently!');
+      fetchInvoices();
     }
   };
 

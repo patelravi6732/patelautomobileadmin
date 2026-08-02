@@ -461,16 +461,26 @@ export default function BillingPage() {
                       ₹{parseFloat(inv.grand_total || 0).toFixed(2)}
                     </td>
                     <td className="p-4 sm:p-5 font-black text-emerald-600 font-poppins text-base whitespace-nowrap">
-                      ₹{parseFloat(inv.paid_amount || 0).toFixed(2)}
+                      ₹{parseFloat(inv.paid_amount !== undefined && inv.paid_amount !== null ? inv.paid_amount : (inv.received_amount !== undefined && inv.received_amount !== null ? inv.received_amount : (inv.payment_status === 'PAID' ? inv.grand_total : 0))).toFixed(2)}
                     </td>
                     <td className="p-4 sm:p-5">
-                      <span className={`px-3 py-1 rounded-full text-[11px] font-extrabold uppercase ${
-                        parseFloat(inv.pending_amount || 0) <= 0
-                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                          : 'bg-amber-100 text-amber-800 border border-amber-200'
-                      }`}>
-                        {parseFloat(inv.pending_amount || 0) <= 0 ? 'PAID' : 'PENDING'}
-                      </span>
+                      {(() => {
+                        const grandVal = parseFloat(inv.grand_total || inv.total_amount || 0);
+                        const paidVal = parseFloat(inv.paid_amount !== undefined && inv.paid_amount !== null ? inv.paid_amount : (inv.received_amount !== undefined && inv.received_amount !== null ? inv.received_amount : (inv.payment_status === 'PAID' ? grandVal : 0)));
+                        const pendingVal = Math.max(0, grandVal - paidVal);
+
+                        return (
+                          <span className={`px-3 py-1 rounded-full text-[11px] font-extrabold uppercase ${
+                            pendingVal <= 0
+                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                              : paidVal > 0
+                                ? 'bg-purple-100 text-purple-800 border border-purple-200'
+                                : 'bg-amber-100 text-amber-800 border border-amber-200'
+                          }`}>
+                            {pendingVal <= 0 ? 'PAID' : paidVal > 0 ? `PARTIAL (₹${pendingVal.toFixed(0)} Pending)` : 'PENDING'}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="p-4 sm:p-5 text-slate-500 font-semibold text-xs whitespace-nowrap">
                       {new Date(inv.created_at).toLocaleDateString('en-IN')}

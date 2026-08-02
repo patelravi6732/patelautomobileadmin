@@ -187,9 +187,12 @@ export default function KhataBookPage() {
         }
       });
 
-      // 2. Process Khata Entries (Debit / Credit)
+      // 2. Process Manual Khata Entries (Debit / Credit)
       combinedKhata.forEach(k => {
         if (!k) return;
+        // Skip auto-generated service bill debit entries to prevent double counting
+        if (k.description && k.description.includes('Unpaid balance from Service Bill')) return;
+
         const name = k.customer_name || 'Valued Customer';
         const phone = k.mobile_number || k.phone || '';
         const vehicle = k.vehicle_number || '';

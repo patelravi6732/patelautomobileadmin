@@ -482,7 +482,15 @@ export async function fetchCloudDeletedIds() {
   const store = await fetchMasterStore();
   const cloudDeleted = (store.deletedIds || []).map(d => String(d));
   const localDeleted = JSON.parse(localStorage.getItem('deleted_item_ids') || '[]').map(d => String(d));
-  return Array.from(new Set([...cloudDeleted, ...localDeleted]));
+  // Filter out vehicle registration numbers (e.g., GJ15AR1234) so recurring vehicle visits are never blocked
+  const vehicleRegex = /^[A-Z]{2}\s*\d{1,2}\s*[A-Z]{0,3}\s*\d{1,4}$/i;
+  const filtered = [...cloudDeleted, ...localDeleted].filter(id => {
+    const s = String(id).trim();
+    if (vehicleRegex.test(s)) return false;
+    if (s.length === 10 && /^[A-Z0-9]+$/i.test(s) && !s.startsWith('inv_') && !s.startsWith('job_') && !s.startsWith('khata_')) return false;
+    return true;
+  });
+  return Array.from(new Set(filtered));
 }
 
 export async function markIdAsDeleted(targetId) {

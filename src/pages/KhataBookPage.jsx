@@ -242,7 +242,8 @@ export default function KhataBookPage() {
         // Active pending dues from bills MUST ALWAYS display in KhataBook!
         if (d.pending_amount > 0) return true;
         
-        return !deletedIds.includes(strId) && !deletedIds.includes(cleanVeh);
+        // Match deletedIds strictly against specific transaction IDs, never vehicle numbers
+        return !deletedIds.includes(strId);
       });
 
       const pendingDebtors = allDebtorsList.filter(d => d.pending_amount > 0);

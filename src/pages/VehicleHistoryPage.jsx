@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Search, Bike, Calendar, CheckCircle2, ShieldCheck, Wrench, Clock, FileText, Sparkles, AlertCircle, ArrowRight, Phone, User, Lock } from 'lucide-react';
 import API from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { fetchCloudJobs, fetchCloudBookings, fetchCloudInvoices } from '../utils/cloudSync';
+import { fetchCloudJobs, fetchCloudBookings, fetchCloudInvoices, fetchCloudDeletedIds } from '../utils/cloudSync';
 
 export default function VehicleHistoryPage() {
   const { garageInfo } = useAuth();
@@ -46,6 +46,8 @@ export default function VehicleHistoryPage() {
     }
 
     // Comprehensive Fallback Search across Local & Cloud Store
+    const deletedIds = await fetchCloudDeletedIds().catch(() => []);
+
     const allJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
     const cloudJobs = await fetchCloudJobs();
     const combinedJobs = [...allJobs, ...cloudJobs];
@@ -59,7 +61,7 @@ export default function VehicleHistoryPage() {
     const combinedBookings = [...localBookings, ...cloudBookings];
 
     const matchedJobs = combinedJobs.filter(j => {
-      if (!j) return false;
+      if (!j || deletedIds.includes(String(j.id))) return false;
       const jVeh = (j.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
       const jPhone = (j.mobile_number || j.phone || j.customer_mobile || j.phone_number || '').replace(/\D/g, '').slice(-10);
       const isVehMatch = Boolean(jVeh && cleanInputVeh && (jVeh === cleanInputVeh || jVeh.includes(cleanInputVeh) || cleanInputVeh.includes(jVeh)));
@@ -68,7 +70,7 @@ export default function VehicleHistoryPage() {
     });
 
     const matchedInvs = combinedInvoices.filter(i => {
-      if (!i) return false;
+      if (!i || deletedIds.includes(String(i.id))) return false;
       const iVeh = (i.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
       const iPhone = (i.mobile_number || i.phone || i.customer_mobile || i.phone_number || '').replace(/\D/g, '').slice(-10);
       const isVehMatch = Boolean(iVeh && cleanInputVeh && (iVeh === cleanInputVeh || iVeh.includes(cleanInputVeh) || cleanInputVeh.includes(iVeh)));
@@ -77,7 +79,7 @@ export default function VehicleHistoryPage() {
     });
 
     const matchedBookings = combinedBookings.filter(b => {
-      if (!b) return false;
+      if (!b || deletedIds.includes(String(b.id))) return false;
       const bVeh = (b.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
       const bPhone = (b.mobile_number || b.phone || b.customer_mobile || b.phone_number || '').replace(/\D/g, '').slice(-10);
       const isVehMatch = Boolean(bVeh && cleanInputVeh && (bVeh === cleanInputVeh || bVeh.includes(cleanInputVeh) || cleanInputVeh.includes(bVeh)));

@@ -183,6 +183,7 @@ export default function KhataBookPage() {
           const formattedDate = new Date(itemDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
           if (d.visit_date === 'N/A' || new Date(itemDate) > new Date(d.visit_date)) {
             d.visit_date = formattedDate;
+            d.raw_date = itemDate;
           }
         }
       });
@@ -212,6 +213,7 @@ export default function KhataBookPage() {
         if (k.date) {
           const formattedDate = new Date(k.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
           d.visit_date = formattedDate;
+          d.raw_date = k.date;
         }
       });
 
@@ -227,6 +229,7 @@ export default function KhataBookPage() {
             d.total_paid = parseFloat(leg.total_paid || 0);
             if (leg.visit_date && leg.visit_date !== 'N/A') {
               d.visit_date = leg.visit_date;
+              d.raw_date = leg.visit_date;
             }
           }
         }
@@ -237,7 +240,6 @@ export default function KhataBookPage() {
       const allDebtorsList = Array.from(debtorMap.values()).filter(d => {
         d.balance = d.pending_amount;
         const strId = String(d.id || '');
-        const cleanVeh = (d.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
         
         // Active pending dues from bills MUST ALWAYS display in KhataBook!
         if (d.pending_amount > 0) return true;
@@ -264,10 +266,29 @@ export default function KhataBookPage() {
     fetchKhata();
   }, []);
 
+  const parseSafelyDate = (dateStr) => {
+    if (!dateStr) return new Date();
+    if (dateStr instanceof Date) return dateStr;
+    const str = String(dateStr).trim();
+    if (str.includes('/')) {
+      const parts = str.split('/');
+      if (parts.length === 3) {
+        const p1 = parseInt(parts[0], 10);
+        const p2 = parseInt(parts[1], 10);
+        const p3 = parseInt(parts[2], 10);
+        if (p2 <= 12 && p1 <= 31) {
+          return new Date(p3, p2 - 1, p1);
+        }
+      }
+    }
+    const d = new Date(str);
+    return isNaN(d.getTime()) ? new Date() : d;
+  };
+
   const availableYears = useMemo(() => {
     const currentY = new Date().getFullYear();
     const years = debtors
-      .map((d) => new Date(d.visit_date || d.created_at || d.last_visit_date || Date.now()).getFullYear())
+      .map((d) => parseSafelyDate(d.raw_date || d.visit_date || d.created_at).getFullYear())
       .filter((y) => Number.isInteger(y) && y > 2000);
     const minY = Math.min(currentY, ...years, 2024);
     const maxY = Math.max(currentY + 2, ...years, 2026);
@@ -290,7 +311,9 @@ export default function KhataBookPage() {
       }
 
       // 2. Date Filter Modes
-      const dateObj = new Date(d.visit_date || d.created_at || d.last_visit_date || Date.now());
+      if (filterMode === 'ALL') return true;
+
+      const dateObj = parseSafelyDate(d.raw_date || d.visit_date || d.created_at);
       if (Number.isNaN(dateObj.getTime())) return true;
 
       if (filterMode === 'MONTH_YEAR') {

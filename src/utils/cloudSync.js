@@ -298,19 +298,47 @@ export async function pushCloudRecycleBinItem(trashObj) {
 
 export async function restoreCloudRecycleBinItem(itemId) {
   if (!itemId) return;
+
+  // 1. Remove from local recycle_bin_items
+  const localTrash = JSON.parse(localStorage.getItem('recycle_bin_items') || '[]');
+  const updatedLocalTrash = localTrash.filter(r => r.id !== itemId && String(r.id) !== String(itemId));
+  localStorage.setItem('recycle_bin_items', JSON.stringify(updatedLocalTrash));
+
+  // 2. Remove from master_cloud_cache store.recycleBin
   const store = await fetchMasterStore();
   const existing = (store.recycleBin || []).filter(r => r && typeof r === 'object');
   const target = existing.find(r => r.id === itemId || String(r.id) === String(itemId));
-  const updatedTrash = existing.filter(r => r.id !== itemId && String(r.id) !== String(itemId));
+  const updatedCloudTrash = existing.filter(r => r.id !== itemId && String(r.id) !== String(itemId));
   
+  let updatedInvs = store.invoices || [];
+  let updatedJobs = store.jobs || [];
+  let updatedKhata = store.khataEntries || [];
   let updatedInventory = store.inventory || [];
-  if (target && target.payload && target.item_type === 'Inventory') {
-    updatedInventory = [target.payload, ...updatedInventory];
+
+  if (target && target.payload) {
+    if (target.item_type === 'Billing Invoice') {
+      updatedInvs = [target.payload, ...updatedInvs.filter(i => String(i.id) !== String(target.payload.id))];
+    } else if (target.item_type === 'Workshop Job') {
+      updatedJobs = [target.payload, ...updatedJobs.filter(j => String(j.id) !== String(target.payload.id))];
+    } else if (target.item_type === 'Khata Account') {
+      updatedKhata = [target.payload, ...updatedKhata.filter(k => String(k.id) !== String(target.payload.id))];
+    } else if (target.item_type === 'Inventory') {
+      updatedInventory = [target.payload, ...updatedInventory.filter(i => String(i.id) !== String(target.payload.id))];
+    }
   }
-  await saveMasterStore({ ...store, recycleBin: updatedTrash, inventory: updatedInventory });
+
+  await saveMasterStore({
+    ...store,
+    recycleBin: updatedCloudTrash,
+    invoices: updatedInvs,
+    jobs: updatedJobs,
+    khataEntries: updatedKhata,
+    inventory: updatedInventory
+  });
 }
 
 export async function emptyCloudRecycleBin() {
+  localStorage.setItem('recycle_bin_items', '[]');
   const store = await fetchMasterStore();
   await saveMasterStore({ ...store, recycleBin: [] });
 }

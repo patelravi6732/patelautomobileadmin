@@ -45,10 +45,10 @@ export default function RecycleBinPage() {
   }, []);
 
   const handleRestore = async (item) => {
-    restoreCloudRecycleBinItem(item.id).catch(console.warn);
+    await restoreCloudRecycleBinItem(item.id).catch(console.warn);
     const targetPayloadId = item.payload?.id || item.id;
-    unmarkDeletedId(targetPayloadId).catch(console.warn);
-    if (item.payload?.invoice_number) unmarkDeletedId(item.payload.invoice_number).catch(console.warn);
+    await unmarkDeletedId(targetPayloadId).catch(console.warn);
+    if (item.payload?.invoice_number) await unmarkDeletedId(item.payload.invoice_number).catch(console.warn);
 
     // Write to Audit Logs
     pushAuditLog('RESTORE', 'Recycle Bin', `Restored ${item.item_type || 'item'}: ${item.title || targetPayloadId}`).catch(console.warn);

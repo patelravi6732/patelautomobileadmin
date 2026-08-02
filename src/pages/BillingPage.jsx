@@ -281,8 +281,17 @@ export default function BillingPage() {
     const updatedLocalInvs = localInvoices.filter(inv => String(inv.id) !== String(targetId) && inv.invoice_number !== targetInv.invoice_number);
     localStorage.setItem('local_invoices', JSON.stringify(updatedLocalInvs));
 
+    const rawTargetId = String(targetId).replace(/^inv_/, '').replace(/^job_/, '');
+    const targetVeh = (targetInv.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+
     const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
-    const updatedJobs = localJobs.filter(j => String(j.id) !== String(targetId) && String(j.id) !== String(targetId).replace('inv_', ''));
+    const updatedJobs = localJobs.filter(j => {
+      const jId = String(j.id || '');
+      const jRaw = jId.replace(/^inv_/, '').replace(/^job_/, '');
+      const jVeh = (j.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+      if (jId === String(targetId) || jRaw === rawTargetId) return false;
+      return true;
+    });
     localStorage.setItem('workshop_jobs', JSON.stringify(updatedJobs));
 
     setInvoices(prev => prev.filter(inv => String(inv.id) !== String(targetId) && inv.invoice_number !== targetInv.invoice_number));

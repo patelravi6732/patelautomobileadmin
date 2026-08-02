@@ -220,9 +220,14 @@ export default function KhataBookPage() {
       }
     });
 
-    // CRUCIAL: Filter out any debtor whose pending_amount is 0 or less!
+    const deletedIds = await fetchCloudDeletedIds();
+
+    // CRUCIAL: Filter out any debtor whose pending_amount is 0 or less or is in deletedIds!
     const activeDebtors = Array.from(debtorMap.values()).filter(d => {
       d.balance = d.pending_amount;
+      const strId = String(d.id || '');
+      const cleanVeh = (d.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+      if (deletedIds.includes(strId) || deletedIds.includes(cleanVeh)) return false;
       return d.pending_amount > 0;
     });
 

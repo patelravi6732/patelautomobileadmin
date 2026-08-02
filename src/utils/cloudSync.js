@@ -5,10 +5,40 @@ const PRIMARY_BIN_URL = 'https://api.npoint.io/87b4fa8d9e2a4a754b2a';
 const BACKUP_BIN_URL = 'https://api.restful-api.dev/objects/ff8081819f7e10ae019fbcb185ca5b9e';
 
 async function fetchMasterStore() {
+  const getLocalCache = () => {
+    try {
+      const raw = localStorage.getItem('master_cloud_cache');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return {
+          bookings: Array.isArray(parsed.bookings) ? parsed.bookings : [],
+          messages: Array.isArray(parsed.messages) ? parsed.messages : [],
+          jobs: Array.isArray(parsed.jobs) ? parsed.jobs : [],
+          inventory: Array.isArray(parsed.inventory) ? parsed.inventory : [],
+          recycleBin: Array.isArray(parsed.recycleBin) ? parsed.recycleBin : [],
+          garageInfo: parsed.garageInfo || null,
+          adminProfiles: Array.isArray(parsed.adminProfiles) ? parsed.adminProfiles : [],
+          khataEntries: Array.isArray(parsed.khataEntries) ? parsed.khataEntries : [],
+          customers: Array.isArray(parsed.customers) ? parsed.customers : [],
+          invoices: Array.isArray(parsed.invoices) ? parsed.invoices : [],
+          attendance: Array.isArray(parsed.attendance) ? parsed.attendance : [],
+          salaryPayments: Array.isArray(parsed.salaryPayments) ? parsed.salaryPayments : [],
+          deletedIds: Array.isArray(parsed.deletedIds) ? parsed.deletedIds : []
+        };
+      }
+    } catch (e) {
+      console.warn('Error reading local master_cloud_cache:', e);
+    }
+    return { bookings: [], messages: [], jobs: [], inventory: [], recycleBin: [], garageInfo: null, adminProfiles: [], khataEntries: [], customers: [], invoices: [], attendance: [], salaryPayments: [], deletedIds: [] };
+  };
+
+  const localCache = getLocalCache();
+  let freshStore = null;
+
   try {
-    const res = await axios.get(PRIMARY_BIN_URL, { timeout: 800 });
+    const res = await axios.get(PRIMARY_BIN_URL, { timeout: 1500 });
     if (res.data) {
-      return {
+      freshStore = {
         bookings: Array.isArray(res.data.bookings) ? res.data.bookings : [],
         messages: Array.isArray(res.data.messages) ? res.data.messages : [],
         jobs: Array.isArray(res.data.jobs) ? res.data.jobs : [],
@@ -25,11 +55,10 @@ async function fetchMasterStore() {
       };
     }
   } catch (e1) {
-    // Attempt Backup endpoint silently with fast timeout
     try {
-      const res = await axios.get(BACKUP_BIN_URL, { timeout: 800 });
+      const res = await axios.get(BACKUP_BIN_URL, { timeout: 1500 });
       if (res.data && res.data.data) {
-        return {
+        freshStore = {
           bookings: Array.isArray(res.data.data.bookings) ? res.data.data.bookings : [],
           messages: Array.isArray(res.data.data.messages) ? res.data.data.messages : [],
           jobs: Array.isArray(res.data.data.jobs) ? res.data.data.jobs : [],
@@ -46,20 +75,52 @@ async function fetchMasterStore() {
         };
       }
     } catch (e2) {
-      // Fast fallback to caller
+      // Cloud endpoints offline
     }
   }
-  return { bookings: [], messages: [], jobs: [], inventory: [], recycleBin: [], garageInfo: null, adminProfiles: [], khataEntries: [], customers: [], invoices: [], attendance: [], salaryPayments: [], deletedIds: [] };
+
+  if (freshStore) {
+    // Merge cloud and local cache to preserve rich records
+    const mergedStore = {
+      bookings: Array.from(new Map([...localCache.bookings, ...freshStore.bookings].map(b => [b.id || `${b.customer_name}_${b.vehicle_number}`, b])).values()),
+      messages: Array.from(new Map([...localCache.messages, ...freshStore.messages].map(m => [m.id || m.title, m])).values()),
+      jobs: Array.from(new Map([...localCache.jobs, ...freshStore.jobs].map(j => [j.id, j])).values()),
+      inventory: Array.from(new Map([...localCache.inventory, ...freshStore.inventory].map(i => [i.id || i.name, i])).values()),
+      recycleBin: Array.from(new Map([...localCache.recycleBin, ...freshStore.recycleBin].map(r => [r.id, r])).values()),
+      garageInfo: freshStore.garageInfo || localCache.garageInfo,
+      adminProfiles: Array.from(new Map([...localCache.adminProfiles, ...freshStore.adminProfiles].map(a => [a.id || a.email, a])).values()),
+      khataEntries: Array.from(new Map([...localCache.khataEntries, ...freshStore.khataEntries].map(k => [k.id, k])).values()),
+      customers: Array.from(new Map([...localCache.customers, ...freshStore.customers].map(c => [c.id || c.phone, c])).values()),
+      invoices: Array.from(new Map([...localCache.invoices, ...freshStore.invoices].map(inv => [inv.id, inv])).values()),
+      attendance: Array.from(new Map([...localCache.attendance, ...freshStore.attendance].map(att => [att.id || `${att.mechanic_name}_${att.date}`, att])).values()),
+      salaryPayments: Array.from(new Map([...localCache.salaryPayments, ...freshStore.salaryPayments].map(s => [s.id, s])).values()),
+      deletedIds: Array.from(new Set([...localCache.deletedIds, ...freshStore.deletedIds]))
+    };
+    try {
+      localStorage.setItem('master_cloud_cache', JSON.stringify(mergedStore));
+    } catch (e) {
+      console.warn('Failed to update local master_cloud_cache:', e);
+    }
+    return mergedStore;
+  }
+
+  return localCache;
 }
 
 async function saveMasterStore(storeData) {
+  try {
+    localStorage.setItem('master_cloud_cache', JSON.stringify(storeData));
+  } catch (e) {
+    console.warn('Error writing local master_cloud_cache:', e);
+  }
+
   try {
     await axios.post(PRIMARY_BIN_URL, storeData, { timeout: 2500 });
   } catch (err) {
     try {
       await axios.put(BACKUP_BIN_URL, { name: 'PatelAutomobilesMasterBin', data: storeData }, { timeout: 2000 });
     } catch (e2) {
-      // Saved locally in caller
+      // Saved in local cache above
     }
   }
 }

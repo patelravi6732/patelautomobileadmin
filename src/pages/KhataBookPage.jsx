@@ -222,18 +222,19 @@ export default function KhataBookPage() {
 
     const deletedIds = await fetchCloudDeletedIds();
 
-    // CRUCIAL: Filter out any debtor whose pending_amount is 0 or less or is in deletedIds!
-    const activeDebtors = Array.from(debtorMap.values()).filter(d => {
+    const allDebtorsList = Array.from(debtorMap.values()).filter(d => {
       d.balance = d.pending_amount;
       const strId = String(d.id || '');
       const cleanVeh = (d.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-      if (deletedIds.includes(strId) || deletedIds.includes(cleanVeh)) return false;
-      return d.pending_amount > 0;
+      return !deletedIds.includes(strId) && !deletedIds.includes(cleanVeh);
     });
 
-    const totalSum = activeDebtors.reduce((acc, d) => acc + d.pending_amount, 0);
+    const pendingDebtors = allDebtorsList.filter(d => d.pending_amount > 0);
+    const finalDebtors = pendingDebtors.length > 0 ? pendingDebtors : allDebtorsList;
 
-    setDebtors(activeDebtors);
+    const totalSum = pendingDebtors.reduce((acc, d) => acc + d.pending_amount, 0);
+
+    setDebtors(finalDebtors);
     setTotalPending(totalSum);
     setLoading(false);
   };

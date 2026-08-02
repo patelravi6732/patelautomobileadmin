@@ -56,16 +56,29 @@ export default function MechanicProfileModal({ isOpen, onClose, mechanicName }) 
 
         const totalSalaryPaid = monthSal.reduce((acc, s) => acc + parseFloat(s.amount || 0), 0);
 
+        const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
+        const finishedJobsCount = localJobs.filter(j => j && (j.assigned_mechanic === mechanicName || j.secondary_mechanic === mechanicName) && (j.status === 'FINISHED' || j.status === 'COMPLETED')).length;
+
         setProfileData({
           mechanic_name: mechanicName,
           current_month: `${now.toLocaleString('en-US', { month: 'long' })} ${curYear}`,
           present: presentCount,
+          present_count: presentCount,
           half_day: halfDayCount,
+          half_day_count: halfDayCount,
           absent: absentCount,
+          absent_count: absentCount,
+          finished_jobs_count: finishedJobsCount,
           total_days_worked: daysWorked,
           total_salary_paid: totalSalaryPaid,
-          attendance_logs: combinedAtt.slice(0, 10),
-          salary_history: combinedSal.slice(0, 10)
+          attendance_history: combinedAtt.map(a => ({
+            id: a.id || `att_${Math.random()}`,
+            date: a.date || new Date().toISOString().split('T')[0],
+            check_in_time: a.check_in || a.check_in_time || (a.status === 'ABSENT' ? '--' : '09:00 AM'),
+            check_out_time: a.check_out || a.check_out_time || (a.status === 'PRESENT' ? 'Working' : '--'),
+            status: a.status || 'PRESENT'
+          })),
+          salary_history: combinedSal
         });
         setLoading(false);
       };

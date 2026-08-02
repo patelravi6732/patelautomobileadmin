@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Trash2, RotateCcw, ShieldAlert, Clock, User, FileText, CheckCircle2, AlertTriangle } from 'lucide-react';
 import API from '../services/api';
-import { fetchCloudRecycleBin, restoreCloudRecycleBinItem, emptyCloudRecycleBin, pushCloudInventoryItem } from '../utils/cloudSync';
+import { fetchCloudRecycleBin, restoreCloudRecycleBinItem, emptyCloudRecycleBin, pushCloudInventoryItem, pushCloudJob, pushCloudInvoice, pushCloudKhataEntry, unmarkDeletedId } from '../utils/cloudSync';
 import AdminPasswordModal from '../components/AdminPasswordModal';
 
 export default function RecycleBinPage() {
@@ -13,7 +13,7 @@ export default function RecycleBinPage() {
     setLoading(true);
     let backendItems = [];
     try {
-      const res = await API.get('/recycle-bin/', { timeout: 1500 });
+      const res = await API.get('/recycle-bin/', { timeout: 800 });
       backendItems = res.data || [];
     } catch (err) {
       console.warn('Backend API offline for Recycle Bin, using fast local+cloud store:', err);
@@ -46,26 +46,43 @@ export default function RecycleBinPage() {
 
   const handleRestore = async (item) => {
     restoreCloudRecycleBinItem(item.id).catch(console.warn);
+    const targetPayloadId = item.payload?.id || item.id;
+    unmarkDeletedId(targetPayloadId).catch(console.warn);
+    if (item.payload?.invoice_number) unmarkDeletedId(item.payload.invoice_number).catch(console.warn);
 
     // Restore locally
     const currentTrash = JSON.parse(localStorage.getItem('recycle_bin_items') || '[]');
     const updatedTrash = currentTrash.filter(r => String(r.id) !== String(item.id));
     localStorage.setItem('recycle_bin_items', JSON.stringify(updatedTrash));
 
-    if (item.payload && item.item_type === 'Inventory') {
-      const currentInv = JSON.parse(localStorage.getItem('inventory_items') || '[]');
-      localStorage.setItem('inventory_items', JSON.stringify([item.payload, ...currentInv]));
-      pushCloudInventoryItem(item.payload).catch(console.warn);
+    if (item.payload) {
+      if (item.item_type === 'Inventory') {
+        const currentInv = JSON.parse(localStorage.getItem('inventory_items') || '[]');
+        localStorage.setItem('inventory_items', JSON.stringify([item.payload, ...currentInv]));
+        pushCloudInventoryItem(item.payload).catch(console.warn);
+      } else if (item.item_type === 'Billing Invoice') {
+        const currentInvs = JSON.parse(localStorage.getItem('local_invoices') || '[]');
+        localStorage.setItem('local_invoices', JSON.stringify([item.payload, ...currentInvs]));
+        pushCloudInvoice(item.payload).catch(console.warn);
+      } else if (item.item_type === 'Workshop Job') {
+        const currentJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
+        localStorage.setItem('workshop_jobs', JSON.stringify([item.payload, ...currentJobs]));
+        pushCloudJob(item.payload).catch(console.warn);
+      } else if (item.item_type === 'Khata Account') {
+        const currentKhata = JSON.parse(localStorage.getItem('khata_entries') || '[]');
+        localStorage.setItem('khata_entries', JSON.stringify([item.payload, ...currentKhata]));
+        pushCloudKhataEntry(item.payload).catch(console.warn);
+      }
     }
 
     setItems(prev => prev.filter(r => String(r.id) !== String(item.id)));
 
     try {
-      await API.post(`/recycle-bin/${item.id}/restore/`, {}, { timeout: 2000 });
+      await API.post(`/recycle-bin/${item.id}/restore/`, {}, { timeout: 1500 });
     } catch (err) {
       console.warn('Backend API offline, restored item locally & cloud store:', err);
     } finally {
-      alert('Item restored back to active database!');
+      alert('✅ Item restored back to active database!');
     }
   };
 

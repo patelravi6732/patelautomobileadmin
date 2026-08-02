@@ -425,3 +425,19 @@ export async function markIdAsDeleted(targetId) {
   const updatedCloud = Array.from(new Set([...existing, ...idsToMark]));
   await saveMasterStore({ ...store, deletedIds: updatedCloud });
 }
+
+export async function unmarkDeletedId(targetId) {
+  if (!targetId) return;
+  const strId = String(targetId);
+  const rawId = strId.replace(/^inv_/, '').replace(/^job_/, '').replace(/^khata_/, '');
+  const idsToRemove = new Set([strId, rawId, `inv_${rawId}`, `job_${rawId}`, `khata_${rawId}`]);
+
+  const localDeleted = JSON.parse(localStorage.getItem('deleted_item_ids') || '[]');
+  const updatedLocal = localDeleted.filter(d => !idsToRemove.has(String(d)));
+  localStorage.setItem('deleted_item_ids', JSON.stringify(updatedLocal));
+
+  const store = await fetchMasterStore();
+  const existing = (store.deletedIds || []).map(d => String(d));
+  const updatedCloud = existing.filter(d => !idsToRemove.has(String(d)));
+  await saveMasterStore({ ...store, deletedIds: updatedCloud });
+}

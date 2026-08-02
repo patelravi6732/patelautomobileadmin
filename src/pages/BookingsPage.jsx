@@ -34,6 +34,7 @@ export default function BookingsPage() {
     text: ''
   });
 
+  const [filterMode, setFilterMode] = useState('ALL');
   const [selectedMonth, setSelectedMonth] = useState(DEFAULT_BOOKING_DATE.getMonth());
   const [selectedYear, setSelectedYear] = useState(DEFAULT_BOOKING_DATE.getFullYear());
   const [selectedStatus, setSelectedStatus] = useState(null);
@@ -144,6 +145,43 @@ export default function BookingsPage() {
     window.open(`https://wa.me/${phoneClean}?text=${encoded}`, '_blank');
     setNotifyModal({ isOpen: false, booking: null, isAccepted: true, lang: 'GUJARATI', variationIndex: 0, text: '' });
   };
+  const parseSafelyDate = (dateStr) => {
+    if (!dateStr) return new Date();
+    if (dateStr instanceof Date) return dateStr;
+    const str = String(dateStr).trim();
+    if (str.includes('/')) {
+      const parts = str.split('/');
+      if (parts.length === 3) {
+        const p1 = parseInt(parts[0], 10);
+        const p2 = parseInt(parts[1], 10);
+        const p3 = parseInt(parts[2], 10);
+        if (p2 <= 12 && p1 <= 31) {
+          return new Date(p3, p2 - 1, p1);
+        }
+      }
+    }
+    const d = new Date(str);
+    return isNaN(d.getTime()) ? new Date() : d;
+  };
+
+  const filteredBookings = useMemo(() => {
+    return bookings.filter((booking) => {
+      if (!booking) return false;
+      if (selectedStatus && booking.status !== selectedStatus) {
+        return false;
+      }
+      if (filterMode === 'ALL') {
+        return true;
+      }
+      const rawD = booking.preferred_date || booking.created_at || booking.date;
+      const bookingDate = parseSafelyDate(rawD);
+      return !Number.isNaN(bookingDate.getTime())
+        && bookingDate.getMonth() === selectedMonth
+        && bookingDate.getFullYear() === selectedYear;
+    });
+  }, [bookings, filterMode, selectedMonth, selectedYear, selectedStatus]);
+
+  const visibleBookings = filteredBookings;
 
   const availableYears = useMemo(() => {
     const bookingYears = bookings

@@ -4,7 +4,7 @@ import API from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { generateBillCanvasDataUrl, generateBillCanvasDataUrlAsync, generateBillCanvasBlob } from '../utils/billCardGenerator';
 
-import { fetchCloudKhataEntries, fetchCloudInvoices, pushCloudKhataEntry, pushCloudRecycleBinItem, markIdAsDeleted, deleteCloudKhataEntry } from '../utils/cloudSync';
+import { fetchCloudKhataEntries, fetchCloudInvoices, fetchCloudJobs, pushCloudKhataEntry, pushCloudRecycleBinItem, markIdAsDeleted, deleteCloudKhataEntry } from '../utils/cloudSync';
 import AdminPasswordModal from '../components/AdminPasswordModal';
 
 const monthNames = [
@@ -18,6 +18,7 @@ export default function KhataBookPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [sharingPhoto, setSharingPhoto] = useState(false);
+  const [toast, setToast] = useState(null);
   const { garageInfo } = useAuth();
 
   // Date, Month & Year Filter States

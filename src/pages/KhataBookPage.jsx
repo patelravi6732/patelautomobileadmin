@@ -165,7 +165,14 @@ export default function KhataBookPage() {
         const labourVal = parseFloat(item.labour_charge || 100);
         const discountVal = parseFloat(item.discount_amount || 0);
         const totalVal = parseFloat(item.grand_total || item.total_amount || item.live_total || Math.max(0, partsVal + labourVal - discountVal));
-        const paidVal = item.paid_amount !== undefined ? parseFloat(item.paid_amount) : totalVal;
+        let paidVal = 0;
+        if (item.paid_amount !== undefined && item.paid_amount !== null && item.paid_amount !== '') {
+          paidVal = parseFloat(item.paid_amount);
+        } else if (item.payment_status === 'PENDING' || item.status === 'PENDING' || item.payment_status === 'UNPAID') {
+          paidVal = 0;
+        } else {
+          paidVal = totalVal;
+        }
 
         d.total_billed += totalVal;
         d.total_paid += paidVal;

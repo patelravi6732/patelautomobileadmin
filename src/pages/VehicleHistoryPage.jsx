@@ -3,6 +3,7 @@ import { Search, Bike, Calendar, CheckCircle2, ShieldCheck, Wrench, Clock, FileT
 import API from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { fetchCloudJobs, fetchCloudBookings, fetchCloudInvoices, fetchCloudDeletedIds } from '../utils/cloudSync';
+import { formatDateDMY } from '../utils/dateFormatter';
 
 export default function VehicleHistoryPage() {
   const { garageInfo } = useAuth();
@@ -284,7 +285,7 @@ export default function VehicleHistoryPage() {
 
                           <div className="flex items-center gap-3">
                             <span className="text-xs font-mono text-slate-400">
-                              {new Date(job.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                              {formatDateDMY(job.created_at || job.date)}
                             </span>
                             <span className={`px-3 py-1 rounded-full text-[10px] font-extrabold uppercase ${
                               job.status === 'FINISHED' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'

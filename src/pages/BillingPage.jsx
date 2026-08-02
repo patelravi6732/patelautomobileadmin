@@ -9,6 +9,7 @@ import { LOGO_BASE64 } from '../assets/logoBase64';
 import { sharePhotoToWhatsApp } from '../utils/whatsappPhotoSharer';
 
 import { generateBillCanvasDataUrl, generateBillCanvasDataUrlAsync, generateBillCanvasBlob } from '../utils/billCardGenerator';
+import { formatDateDMY } from '../utils/dateFormatter';
 
 const monthNames = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -483,7 +484,7 @@ export default function BillingPage() {
                       })()}
                     </td>
                     <td className="p-4 sm:p-5 text-slate-500 font-semibold text-xs whitespace-nowrap">
-                      {new Date(inv.created_at).toLocaleDateString('en-IN')}
+                      {formatDateDMY(inv.created_at || inv.visit_date)}
                     </td>
                     <td className="p-4 sm:p-5 text-right">
                       <div className="flex items-center justify-end gap-2">
@@ -624,7 +625,7 @@ export default function BillingPage() {
                 </div>
               </div>
               <div className="text-right font-mono text-xs text-slate-500 pt-2 shrink-0">
-                Date: {new Date(selectedInvoice.created_at || Date.now()).toLocaleDateString('en-IN')}
+                Date: {formatDateDMY(selectedInvoice.created_at || selectedInvoice.visit_date)}
               </div>
             </div>
 

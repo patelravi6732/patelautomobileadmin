@@ -1,4 +1,5 @@
 import { LOGO_BASE64 } from '../assets/logoBase64';
+import { formatDateDMY } from './dateFormatter';
 
 const imageCache = new Map();
 
@@ -113,10 +114,7 @@ const renderCanvasInternal = (invoice, garageInfo, logoImg, qrImg) => {
 
   // Date Top Right
   const invDate = inv.created_at || inv.visit_date || Date.now();
-  let dateStr = 'Today';
-  try {
-    dateStr = new Date(invDate).toLocaleDateString('en-IN');
-  } catch(e) {}
+  const dateStr = formatDateDMY(invDate);
 
   ctx.fillStyle = '#64748b';
   ctx.font = 'bold 13.5px Consolas, "Liberation Mono", monospace, sans-serif';

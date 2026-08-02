@@ -59,14 +59,7 @@ export default function KhataBookPage() {
       console.warn('Backend API offline for Khata, aggregating from local and cloud stores:', err);
     }
 
-    if (backendData && backendData.debtors && backendData.debtors.length > 0) {
-      setDebtors(backendData.debtors || []);
-      setTotalPending(backendData.total_pending_amount || 0);
-      setLoading(false);
-      return;
-    }
-
-    // Aggregating Khata Entries and Unpaid Invoices
+    // Read all records across stores
     const localKhata = JSON.parse(localStorage.getItem('khata_entries') || '[]');
     const cloudKhata = await fetchCloudKhataEntries();
     const combinedKhata = [...localKhata, ...cloudKhata];
@@ -75,79 +68,119 @@ export default function KhataBookPage() {
     const cloudInvs = await fetchCloudInvoices();
     const combinedInvs = [...localInvs, ...cloudInvs];
 
-    const legacyDebtors = JSON.parse(localStorage.getItem('khata_debtors') || '[]');
+    const allJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
+    const cloudJobs = await fetchCloudJobs();
+    const combinedJobs = [...allJobs, ...cloudJobs];
+
+    const legacyDebtors = backendData?.debtors || JSON.parse(localStorage.getItem('khata_debtors') || '[]');
 
     const debtorMap = new Map();
 
-    // 1. Process Khata Entries
+    // Helper to get or init debtor object
+    const getDebtor = (name, phone, vehicle, model) => {
+      const cleanVeh = (vehicle || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+      const cleanPhone = (phone || '').replace(/\D/g, '').slice(-10);
+      const key = cleanVeh || (cleanPhone ? `${name.toLowerCase()}_${cleanPhone}` : name.toLowerCase());
+
+      if (!debtorMap.has(key)) {
+        debtorMap.set(key, {
+          id: key,
+          customer_name: name || 'Valued Customer',
+          phone: phone || 'N/A',
+          mobile_number: phone || 'N/A',
+          vehicle_number: vehicle || 'GJ-15',
+          bike_model: model || 'Two Wheeler',
+          total_billed: 0,
+          total_paid: 0,
+          pending_amount: 0,
+          balance: 0,
+          visit_date: 'N/A',
+          notes: ''
+        });
+      }
+      return debtorMap.get(key);
+    };
+
+    // 1. Process Workshop Jobs & Invoices for total_billed & total_paid
+    [...combinedJobs, ...combinedInvs].forEach(item => {
+      if (!item) return;
+      const name = item.customer_name || 'Valued Customer';
+      const phone = item.mobile_number || item.phone || item.phone_number || '';
+      const vehicle = item.vehicle_number || '';
+      const model = item.bike_model || '';
+
+      const d = getDebtor(name, phone, vehicle, model);
+      const partsVal = parseFloat(item.parts_total || 0);
+      const labourVal = parseFloat(item.labour_charge || 100);
+      const discountVal = parseFloat(item.discount_amount || 0);
+      const totalVal = parseFloat(item.grand_total || item.total_amount || item.live_total || Math.max(0, partsVal + labourVal - discountVal));
+      const paidVal = item.paid_amount !== undefined ? parseFloat(item.paid_amount) : totalVal;
+
+      d.total_billed += totalVal;
+      d.total_paid += paidVal;
+      d.pending_amount += Math.max(0, totalVal - paidVal);
+
+      const itemDate = item.finished_at || item.completed_at || item.created_at || item.date;
+      if (itemDate && itemDate !== 'N/A') {
+        const formattedDate = new Date(itemDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+        if (d.visit_date === 'N/A' || new Date(itemDate) > new Date(d.visit_date)) {
+          d.visit_date = formattedDate;
+        }
+      }
+    });
+
+    // 2. Process Khata Entries (Debit / Credit)
     combinedKhata.forEach(k => {
       if (!k) return;
-      const key = (k.vehicle_number || `${k.customer_name}_${k.mobile_number}`).trim().toUpperCase();
+      const name = k.customer_name || 'Valued Customer';
+      const phone = k.mobile_number || k.phone || '';
+      const vehicle = k.vehicle_number || '';
+      const model = k.bike_model || '';
+
+      const d = getDebtor(name, phone, vehicle, model);
       const amt = parseFloat(k.amount || 0);
-      if (!debtorMap.has(key)) {
-        debtorMap.set(key, {
-          id: k.id || key,
-          customer_name: k.customer_name || 'Valued Customer',
-          mobile_number: k.mobile_number || 'N/A',
-          vehicle_number: k.vehicle_number || 'GJ-15',
-          bike_model: k.bike_model || 'Two Wheeler',
-          balance: k.type === 'DEBIT' ? amt : -amt,
-          total_pending_amount: k.type === 'DEBIT' ? amt : -amt,
-          last_visit_date: k.date || new Date().toISOString(),
-          notes: k.description || ''
-        });
-      } else {
-        const existing = debtorMap.get(key);
-        if (k.type === 'DEBIT') {
-          existing.balance += amt;
-          existing.total_pending_amount += amt;
-        } else {
-          existing.balance -= amt;
-          existing.total_pending_amount -= amt;
+
+      if (k.type === 'DEBIT') {
+        d.total_billed += amt;
+        d.pending_amount += amt;
+      } else if (k.type === 'CREDIT') {
+        d.total_paid += amt;
+        d.pending_amount = Math.max(0, d.pending_amount - amt);
+      }
+
+      if (k.date) {
+        const formattedDate = new Date(k.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+        d.visit_date = formattedDate;
+      }
+    });
+
+    // 3. Process Legacy Debtors if needed
+    legacyDebtors.forEach(leg => {
+      if (!leg) return;
+      const amt = parseFloat(leg.pending_amount || leg.balance || leg.total_pending_amount || 0);
+      if (amt > 0) {
+        const d = getDebtor(leg.customer_name, leg.phone || leg.mobile_number, leg.vehicle_number, leg.bike_model);
+        if (d.pending_amount <= 0) {
+          d.pending_amount = amt;
+          d.total_billed = Math.max(d.total_billed, parseFloat(leg.total_billed || amt));
+          d.total_paid = parseFloat(leg.total_paid || 0);
+          if (leg.visit_date && leg.visit_date !== 'N/A') {
+            d.visit_date = leg.visit_date;
+          }
         }
       }
     });
 
-    // 2. Process Unpaid Invoices
-    combinedInvs.forEach(inv => {
-      if (!inv) return;
-      const pending = parseFloat(inv.pending_amount || 0);
-      if (pending > 0) {
-        const key = (inv.vehicle_number || `${inv.customer_name}_${inv.mobile_number}`).trim().toUpperCase();
-        if (!debtorMap.has(key)) {
-          debtorMap.set(key, {
-            id: inv.id || key,
-            customer_name: inv.customer_name || 'Valued Customer',
-            mobile_number: inv.mobile_number || 'N/A',
-            vehicle_number: inv.vehicle_number || 'GJ-15',
-            bike_model: inv.bike_model || 'Two Wheeler',
-            balance: pending,
-            total_pending_amount: pending,
-            last_visit_date: inv.created_at || new Date().toISOString(),
-            notes: `Unpaid invoice balance (INV-${String(inv.id).slice(-4)})`
-          });
-        }
-      }
+    // CRUCIAL: Filter out any debtor whose pending_amount is 0 or less!
+    const activeDebtors = Array.from(debtorMap.values()).filter(d => {
+      d.balance = d.pending_amount;
+      return d.pending_amount > 0;
     });
 
-    // 3. Process Legacy Debtors
-    legacyDebtors.forEach(d => {
-      if (!d) return;
-      const key = (d.vehicle_number || `${d.customer_name}_${d.mobile_number}`).trim().toUpperCase();
-      if (!debtorMap.has(key)) {
-        debtorMap.set(key, {
-          ...d,
-          balance: parseFloat(d.balance || 0),
-          total_pending_amount: parseFloat(d.balance || 0)
-        });
-      }
-    });
-
-    const activeDebtors = Array.from(debtorMap.values()).filter(d => d.balance > 0);
-    const sum = activeDebtors.reduce((acc, d) => acc + d.balance, 0);
+    const totalSum = activeDebtors.reduce((acc, d) => acc + d.pending_amount, 0);
 
     setDebtors(activeDebtors);
-    setTotalPending(sum);
+    setTotalPending(totalSum);
     setLoading(false);
   };
 
@@ -430,7 +463,7 @@ export default function KhataBookPage() {
                   <tr key={d.id} className="hover:bg-slate-50/80 transition-colors">
                     <td className="p-4 sm:p-5">
                       <span className="font-extrabold text-slate-900 text-sm block">{d.customer_name}</span>
-                      <span className="text-xs text-slate-500 font-mono font-semibold block mt-0.5">📞 {d.phone}</span>
+                      <span className="text-xs text-slate-500 font-mono font-semibold block mt-0.5">📞 {d.phone || d.mobile_number || 'N/A'}</span>
                     </td>
                     <td className="p-4 sm:p-5">
                       <span className="font-black font-mono text-slate-900 block">{d.vehicle_number}</span>

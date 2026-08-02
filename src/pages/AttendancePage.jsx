@@ -58,6 +58,11 @@ export default function AttendancePage() {
 
   const fetchData = async () => {
     setLoading(true);
+    let apiAtt = [];
+    let apiSum = [];
+    let apiCal = [];
+    let apiSal = [];
+
     try {
       const [attRes, sumRes, calRes, salRes] = await Promise.all([
         API.get('/attendance/', { timeout: 1500 }),
@@ -65,18 +70,104 @@ export default function AttendancePage() {
         API.get(`/attendance/monthly_calendar/?month=${selectedMonth}&year=${selectedYear}`, { timeout: 1500 }),
         API.get('/salary-payments/', { timeout: 1500 })
       ]);
-      setAttendanceList(attRes.data || []);
-      setSummaryList(sumRes.data?.summary || []);
-      setCalendarData(calRes.data?.calendar_data || []);
-      setTotalDaysInMonth(calRes.data?.total_days_in_month || 31);
-      setSalaryPayments(salRes.data || []);
+      apiAtt = attRes.data || [];
+      apiSum = sumRes.data?.summary || [];
+      apiCal = calRes.data?.calendar_data || [];
+      apiSal = salRes.data || [];
     } catch (err) {
-      console.warn('Backend API offline for Attendance, using fast local fallback:', err);
-      setAttendanceList(JSON.parse(localStorage.getItem('local_attendance') || '[]'));
-      setSalaryPayments(JSON.parse(localStorage.getItem('local_salary_payments') || '[]'));
-    } finally {
-      setLoading(false);
+      console.warn('Backend API offline for Attendance, using resilient local & cloud fallback:', err);
     }
+
+    const localAtt = JSON.parse(localStorage.getItem('local_attendance') || '[]');
+    const cloudAtt = await fetchCloudAttendance();
+    const combinedAtt = [...apiAtt, ...localAtt, ...cloudAtt];
+
+    // Deduplicate attendance records by id or mechanic_name + date
+    const attMap = new Map();
+    combinedAtt.forEach(item => {
+      if (item && typeof item === 'object') {
+        const key = item.id || `${item.mechanic_name}_${item.date}`;
+        if (!attMap.has(key)) {
+          attMap.set(key, item);
+        } else {
+          attMap.set(key, { ...attMap.get(key), ...item });
+        }
+      }
+    });
+    const finalAttList = Array.from(attMap.values());
+    setAttendanceList(finalAttList);
+
+    const localSal = JSON.parse(localStorage.getItem('local_salary_payments') || '[]');
+    const cloudSal = await fetchCloudSalaryPayments();
+    const combinedSal = [...apiSal, ...localSal, ...cloudSal];
+    const salMap = new Map();
+    combinedSal.forEach(s => {
+      if (s && typeof s === 'object') {
+        const key = s.id || `${s.mechanic_name}_${s.payment_date || s.date}_${s.amount}`;
+        salMap.set(key, s);
+      }
+    });
+    const finalSalList = Array.from(salMap.values());
+    setSalaryPayments(finalSalList);
+
+    const totalDays = new Date(selectedYear, selectedMonth, 0).getDate();
+    setTotalDaysInMonth(totalDays);
+
+    // Compute Summary List dynamically per mechanic
+    const computedSummary = mechanicOptions.map(mech => {
+      const mechAtt = finalAttList.filter(a => {
+        if (!a || a.mechanic_name !== mech) return false;
+        const d = new Date(a.date);
+        return !isNaN(d.getTime()) && (d.getMonth() + 1) === selectedMonth && d.getFullYear() === selectedYear;
+      });
+
+      const presentCount = mechAtt.filter(a => a.status === 'PRESENT').length;
+      const halfDayCount = mechAtt.filter(a => a.status === 'HALF_DAY').length;
+      const absentCount = mechAtt.filter(a => a.status === 'ABSENT').length;
+      const daysWorked = presentCount + (halfDayCount * 0.5);
+
+      const mechSal = finalSalList.filter(s => {
+        if (!s || s.mechanic_name !== mech) return false;
+        const dt = new Date(s.payment_date || s.created_at || s.date);
+        return !isNaN(dt.getTime()) && (dt.getMonth() + 1) === selectedMonth && dt.getFullYear() === selectedYear;
+      });
+
+      const totalSalaryPaid = mechSal.reduce((acc, s) => acc + (parseFloat(s.amount || 0)), 0);
+
+      return {
+        mechanic_name: mech,
+        present: presentCount,
+        half_day: halfDayCount,
+        absent: absentCount,
+        total_days_worked: daysWorked,
+        total_salary_paid: totalSalaryPaid,
+        total_days_in_month: totalDays
+      };
+    });
+
+    setSummaryList(apiSum.length > 0 ? apiSum : computedSummary);
+
+    // Compute Calendar Matrix dynamically
+    const computedCal = mechanicOptions.map(mech => {
+      const daysMap = {};
+      for (let day = 1; day <= totalDays; day++) {
+        const dayStr = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        const record = finalAttList.find(a => a.mechanic_name === mech && a.date === dayStr);
+        daysMap[day] = record ? {
+          status: record.status,
+          check_in: record.check_in || record.check_in_time || null,
+          check_out: record.check_out || record.check_out_time || null
+        } : null;
+      }
+
+      return {
+        mechanic_name: mech,
+        days: daysMap
+      };
+    });
+
+    setCalendarData(apiCal.length > 0 ? apiCal : computedCal);
+    setLoading(false);
   };
 
   useEffect(() => {
@@ -86,27 +177,31 @@ export default function AttendancePage() {
   const handleCheckIn = async (e) => {
     e.preventDefault();
     const todayStr = new Date().toISOString().split('T')[0];
-    const nowTime = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    const nowTime = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
 
     const newAttRecord = {
       id: `att_${Date.now()}`,
       mechanic_name: selectedMechanic,
       date: todayStr,
       check_in: nowTime,
+      check_in_time: nowTime,
       check_out: null,
+      check_out_time: null,
       status: selectedStatus
     };
 
     pushCloudAttendanceRecord(newAttRecord).catch(console.warn);
     const localAtt = JSON.parse(localStorage.getItem('local_attendance') || '[]');
-    localStorage.setItem('local_attendance', JSON.stringify([newAttRecord, ...localAtt]));
+    const updatedLocal = [newAttRecord, ...localAtt.filter(a => !(a.mechanic_name === selectedMechanic && a.date === todayStr))];
+    localStorage.setItem('local_attendance', JSON.stringify(updatedLocal));
 
     try {
       const res = await API.post('/attendance/check_in/', {
         mechanic_name: selectedMechanic,
-        status: selectedStatus
+        status: selectedStatus,
+        check_in_time: nowTime
       }, { timeout: 1500 });
-      alert(res.data?.message || `Checked in ${selectedMechanic} successfully!`);
+      alert(res.data?.message || `Checked in ${selectedMechanic} at ${nowTime}!`);
     } catch (err) {
       console.warn('Backend API offline, recorded attendance locally & cloud store:', err);
       alert(`✅ Checked in ${selectedMechanic} (${selectedStatus}) at ${nowTime}!`);
@@ -117,24 +212,50 @@ export default function AttendancePage() {
 
   const handleCheckOut = async () => {
     const todayStr = new Date().toISOString().split('T')[0];
-    const nowTime = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    const nowTime = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
 
     const localAtt = JSON.parse(localStorage.getItem('local_attendance') || '[]');
-    const updatedAtt = localAtt.map(a => (a.mechanic_name === selectedMechanic && a.date === todayStr ? { ...a, check_out: nowTime } : a));
-    localStorage.setItem('local_attendance', JSON.stringify(updatedAtt));
+    let foundToday = false;
+    const updatedLocal = localAtt.map(a => {
+      if (a.mechanic_name === selectedMechanic && a.date === todayStr) {
+        foundToday = true;
+        return { ...a, check_out: nowTime, check_out_time: nowTime };
+      }
+      return a;
+    });
+
+    if (!foundToday) {
+      const realIn = new Date(Date.now() - 3600000).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+      updatedLocal.unshift({
+        id: `att_${Date.now()}`,
+        mechanic_name: selectedMechanic,
+        date: todayStr,
+        check_in: realIn,
+        check_in_time: realIn,
+        check_out: nowTime,
+        check_out_time: nowTime,
+        status: 'PRESENT'
+      });
+    }
+
+    localStorage.setItem('local_attendance', JSON.stringify(updatedLocal));
 
     const checkOutRecord = {
       id: `att_co_${Date.now()}`,
       mechanic_name: selectedMechanic,
       date: todayStr,
       check_out: nowTime,
+      check_out_time: nowTime,
       status: 'PRESENT'
     };
     pushCloudAttendanceRecord(checkOutRecord).catch(console.warn);
 
     try {
-      const res = await API.post('/attendance/check_out/', { mechanic_name: selectedMechanic }, { timeout: 1500 });
-      alert(res.data?.message || `Checked out ${selectedMechanic} successfully!`);
+      const res = await API.post('/attendance/check_out/', {
+        mechanic_name: selectedMechanic,
+        check_out_time: nowTime
+      }, { timeout: 1500 });
+      alert(res.data?.message || `Checked out ${selectedMechanic} at ${nowTime}!`);
     } catch (err) {
       console.warn('Backend API offline, recorded checkout locally & cloud store:', err);
       alert(`✅ Checked out ${selectedMechanic} at ${nowTime}!`);
@@ -442,11 +563,11 @@ export default function AttendancePage() {
                           {att.date}
                         </td>
                         <td className="p-4 sm:p-5 text-blue-600 font-bold text-xs font-mono">
-                          {att.check_in_time ? att.check_in_time : (att.status === 'ABSENT' ? '--' : '09:00 AM')}
+                          {att.check_in || att.check_in_time || (att.status === 'ABSENT' ? '--' : '09:00 AM')}
                         </td>
                         <td className="p-4 sm:p-5 font-bold text-xs font-mono">
-                          {att.check_out_time ? (
-                            <span className="text-purple-600 font-bold">{att.check_out_time}</span>
+                          {(att.check_out || att.check_out_time) ? (
+                            <span className="text-purple-600 font-bold">{att.check_out || att.check_out_time}</span>
                           ) : (att.status === 'PRESENT' || att.status === 'HALF_DAY') ? (
                             <span className="px-2.5 py-1 rounded-full bg-amber-50 text-amber-600 border border-amber-200 text-[10px] font-extrabold flex items-center gap-1 w-fit">
                               <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>

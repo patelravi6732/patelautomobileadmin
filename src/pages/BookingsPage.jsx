@@ -145,21 +145,9 @@ export default function BookingsPage() {
     setNotifyModal({ isOpen: false, booking: null, isAccepted: true, lang: 'GUJARATI', variationIndex: 0, text: '' });
   };
 
-  const monthBookings = useMemo(() => bookings.filter((booking) => {
-    const bookingDate = new Date(`${booking.preferred_date}T00:00:00`);
-    return !Number.isNaN(bookingDate.getTime())
-      && bookingDate.getMonth() === selectedMonth
-      && bookingDate.getFullYear() === selectedYear;
-  }), [bookings, selectedMonth, selectedYear]);
-
-  const visibleBookings = useMemo(() => {
-    if (!selectedStatus) return monthBookings;
-    return monthBookings.filter((booking) => booking.status === selectedStatus);
-  }, [monthBookings, selectedStatus]);
-
   const availableYears = useMemo(() => {
     const bookingYears = bookings
-      .map((booking) => Number(String(booking.preferred_date || '').slice(0, 4)))
+      .map((booking) => parseSafelyDate(booking.preferred_date || booking.created_at).getFullYear())
       .filter((year) => Number.isInteger(year) && year > 2000);
     const firstYear = Math.min(selectedYear, ...bookingYears, DEFAULT_BOOKING_DATE.getFullYear());
     const lastYear = Math.max(selectedYear + 5, ...bookingYears, DEFAULT_BOOKING_DATE.getFullYear() + 5);
@@ -331,26 +319,44 @@ export default function BookingsPage() {
           <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
             <CalendarCheck className="w-5 h-5" />
           </div>
-          <span className="text-sm font-extrabold uppercase tracking-wide">Select Month &amp; Year:</span>
-        </div>
-        <div className="flex items-center gap-3">
-            <select
-              value={selectedMonth}
-              onChange={(event) => setSelectedMonth(Number(event.target.value))}
-              className="min-w-36 px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50 text-sm font-bold text-slate-800 outline-none focus:border-blue-500"
-              aria-label="Select booking month"
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setFilterMode('ALL')}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-extrabold transition-all ${filterMode === 'ALL' ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
             >
-              {monthNames.map((month, index) => <option key={month} value={index}>{month}</option>)}
-            </select>
-            <select
-              value={selectedYear}
-              onChange={(event) => setSelectedYear(Number(event.target.value))}
-              className="min-w-24 px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50 text-sm font-bold text-slate-800 outline-none focus:border-blue-500"
-              aria-label="Select booking year"
+              All Bookings (Default)
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilterMode('MONTH_YEAR')}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-extrabold transition-all ${filterMode === 'MONTH_YEAR' ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
             >
-              {availableYears.map((year) => <option key={year} value={year}>{year}</option>)}
-            </select>
+              Filter By Month
+            </button>
+          </div>
         </div>
+
+        {filterMode === 'MONTH_YEAR' && (
+          <div className="flex items-center gap-3">
+              <select
+                value={selectedMonth}
+                onChange={(event) => setSelectedMonth(Number(event.target.value))}
+                className="min-w-36 px-4 py-2.5 rounded-2xl border border-slate-200 bg-slate-50 text-sm font-bold text-slate-800 outline-none focus:border-blue-500"
+                aria-label="Select booking month"
+              >
+                {monthNames.map((month, index) => <option key={month} value={index}>{month}</option>)}
+              </select>
+              <select
+                value={selectedYear}
+                onChange={(event) => setSelectedYear(Number(event.target.value))}
+                className="min-w-24 px-4 py-2.5 rounded-2xl border border-slate-200 bg-slate-50 text-sm font-bold text-slate-800 outline-none focus:border-blue-500"
+                aria-label="Select booking year"
+              >
+                {availableYears.map((year) => <option key={year} value={year}>{year}</option>)}
+              </select>
+          </div>
+        )}
       </section>
 
       <div className="flex flex-wrap items-center gap-3">
@@ -360,14 +366,15 @@ export default function BookingsPage() {
           className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-xs font-extrabold transition-all ${!selectedStatus ? 'bg-slate-800 text-white border-slate-800 shadow-md shadow-slate-200' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'}`}
         >
           All
-          <span className={`min-w-5 h-5 px-1.5 rounded-full text-[10px] flex items-center justify-center ${!selectedStatus ? 'bg-white/20' : 'bg-white'}`}>{monthBookings.length}</span>
+          <span className={`min-w-5 h-5 px-1.5 rounded-full text-[10px] flex items-center justify-center ${!selectedStatus ? 'bg-white/20' : 'bg-white'}`}>{filteredBookings.length}</span>
         </button>
         {[
           { status: 'COMPLETED', label: 'Completed', active: 'bg-emerald-600 text-white border-emerald-600 shadow-emerald-200', idle: 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' },
+          { status: 'ACCEPTED', label: 'Accepted', active: 'bg-blue-600 text-white border-blue-600 shadow-blue-200', idle: 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100' },
           { status: 'PENDING', label: 'Pending', active: 'bg-amber-500 text-white border-amber-500 shadow-amber-200', idle: 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100' },
           { status: 'REJECTED', label: 'Rejected', active: 'bg-rose-600 text-white border-rose-600 shadow-rose-200', idle: 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100' },
         ].map((filter) => {
-          const count = monthBookings.filter((booking) => booking.status === filter.status).length;
+          const count = bookings.filter((booking) => booking.status === filter.status).length;
           const isActive = selectedStatus === filter.status;
           return (
             <button
@@ -387,7 +394,7 @@ export default function BookingsPage() {
         <div className="p-8 text-center text-slate-500 font-medium">Loading Online Bookings...</div>
       ) : visibleBookings.length === 0 ? (
         <div className="bg-white p-12 rounded-3xl border border-slate-200 text-center text-slate-400 font-medium">
-          No {selectedStatus ? selectedStatus.toLowerCase() : ''} bookings scheduled for {monthNames[selectedMonth]} {selectedYear}.
+          No {selectedStatus ? selectedStatus.toLowerCase() : ''} bookings found.
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

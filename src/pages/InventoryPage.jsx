@@ -8,7 +8,7 @@ export const DEFAULT_SPARE_PARTS = [];
 
 export default function InventoryPage() {
   const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('ALL');
 

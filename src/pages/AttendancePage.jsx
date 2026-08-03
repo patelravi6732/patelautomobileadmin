@@ -10,9 +10,11 @@ export default function AttendancePage() {
   const { garageInfo } = useAuth();
   const [activeTab, setActiveTab] = useState('ATTENDANCE'); // ATTENDANCE, CALENDAR, SALARY
   
-  const [attendanceList, setAttendanceList] = useState([]);
+  const [attendanceList, setAttendanceList] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('local_attendance') || '[]'); } catch (e) { return []; }
+  });
   const [summaryList, setSummaryList] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [mechanicOptions, setMechanicOptions] = useState(['Amitbhai Mechanic', 'Vishalbhai Mechanic', 'Manojbhai Mechanic']);
   const [selectedMechanic, setSelectedMechanic] = useState('Amitbhai Mechanic');
   const [selectedStatus, setSelectedStatus] = useState('PRESENT');
@@ -66,7 +68,6 @@ export default function AttendancePage() {
   }, [garageInfo]);
 
   const fetchData = async () => {
-    setLoading(true);
     let apiAtt = [], apiSum = [], apiCal = [], apiSal = [];
     let cloudAtt = [], cloudSal = [], deletedIds = [];
 

@@ -8,20 +8,20 @@ import { formatDateDMY } from '../utils/dateFormatter';
 export default function VehicleHistoryPage() {
   const { garageInfo } = useAuth();
   const [vehicleNumber, setVehicleNumber] = useState('');
-  const [mobileNumber, setMobileNumber] = useState('');
   const [searched, setSearched] = useState(false);
   const [loading, setLoading] = useState(false);
   const [historyData, setHistoryData] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
 
+  // Date Filter States
+  const [datePreset, setDatePreset] = useState('ALL'); // 'ALL', 'TODAY', 'THIS_MONTH', 'CUSTOM'
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+
   const handleSearch = async (e) => {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
     if (!vehicleNumber.trim()) {
       setErrorMsg('Please enter your vehicle / bike registration number.');
-      return;
-    }
-    if (!mobileNumber.trim() || mobileNumber.trim().length < 10) {
-      setErrorMsg('Please enter your 10-digit registered mobile number for privacy verification.');
       return;
     }
 
@@ -30,18 +30,22 @@ export default function VehicleHistoryPage() {
     setErrorMsg(null);
 
     const cleanInputVeh = vehicleNumber.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-    const cleanInputPhone = mobileNumber.replace(/\D/g, '').slice(-10);
 
     let backendData = null;
     try {
-      const res = await API.get(`/vehicle-history/?vehicle_number=${encodeURIComponent(vehicleNumber.trim())}&mobile_number=${encodeURIComponent(mobileNumber.trim())}`, { timeout: 1500 });
+      const res = await API.get(`/vehicle-history/?vehicle_number=${encodeURIComponent(vehicleNumber.trim())}`, { timeout: 1500 });
       backendData = res.data;
     } catch (err) {
       console.warn('Backend API offline or 404 for vehicle history, falling back to local memory & cloud stores:', err);
     }
 
     if (backendData && backendData.service_history && backendData.service_history.length > 0) {
-      setHistoryData(backendData);
+      setHistoryData({
+        vehicle_number: vehicleNumber.toUpperCase(),
+        customer_name: backendData.customer?.customer_name || 'Valued Rider',
+        bike_model: backendData.service_history[0]?.bike_model || 'Two Wheeler',
+        previous_services: backendData.service_history
+      });
       setLoading(false);
       return;
     }
@@ -68,50 +72,37 @@ export default function VehicleHistoryPage() {
     const matchedJobs = combinedJobs.filter(j => {
       if (!j || deletedIds.includes(String(j.id))) return false;
       const jVeh = (j.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-      const jPhone = (j.mobile_number || j.phone || j.customer_mobile || j.phone_number || '').replace(/\D/g, '').slice(-10);
-      const isVehMatch = Boolean(jVeh && cleanInputVeh && (jVeh === cleanInputVeh || jVeh.includes(cleanInputVeh) || cleanInputVeh.includes(jVeh)));
-      const isPhoneMatch = Boolean(jPhone && cleanInputPhone && (jPhone === cleanInputPhone || jPhone.includes(cleanInputPhone)));
-      return isVehMatch || isPhoneMatch;
+      return Boolean(jVeh && cleanInputVeh && (jVeh === cleanInputVeh || jVeh.includes(cleanInputVeh) || cleanInputVeh.includes(jVeh)));
     });
 
     const matchedInvs = combinedInvoices.filter(i => {
       if (!i || deletedIds.includes(String(i.id))) return false;
       const iVeh = (i.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-      const iPhone = (i.mobile_number || i.phone || i.customer_mobile || i.phone_number || '').replace(/\D/g, '').slice(-10);
-      const isVehMatch = Boolean(iVeh && cleanInputVeh && (iVeh === cleanInputVeh || iVeh.includes(cleanInputVeh) || cleanInputVeh.includes(iVeh)));
-      const isPhoneMatch = Boolean(iPhone && cleanInputPhone && (iPhone === cleanInputPhone || iPhone.includes(cleanInputPhone)));
-      return isVehMatch || isPhoneMatch;
+      return Boolean(iVeh && cleanInputVeh && (iVeh === cleanInputVeh || iVeh.includes(cleanInputVeh) || cleanInputVeh.includes(iVeh)));
     });
 
     const matchedKhata = combinedKhata.filter(k => {
       if (!k || deletedIds.includes(String(k.id))) return false;
       const kVeh = (k.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-      const kPhone = (k.mobile_number || k.phone || '').replace(/\D/g, '').slice(-10);
-      const isVehMatch = Boolean(kVeh && cleanInputVeh && (kVeh === cleanInputVeh || kVeh.includes(cleanInputVeh) || cleanInputVeh.includes(kVeh)));
-      const isPhoneMatch = Boolean(kPhone && cleanInputPhone && (kPhone === cleanInputPhone || kPhone.includes(cleanInputPhone)));
-      return isVehMatch || isPhoneMatch;
+      return Boolean(kVeh && cleanInputVeh && (kVeh === cleanInputVeh || kVeh.includes(cleanInputVeh) || cleanInputVeh.includes(kVeh)));
     });
 
     const matchedBookings = combinedBookings.filter(b => {
       if (!b || deletedIds.includes(String(b.id))) return false;
       const bVeh = (b.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-      const bPhone = (b.mobile_number || b.phone || b.customer_mobile || b.phone_number || '').replace(/\D/g, '').slice(-10);
-      const isVehMatch = Boolean(bVeh && cleanInputVeh && (bVeh === cleanInputVeh || bVeh.includes(cleanInputVeh) || cleanInputVeh.includes(bVeh)));
-      const isPhoneMatch = Boolean(bPhone && cleanInputPhone && (bPhone === cleanInputPhone || bPhone.includes(cleanInputPhone)));
-      return isVehMatch || isPhoneMatch;
+      return Boolean(bVeh && cleanInputVeh && (bVeh === cleanInputVeh || bVeh.includes(cleanInputVeh) || cleanInputVeh.includes(bVeh)));
     });
 
     if (matchedJobs.length === 0 && matchedInvs.length === 0 && matchedKhata.length === 0 && matchedBookings.length === 0) {
       setHistoryData(null);
-      setErrorMsg(`No service history records found matching vehicle ${vehicleNumber.toUpperCase()} and mobile number ${mobileNumber}. Please verify details.`);
+      setErrorMsg(`No service history records found matching vehicle ${vehicleNumber.toUpperCase()}. Please verify details.`);
       setLoading(false);
       return;
     }
 
     const firstMatch = matchedJobs[0] || matchedInvs[0] || matchedKhata[0] || matchedBookings[0];
-    const customerName = firstMatch.customer_name || 'Valued Customer';
+    const customerName = firstMatch.customer_name || 'Valued Rider';
     const bikeModel = firstMatch.bike_model || 'Two Wheeler';
-    const regPhone = firstMatch.mobile_number || firstMatch.phone || mobileNumber;
 
     const timelineHistory = [...matchedJobs, ...matchedInvs, ...matchedKhata].map((item, idx) => {
       const labour = parseFloat(item.labour_charge || 100);
@@ -119,8 +110,10 @@ export default function VehicleHistoryPage() {
       const totalBill = parseFloat(item.grand_total || item.live_total || item.total_amount || (partsVal + labour));
       return {
         id: item.id || `hist_${idx}`,
-        created_at: item.finished_at || item.created_at || new Date().toISOString(),
-        bike_model: item.bike_model || bikeModel,
+        created_at: item.finished_at || item.created_at || item.date || new Date().toISOString(),
+        date: item.date || (item.created_at ? item.created_at.split('T')[0] : new Date().toISOString().split('T')[0]),
+        job_card_number: item.job_card_number || item.invoice_number || `JC-${idx + 101}`,
+        vehicle_model: item.bike_model || bikeModel,
         complaint: item.complaint || item.complaint_details || 'General Service & Maintenance',
         assigned_mechanic: item.assigned_mechanic || 'Master Technician',
         labour_charge: labour,
@@ -135,11 +128,35 @@ export default function VehicleHistoryPage() {
       vehicle_number: vehicleNumber.toUpperCase(),
       customer_name: customerName,
       bike_model: bikeModel,
-      mobile_number: regPhone,
-      service_history: timelineHistory
+      previous_services: timelineHistory
     });
     setLoading(false);
   };
+
+  // Filter Timeline History by Date Presets
+  const filteredServices = React.useMemo(() => {
+    if (!historyData || !historyData.previous_services) return [];
+    const list = historyData.previous_services;
+    const now = new Date();
+
+    return list.filter(item => {
+      const itemDateStr = item.date || (item.created_at ? item.created_at.split('T')[0] : '');
+      if (!itemDateStr) return true;
+
+      if (datePreset === 'TODAY') {
+        const todayStr = now.toISOString().split('T')[0];
+        return itemDateStr === todayStr;
+      } else if (datePreset === 'THIS_MONTH') {
+        const itemD = new Date(itemDateStr);
+        return itemD.getMonth() === now.getMonth() && itemD.getFullYear() === now.getFullYear();
+      } else if (datePreset === 'CUSTOM') {
+        if (startDate && itemDateStr < startDate) return false;
+        if (endDate && itemDateStr > endDate) return false;
+        return true;
+      }
+      return true;
+    });
+  }, [historyData, datePreset, startDate, endDate]);
 
   return (
     <div className="py-12 space-y-12 max-w-5xl mx-auto px-4 sm:px-6">
@@ -147,34 +164,33 @@ export default function VehicleHistoryPage() {
       {/* PAGE HEADER */}
       <div className="text-center space-y-4 max-w-2xl mx-auto">
         <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 border border-emerald-200">
-          <Lock className="w-4 h-4 text-emerald-600" /> Privacy Protected Service Passport
+          <Lock className="w-4 h-4 text-emerald-600" /> Instant Bike Registration Search
         </span>
         <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 font-poppins">
           Vehicle Service History Search
         </h1>
         <p className="text-slate-600 text-sm">
-          Enter your bike registration number and registered 10-digit mobile number to securely view your service timeline & digital bills.
+          Enter your bike registration plate number to instantly view complete service timeline, replaced parts & digital invoices.
         </p>
       </div>
 
-      {/* PRIVACY PROTECTED SEARCH FORM */}
+      {/* SEARCH FORM (ONLY BIKE REGISTRATION NUMBER) */}
       <div className="max-w-xl mx-auto">
         <form onSubmit={handleSearch} className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200/80 soft-shadow space-y-5">
           
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <span className="text-xs font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-              <ShieldCheck className="w-4 h-4 text-blue-600" /> Owner Identity Verification
+              <Bike className="w-4 h-4 text-amber-500" /> Bike Passport Search
             </span>
             <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
-              🔒 100% Secured
+              🔒 Instant Access
             </span>
           </div>
 
           <div className="space-y-4">
-            {/* 1. Vehicle Registration Number */}
             <div>
               <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
-                1. Bike Registration Number
+                Enter Bike Registration Number *
               </label>
               <div className="bg-amber-400 p-1.5 rounded-2xl border-2 border-slate-900 shadow-sm">
                 <div className="bg-white rounded-xl px-4 py-2.5 flex items-center gap-3 border border-amber-500">
@@ -184,6 +200,7 @@ export default function VehicleHistoryPage() {
                   <input
                     type="text"
                     required
+                    placeholder="e.g. GJ15XX1234"
                     value={vehicleNumber}
                     onChange={(e) => setVehicleNumber(e.target.value.toUpperCase())}
                     className="w-full text-base font-black text-slate-900 tracking-wider uppercase focus:outline-none font-mono"
@@ -191,38 +208,25 @@ export default function VehicleHistoryPage() {
                 </div>
               </div>
             </div>
-
-            {/* 2. Registered Mobile Number */}
-            <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
-                2. Registered Mobile Number (Owner Verification)
-              </label>
-              <div className="relative">
-                <Phone className="w-4 h-4 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
-                <input
-                  type="tel"
-                  required
-                  maxLength={10}
-                  minLength={10}
-                  pattern="[0-9]{10}"
-                  value={mobileNumber}
-                  onChange={(e) => setMobileNumber(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                  className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold text-slate-900 focus:outline-none focus:border-amber-500 font-mono"
-                />
-              </div>
-            </div>
           </div>
+
+          {errorMsg && (
+            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs font-bold flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+              {errorMsg}
+            </div>
+          )}
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-4 bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-sm rounded-2xl shadow-lg transition-all flex items-center justify-center gap-2"
+            className="w-full py-4 bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-sm rounded-2xl shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer"
           >
             {loading ? (
-              <span>Verifying Owner Identity...</span>
+              <span>Searching Vehicle Passport...</span>
             ) : (
               <>
-                <Search className="w-4 h-4 text-amber-400" /> Verify & Access Service History
+                <Search className="w-4 h-4 text-amber-400" /> Search Service History
               </>
             )}
           </button>
@@ -275,14 +279,103 @@ export default function VehicleHistoryPage() {
                   </div>
                 </div>
 
-                {/* SERVICE TIMELINE & WORK LOGS (PROFEESSIONALLY INTEGRATED INSIDE THE EXECUTIVE CARD) */}
+                {/* DATE FILTER BAR */}
+                <div className="bg-slate-900/90 p-4 rounded-2xl border border-slate-700/80 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <span className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <Calendar className="w-4 h-4 text-amber-400" /> Filter Service Records by Date
+                    </span>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setDatePreset('ALL')}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+                          datePreset === 'ALL' ? 'bg-amber-400 text-slate-950 font-black shadow-md' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                        }`}
+                      >
+                        All Dates ({historyData.previous_services?.length || 0})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDatePreset('TODAY')}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+                          datePreset === 'TODAY' ? 'bg-amber-400 text-slate-950 font-black shadow-md' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                        }`}
+                      >
+                        Today
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDatePreset('THIS_MONTH')}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+                          datePreset === 'THIS_MONTH' ? 'bg-amber-400 text-slate-950 font-black shadow-md' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                        }`}
+                      >
+                        This Month
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDatePreset('CUSTOM')}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+                          datePreset === 'CUSTOM' ? 'bg-amber-400 text-slate-950 font-black shadow-md' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                        }`}
+                      >
+                        Specific Date Range 📅
+                      </button>
+                    </div>
+                  </div>
+
+                  {datePreset === 'CUSTOM' && (
+                    <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-slate-800 text-xs">
+                      <div className="flex items-center gap-2">
+                        <span className="text-slate-400 font-bold">From Date:</span>
+                        <input
+                          type="date"
+                          value={startDate}
+                          onChange={(e) => setStartDate(e.target.value)}
+                          className="bg-slate-950 text-amber-300 px-3 py-1.5 rounded-xl border border-slate-700 font-mono font-bold focus:outline-none"
+                        />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-slate-400 font-bold">To Date:</span>
+                        <input
+                          type="date"
+                          value={endDate}
+                          onChange={(e) => setEndDate(e.target.value)}
+                          className="bg-slate-950 text-amber-300 px-3 py-1.5 rounded-xl border border-slate-700 font-mono font-bold focus:outline-none"
+                        />
+                      </div>
+                      {(startDate || endDate) && (
+                        <button
+                          type="button"
+                          onClick={() => { setStartDate(''); setEndDate(''); }}
+                          className="text-amber-400 underline font-bold hover:text-amber-300 cursor-pointer"
+                        >
+                          Clear Dates
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* SERVICE TIMELINE & WORK LOGS */}
                 <div className="space-y-4">
-                  <h3 className="text-lg font-bold text-white font-poppins flex items-center gap-2">
-                    <Clock className="w-5 h-5 text-blue-400" /> Complete Service Timeline & Work Logs
+                  <h3 className="text-lg font-bold text-white font-poppins flex items-center justify-between">
+                    <span className="flex items-center gap-2">
+                      <Clock className="w-5 h-5 text-blue-400" /> Service Timeline & Work Logs
+                    </span>
+                    <span className="text-xs font-mono font-extrabold text-amber-400 bg-amber-400/10 px-3 py-1 rounded-full border border-amber-400/20">
+                      Showing {filteredServices.length} Records
+                    </span>
                   </h3>
 
                   <div className="space-y-4">
-                    {historyData.previous_services.map((job) => (
+                    {filteredServices.length === 0 ? (
+                      <div className="bg-slate-900 p-8 rounded-2xl border border-slate-800 text-center text-slate-400 text-xs font-bold">
+                        No service records found for the selected date filter range.
+                      </div>
+                    ) : (
+                      filteredServices.map((job) => (
                       <div key={job.id} className="bg-slate-900/90 p-6 rounded-2xl border border-slate-700/80 space-y-4">
                         
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
@@ -341,7 +434,7 @@ export default function VehicleHistoryPage() {
                         </div>
 
                       </div>
-                    ))}
+                    )))}
                   </div>
                 </div>
 

@@ -65,7 +65,8 @@ export const AuthProvider = ({ children }) => {
     const updated = { ...garageInfo, ...newInfo };
     setGarageInfo(updated);
     localStorage.setItem('garage_info', JSON.stringify(updated));
-    pushCloudGarageInfo(updated).catch(console.warn);
+    window.dispatchEvent(new Event('garage_info_updated'));
+    await pushCloudGarageInfo(updated).catch(console.warn);
   };
 
   const fetchCurrentUser = async () => {
@@ -109,6 +110,29 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     fetchGarageInfo();
     fetchCurrentUser();
+
+    // 1. Listen for local storage changes across tabs
+    const handleStorageChange = (e) => {
+      if (e.key === 'garage_info' || e.type === 'garage_info_updated') {
+        const saved = localStorage.getItem('garage_info');
+        if (saved) {
+          try { setGarageInfo(JSON.parse(saved)); } catch (err) {}
+        }
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('garage_info_updated', handleStorageChange);
+
+    // 2. Real-time background cloud sync interval (every 3 seconds)
+    const syncInterval = setInterval(() => {
+      fetchGarageInfo();
+    }, 3000);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('garage_info_updated', handleStorageChange);
+      clearInterval(syncInterval);
+    };
   }, []);
 
   const login = async (username, password) => {

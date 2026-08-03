@@ -535,9 +535,12 @@ export default function SettingsPage() {
       {/* TAB 1: GARAGE SETTINGS */}
       {tab === 'GARAGE' && (
         <div className="bg-white p-8 rounded-3xl border border-slate-200/80 soft-shadow space-y-6">
-          <form onSubmit={(e) => {
+          <form onSubmit={async (e) => {
             e.preventDefault();
-            setPasswordModal({ isOpen: true, actionType: 'SAVE_GARAGE', targetItem: null });
+            if (typeof updateGarageSettings === 'function') {
+              await updateGarageSettings(formData);
+            }
+            alert('✅ Garage Settings updated successfully! Timing and info are now synchronized across the public website & all admin devices.');
           }} className="space-y-6">
             
             {/* GARAGE LOGO UPLOAD & CHANGE */}

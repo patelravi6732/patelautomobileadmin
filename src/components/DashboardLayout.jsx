@@ -226,30 +226,6 @@ export default function DashboardLayout() {
           </div>
 
           <div className="flex items-center gap-3 sm:gap-4">
-            {!isInstalled && (
-              <button
-                onClick={handleInstallApp}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-xl border border-indigo-200 transition-all shadow-xs"
-                title="Install Admin Mobile App on phone home screen"
-              >
-                <Smartphone className="w-4 h-4 text-indigo-600 shrink-0" />
-                <span className="hidden sm:inline">Install App</span>
-                <Download className="w-3 h-3 text-indigo-500 shrink-0" />
-              </button>
-            )}
-
-            <Link
-              to="/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-3 py-1.5 sm:px-3.5 sm:py-2 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200/80 rounded-xl transition-all shadow-xs"
-              title="Open Public Website in New Tab"
-            >
-              <Globe className="w-4 h-4 text-blue-600 shrink-0" />
-              <span className="hidden sm:inline">Visit Website</span>
-              <ExternalLink className="w-3 h-3 text-slate-400 shrink-0" />
-            </Link>
-
             <Link
               to="/app/recycle-bin"
               className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-xl border border-rose-200 transition-colors"

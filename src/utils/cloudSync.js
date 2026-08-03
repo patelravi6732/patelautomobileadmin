@@ -110,6 +110,9 @@ async function fetchMasterStore() {
 async function saveMasterStore(storeData) {
   try {
     localStorage.setItem('master_cloud_cache', JSON.stringify(storeData));
+    if (storeData.garageInfo) {
+      localStorage.setItem('garage_info', JSON.stringify(storeData.garageInfo));
+    }
   } catch (e) {
     console.warn('Error writing local master_cloud_cache:', e);
   }
@@ -117,11 +120,13 @@ async function saveMasterStore(storeData) {
   try {
     await axios.post(PRIMARY_BIN_URL, storeData, { timeout: 2500 });
   } catch (err) {
-    try {
-      await axios.put(BACKUP_BIN_URL, { name: 'PatelAutomobilesMasterBin', data: storeData }, { timeout: 2000 });
-    } catch (e2) {
-      // Saved in local cache above
-    }
+    console.warn('Primary bin save failed, trying backup bin:', err);
+  }
+
+  try {
+    await axios.put(BACKUP_BIN_URL, { name: 'PatelAutomobilesMasterBin', data: storeData }, { timeout: 2500 });
+  } catch (err2) {
+    console.warn('Backup bin save failed:', err2);
   }
 }
 

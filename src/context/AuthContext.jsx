@@ -31,7 +31,9 @@ export const AuthProvider = ({ children }) => {
 
   const fetchGarageInfo = async () => {
     const cloudInfo = await fetchCloudGarageInfo().catch(() => null);
+    const localSaved = JSON.parse(localStorage.getItem('garage_info') || 'null');
     let backendInfo = null;
+
     try {
       const res = await API.get('/public/info/', { timeout: 1500 });
       if (res.data && res.data.phone) {
@@ -41,13 +43,20 @@ export const AuthProvider = ({ children }) => {
       console.warn('Backend API offline, using cloud + local garage info:', err);
     }
 
-    const localSaved = JSON.parse(localStorage.getItem('garage_info') || 'null');
     const merged = {
       ...DEFAULT_GARAGE_INFO,
       ...(backendInfo || {}),
       ...(localSaved || {}),
       ...(cloudInfo || {})
     };
+
+    // Guarantee timing_text & phone from cloud or local take absolute priority over static defaults
+    if (cloudInfo?.timing_text) merged.timing_text = cloudInfo.timing_text;
+    else if (localSaved?.timing_text) merged.timing_text = localSaved.timing_text;
+
+    if (cloudInfo?.phone) merged.phone = cloudInfo.phone;
+    else if (localSaved?.phone) merged.phone = localSaved.phone;
+
     setGarageInfo(merged);
     localStorage.setItem('garage_info', JSON.stringify(merged));
   };

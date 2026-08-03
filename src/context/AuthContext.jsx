@@ -11,8 +11,8 @@ export const DEFAULT_GARAGE_INFO = {
   logo: '/logo.png',
   upi_id: 'pritpatel9397@oksbi',
   upi_payee_name: 'Prit Patel',
-  timing_text: 'Mon - Sat: 09:00 AM - 08:30 PM, Sun: 09:00 AM - 02:00 PM',
-  mechanics_list: 'Unassigned, Amitbhai Mechanic, Vishalbhai Mechanic, Manojbhai Mechanic',
+  timing_text: 'Mon - Sat: 08:30 AM - 06:30 PM, Sun: 09:00 AM - 02:00 PM',
+  mechanics_list: 'Amitbhai Mechanic, Vishalbhai Mechanic, Manojbhai Mechanic',
   default_labour_charge: 100.00
 };
 

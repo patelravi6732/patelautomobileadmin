@@ -82,6 +82,7 @@ export default function WorkshopPage() {
       console.warn('Backend API offline or unreachable, using fast local+cloud store:', err);
     }
 
+    const deletedIds = await fetchCloudDeletedIds().catch(() => []);
     const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
     const cloudJobs = await fetchCloudJobs();
 
@@ -89,16 +90,18 @@ export default function WorkshopPage() {
     [...backendJobs, ...localJobs, ...cloudJobs].forEach(j => {
       if (j && typeof j === 'object') {
         const uniqueKey = String(j.id || `${j.vehicle_number || 'UNKNOWN'}_${j.created_at || Date.now()}`);
-        if (!allMap.has(uniqueKey)) {
-          const sanitizedJob = {
-            ...j,
-            parts: Array.isArray(j.parts) ? j.parts : [],
-            parts_total: parseFloat(j.parts_total || 0),
-            labour_charge: parseFloat(j.labour_charge || 0),
-            live_total: parseFloat(j.live_total || (parseFloat(j.parts_total || 0) + parseFloat(j.labour_charge || 0))),
-            status: j.status || 'IN_PROGRESS'
-          };
-          allMap.set(uniqueKey, sanitizedJob);
+        if (!deletedIds.includes(uniqueKey) && !deletedIds.includes(String(j.id))) {
+          if (!allMap.has(uniqueKey)) {
+            const sanitizedJob = {
+              ...j,
+              parts: Array.isArray(j.parts) ? j.parts : [],
+              parts_total: parseFloat(j.parts_total || 0),
+              labour_charge: parseFloat(j.labour_charge || 0),
+              live_total: parseFloat(j.live_total || (parseFloat(j.parts_total || 0) + parseFloat(j.labour_charge || 0))),
+              status: j.status || 'IN_PROGRESS'
+            };
+            allMap.set(uniqueKey, sanitizedJob);
+          }
         }
       }
     });

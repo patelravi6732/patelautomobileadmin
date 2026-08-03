@@ -229,9 +229,20 @@ export async function updateCloudJobStatus(jobId, newStatus) {
 
 export async function deleteCloudJob(jobId) {
   if (!jobId) return;
+  const strId = String(jobId);
+
+  // 1. Remove from workshop_jobs
+  const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
+  const updatedLocal = localJobs.filter(j => j && String(j.id) !== strId);
+  localStorage.setItem('workshop_jobs', JSON.stringify(updatedLocal));
+
+  // 2. Mark deleted in deletedIds
+  await markIdAsDeleted(jobId).catch(console.warn);
+
+  // 3. Remove from master_cloud_cache store.jobs
   const store = await fetchMasterStore();
   const existing = (store.jobs || []).filter(j => j && typeof j === 'object');
-  const updated = existing.filter(j => j.id !== jobId && String(j.id) !== String(jobId));
+  const updated = existing.filter(j => j && String(j.id) !== strId);
   await saveMasterStore({ ...store, jobs: updated });
 }
 
@@ -528,17 +539,38 @@ export async function fetchCloudAttendance() {
 
 export async function pushCloudAttendanceRecord(attObj) {
   if (!attObj || typeof attObj !== 'object') return;
+  const strId = String(attObj.id || '');
+  const attKey = `${(attObj.mechanic_name || '').trim()}_${attObj.date}`;
+
+  // 1. Update local_attendance
+  const localAtt = JSON.parse(localStorage.getItem('local_attendance') || '[]');
+  const filteredLocal = localAtt.filter(a => a && String(a.id) !== strId && `${(a.mechanic_name || '').trim()}_${a.date}` !== attKey);
+  localStorage.setItem('local_attendance', JSON.stringify([attObj, ...filteredLocal]));
+
+  // 2. Update master_cloud_cache store.attendance
   const store = await fetchMasterStore();
   const existing = (store.attendance || []).filter(a => a && typeof a === 'object');
-  const updated = [attObj, ...existing];
+  const filteredCloud = existing.filter(a => a && String(a.id) !== strId && `${(a.mechanic_name || '').trim()}_${a.date}` !== attKey);
+  const updated = [attObj, ...filteredCloud];
   await saveMasterStore({ ...store, attendance: updated });
 }
 
 export async function deleteCloudAttendanceRecord(attId) {
   if (!attId) return;
+  const strId = String(attId);
+
+  // 1. Remove from local_attendance
+  const localAtt = JSON.parse(localStorage.getItem('local_attendance') || '[]');
+  const updatedLocal = localAtt.filter(a => a && String(a.id) !== strId);
+  localStorage.setItem('local_attendance', JSON.stringify(updatedLocal));
+
+  // 2. Mark deleted in deletedIds
+  await markIdAsDeleted(attId).catch(console.warn);
+
+  // 3. Remove from master_cloud_cache store.attendance
   const store = await fetchMasterStore();
   const existing = (store.attendance || []).filter(a => a && typeof a === 'object');
-  const updated = existing.filter(a => a.id !== attId && String(a.id) !== String(attId));
+  const updated = existing.filter(a => a && String(a.id) !== strId);
   await saveMasterStore({ ...store, attendance: updated });
 }
 

@@ -87,6 +87,7 @@ export default function AttendancePage() {
       console.warn('Backend API offline for Attendance, using resilient local & cloud fallback:', err);
     }
 
+    const deletedIds = await fetchCloudDeletedIds().catch(() => []);
     const localAtt = JSON.parse(localStorage.getItem('local_attendance') || '[]');
     const cloudAtt = await fetchCloudAttendance();
     const combinedAtt = [...apiAtt, ...localAtt, ...cloudAtt];
@@ -96,18 +97,20 @@ export default function AttendancePage() {
     combinedAtt.forEach(item => {
       if (item && typeof item === 'object' && item.mechanic_name && item.date && !item.mechanic_name.toLowerCase().includes('unassigned')) {
         const key = `${item.mechanic_name.trim()}_${item.date}`;
-        if (!attMap.has(key)) {
-          attMap.set(key, item);
-        } else {
-          const existing = attMap.get(key);
-          attMap.set(key, {
-            ...existing,
-            ...item,
-            check_in_time: existing.check_in_time || existing.check_in || item.check_in_time || item.check_in,
-            check_in: existing.check_in || existing.check_in_time || item.check_in || item.check_in_time,
-            check_out_time: item.check_out_time || item.check_out || existing.check_out_time || existing.check_out,
-            check_out: item.check_out || item.check_out_time || existing.check_out || existing.check_out_time
-          });
+        if (!deletedIds.includes(key) && !deletedIds.includes(String(item.id))) {
+          if (!attMap.has(key)) {
+            attMap.set(key, item);
+          } else {
+            const existing = attMap.get(key);
+            attMap.set(key, {
+              ...existing,
+              ...item,
+              check_in_time: existing.check_in_time || existing.check_in || item.check_in_time || item.check_in,
+              check_in: existing.check_in || existing.check_in_time || item.check_in || item.check_in_time,
+              check_out_time: item.check_out_time || item.check_out || existing.check_out_time || existing.check_out,
+              check_out: item.check_out || item.check_out_time || existing.check_out || existing.check_out_time
+            });
+          }
         }
       }
     });
@@ -377,6 +380,15 @@ export default function AttendancePage() {
     const existingTrash = JSON.parse(localStorage.getItem('recycle_bin_items') || '[]');
     localStorage.setItem('recycle_bin_items', JSON.stringify([trashObj, ...existingTrash]));
     pushCloudRecycleBinItem(trashObj).catch(console.warn);
+
+    if (deleteModal.type === 'ATTENDANCE') {
+      deleteCloudAttendanceRecord(targetItem.id).catch(console.warn);
+      if (targetItem.mechanic_name && targetItem.date) {
+        deleteCloudAttendanceRecord(`${targetItem.mechanic_name.trim()}_${targetItem.date}`).catch(console.warn);
+      }
+    } else if (deleteModal.type === 'SALARY') {
+      deleteCloudSalaryPayment(targetItem.id).catch(console.warn);
+    }
 
     try {
       if (deleteModal.type === 'ATTENDANCE') {

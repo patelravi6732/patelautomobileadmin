@@ -110,17 +110,19 @@ export default function KhataBookPage() {
         console.warn('Backend API offline for Khata, aggregating from local and cloud stores:', err);
       }
 
+      const deletedIds = await fetchCloudDeletedIds().catch(() => []);
+
       // Read all records across stores safely
-      const localKhata = JSON.parse(localStorage.getItem('khata_entries') || '[]');
-      const cloudKhata = await fetchCloudKhataEntries().catch(() => []);
+      const localKhata = JSON.parse(localStorage.getItem('khata_entries') || '[]').filter(k => k && !deletedIds.includes(String(k.id)));
+      const cloudKhata = (await fetchCloudKhataEntries().catch(() => [])).filter(k => k && !deletedIds.includes(String(k.id)));
       const combinedKhata = [...localKhata, ...cloudKhata];
 
-      const localInvs = JSON.parse(localStorage.getItem('local_invoices') || '[]');
-      const cloudInvs = await fetchCloudInvoices().catch(() => []);
+      const localInvs = JSON.parse(localStorage.getItem('local_invoices') || '[]').filter(i => i && !deletedIds.includes(String(i.id)) && !deletedIds.includes(String(i.invoice_number)));
+      const cloudInvs = (await fetchCloudInvoices().catch(() => [])).filter(i => i && !deletedIds.includes(String(i.id)) && !deletedIds.includes(String(i.invoice_number)));
       const combinedInvs = [...localInvs, ...cloudInvs];
 
-      const allJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
-      const cloudJobs = await fetchCloudJobs().catch(() => []);
+      const allJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]').filter(j => j && !deletedIds.includes(String(j.id)));
+      const cloudJobs = (await fetchCloudJobs().catch(() => [])).filter(j => j && !deletedIds.includes(String(j.id)));
       const combinedJobs = [...allJobs, ...cloudJobs];
 
       const legacyDebtors = backendData?.debtors || JSON.parse(localStorage.getItem('khata_debtors') || '[]');
@@ -240,8 +242,6 @@ export default function KhataBookPage() {
           }
         }
       });
-
-      const deletedIds = await fetchCloudDeletedIds().catch(() => []);
 
       const allDebtorsList = Array.from(debtorMap.values()).filter(d => {
         d.balance = d.pending_amount;

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Clock, LogIn, LogOut, CheckCircle2, UserCheck, Calendar, Undo2, Trash2, XCircle, AlertCircle, Award, Eye, DollarSign, PlusCircle, CreditCard, ChevronLeft, ChevronRight, Edit2 } from 'lucide-react';
 import API from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { pushCloudRecycleBinItem, pushCloudAttendanceRecord, pushCloudSalaryPayment, fetchCloudAttendance, fetchCloudSalaryPayments, pushAuditLog } from '../utils/cloudSync';
+import { pushCloudRecycleBinItem, pushCloudAttendanceRecord, pushCloudSalaryPayment, fetchCloudAttendance, fetchCloudSalaryPayments, pushAuditLog, deleteCloudAttendanceRecord, deleteCloudSalaryPayment, fetchCloudDeletedIds } from '../utils/cloudSync';
 import AdminPasswordModal from '../components/AdminPasswordModal';
 import MechanicProfileModal from '../components/MechanicProfileModal';
 

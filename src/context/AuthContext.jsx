@@ -70,41 +70,48 @@ export const AuthProvider = ({ children }) => {
   };
 
   const fetchCurrentUser = async () => {
+    let cloudAdmins = [];
+    try {
+      cloudAdmins = await fetchCloudAdminProfiles().catch(() => []);
+    } catch (e) {}
+    const localAdmins = JSON.parse(localStorage.getItem('admin_profiles') || '[]');
+
+    // If NO admin accounts exist in system, force logged out state so setup wizard opens
+    if (cloudAdmins.length === 0 && localAdmins.length === 0) {
+      setUser(null);
+      localStorage.removeItem('user');
+      localStorage.removeItem('access_token');
+      setLoading(false);
+      return;
+    }
+
     const token = localStorage.getItem('access_token');
     const saved = localStorage.getItem('user');
     if (!token && !saved) {
+      setUser(null);
       setLoading(false);
       return;
     }
-    if (token === 'static_admin_token' && saved) {
+
+    if (saved) {
       try {
-        setUser(JSON.parse(saved));
-      } catch (e) {
-        setUser({ username: 'admin', role: 'ADMIN', is_staff: true, is_superuser: true });
-      }
-      setLoading(false);
-      return;
-    }
-    try {
-      if (token) {
-        const res = await API.get('/auth/me/');
-        setUser(res.data);
-        localStorage.setItem('user', JSON.stringify(res.data));
-      } else if (saved) {
-        setUser(JSON.parse(saved));
-      }
-    } catch (err) {
-      console.warn('Backend Auth API offline, retaining local session:', err);
-      if (saved) {
-        try {
-          setUser(JSON.parse(saved));
-        } catch (e) {
-          // ignore
+        const parsed = JSON.parse(saved);
+        const allAdmins = [...cloudAdmins, ...localAdmins];
+        const isValid = allAdmins.some(a => (a.username || a.user_name || '').toLowerCase() === (parsed.username || '').toLowerCase());
+        if (isValid) {
+          setUser(parsed);
+        } else {
+          setUser(null);
+          localStorage.removeItem('user');
+          localStorage.removeItem('access_token');
         }
+      } catch (e) {
+        setUser(null);
       }
-    } finally {
-      setLoading(false);
+    } else {
+      setUser(null);
     }
+    setLoading(false);
   };
 
   useEffect(() => {

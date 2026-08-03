@@ -7,7 +7,6 @@ import API from '../services/api';
 import { fetchCloudJobs, updateCloudJobStatus, deleteCloudJob, fetchCloudInventory, pushCloudJob, pushCloudRecycleBinItem, pushCloudKhataEntry, pushCloudInvoice, updateCloudBookingStatus, fetchCloudDeletedIds } from '../utils/cloudSync';
 import { useAuth } from '../context/AuthContext';
 import AdminPasswordModal from '../components/AdminPasswordModal';
-import { DEFAULT_SPARE_PARTS } from './InventoryPage';
 
 export default function WorkshopPage() {
   const { garageInfo } = useAuth();
@@ -123,8 +122,11 @@ export default function WorkshopPage() {
     let localInv = JSON.parse(localStorage.getItem('inventory_items') || '[]');
     const allInvMap = new Map();
     [...invData, ...localInv, ...cloudInv].forEach(item => {
-      if (item && item.id) {
-        allInvMap.set(String(item.id), item);
+      if (item && (item.id || item.part_name || item.name)) {
+        const key = String(item.id || item.part_name || item.name);
+        if (!deletedIds.includes(key) && !deletedIds.includes(String(item.id)) && !deletedIds.includes(String(item.part_name))) {
+          allInvMap.set(key, item);
+        }
       }
     });
     setInventory(Array.from(allInvMap.values()));

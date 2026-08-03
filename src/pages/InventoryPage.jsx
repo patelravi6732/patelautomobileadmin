@@ -4,8 +4,6 @@ import API from '../services/api';
 import { fetchCloudInventory, pushCloudInventoryItem, deleteCloudInventoryItem, pushCloudRecycleBinItem, fetchCloudDeletedIds } from '../utils/cloudSync';
 import AdminPasswordModal from '../components/AdminPasswordModal';
 
-export const DEFAULT_SPARE_PARTS = [];
-
 export default function InventoryPage() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);

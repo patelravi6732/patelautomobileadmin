@@ -4,7 +4,7 @@ import API from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { generateBillCanvasDataUrl, generateBillCanvasDataUrlAsync, generateBillCanvasBlob } from '../utils/billCardGenerator';
 
-import { fetchCloudKhataEntries, fetchCloudInvoices, fetchCloudJobs, pushCloudKhataEntry, pushCloudRecycleBinItem, markIdAsDeleted, deleteCloudKhataEntry } from '../utils/cloudSync';
+import { fetchCloudKhataEntries, fetchCloudInvoices, fetchCloudJobs, pushCloudKhataEntry, pushCloudRecycleBinItem, markIdAsDeleted, deleteCloudKhataEntry, fetchCloudDeletedIds } from '../utils/cloudSync';
 import AdminPasswordModal from '../components/AdminPasswordModal';
 
 const monthNames = [

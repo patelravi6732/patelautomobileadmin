@@ -520,15 +520,6 @@ export default function SettingsPage() {
           >
             Admin Accounts ({adminProfiles.length})
           </button>
-          
-          <button
-            onClick={() => setTab('AUDIT')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-              tab === 'AUDIT' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            Activity Audit Log ({auditLogs.length})
-          </button>
         </div>
       </div>
 
@@ -875,73 +866,6 @@ export default function SettingsPage() {
                 </div>
               );
             })}
-          </div>
-        </div>
-      )}
-
-      {/* TAB 3: ADMIN AUDIT LOGS (WITH MONTH & YEAR FILTERING) */}
-      {tab === 'AUDIT' && (
-        <div className="bg-white rounded-3xl border border-slate-200/80 soft-shadow p-6 space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
-                <History className="w-6 h-6" />
-              </div>
-              <div>
-                <h2 className="text-lg font-bold text-slate-900 font-poppins">System Activity Audit Log</h2>
-                <p className="text-xs text-slate-500">
-                  Showing {auditLogs.length} activity records for {monthNames[auditMonth - 1]} {auditYear}.
-                </p>
-              </div>
-            </div>
-
-            {/* MONTH & YEAR SELECTORS */}
-            <div className="flex items-center gap-3 shrink-0">
-              <select
-                value={auditMonth}
-                onChange={(e) => setAuditMonth(parseInt(e.target.value))}
-                className="px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-bold bg-slate-50 text-slate-800 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
-              >
-                {monthNames.map((m, idx) => (
-                  <option key={idx} value={idx + 1}>{m}</option>
-                ))}
-              </select>
-
-              <select
-                value={auditYear}
-                onChange={(e) => setAuditYear(parseInt(e.target.value))}
-                className="px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-bold bg-slate-50 text-slate-800 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
-              >
-                {[2026, 2027, 2028, 2029, 2030, 2031, 2032, 2033, 2034, 2035].map(y => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            {auditLogs.length === 0 ? (
-              <div className="p-8 text-center text-slate-400 text-sm">
-                No activity logs recorded for {monthNames[auditMonth - 1]} {auditYear}.
-              </div>
-            ) : (
-              auditLogs.map((log) => (
-                <div key={log.id} className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-100/80 transition-colors">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-purple-100 text-purple-800">
-                        {log.action_type}
-                      </span>
-                      <span className="text-xs font-bold text-slate-900">{log.admin_name}</span>
-                    </div>
-                    <p className="text-xs text-slate-700 font-medium">{log.description}</p>
-                  </div>
-                  <span className="text-[11px] font-mono text-slate-400 shrink-0">
-                    {new Date(log.timestamp).toLocaleString('en-IN', { hour12: true })}
-                  </span>
-                </div>
-              ))
-            )}
           </div>
         </div>
       )}

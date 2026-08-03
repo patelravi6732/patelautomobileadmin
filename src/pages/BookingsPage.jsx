@@ -13,8 +13,10 @@ export default function BookingsPage() {
   const { garageInfo } = useAuth();
   const garagePhone = garageInfo?.phone || '+91 81403 71414';
 
-  const [bookings, setBookings] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [bookings, setBookings] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('local_bookings') || '[]'); } catch (e) { return []; }
+  });
+  const [loading, setLoading] = useState(false);
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, booking: null });
   
   // Action Confirmation Modal State (Prevents Accidental Accept/Reject)
@@ -45,33 +47,39 @@ export default function BookingsPage() {
     'July', 'August', 'September', 'October', 'November', 'December'
   ];
   const fetchBookings = async () => {
-    setLoading(true);
     let backendBookings = [];
+    let cloudBookings = [];
+    let deletedIds = [];
+
     try {
-      const res = await API.get('/bookings/');
+      const res = await API.get('/bookings/', { timeout: 1500 }).catch(() => ({ data: [] }));
       backendBookings = res.data || [];
-    } catch (err) {
-      console.warn('Backend API offline or unreachable:', err);
-    }
+    } catch (err) {}
+
+    try {
+      [cloudBookings, deletedIds] = await Promise.all([
+        fetchCloudBookings().catch(() => []),
+        fetchCloudDeletedIds().catch(() => [])
+      ]);
+    } catch (e) {}
 
     const localBookings = JSON.parse(localStorage.getItem('local_bookings') || '[]');
-    const cloudBookings = await fetchCloudBookings();
-
     const allBookingsMap = new Map();
     [...backendBookings, ...localBookings, ...cloudBookings].forEach(b => {
       if (b && typeof b === 'object' && (b.id || b.vehicle_number)) {
         const uniqueKey = String(b.id || `${b.vehicle_number}_${b.preferred_date}`);
-        if (!allBookingsMap.has(uniqueKey)) {
-          allBookingsMap.set(uniqueKey, b);
-        } else {
-          const existing = allBookingsMap.get(uniqueKey);
-          // Priority Rule: ACCEPTED/REJECTED/CANCELLED status overrides PENDING status upon page refresh
-          if (existing.status === 'PENDING' && b.status && b.status !== 'PENDING') {
-            allBookingsMap.set(uniqueKey, { ...existing, ...b });
-          } else if (b.status === 'PENDING' && existing.status && existing.status !== 'PENDING') {
-            // Retain existing non-pending status
+        if (!deletedIds.includes(uniqueKey) && !deletedIds.includes(String(b.id))) {
+          if (!allBookingsMap.has(uniqueKey)) {
+            allBookingsMap.set(uniqueKey, b);
           } else {
-            allBookingsMap.set(uniqueKey, { ...existing, ...b });
+            const existing = allBookingsMap.get(uniqueKey);
+            if (existing.status === 'PENDING' && b.status && b.status !== 'PENDING') {
+              allBookingsMap.set(uniqueKey, { ...existing, ...b });
+            } else if (b.status === 'PENDING' && existing.status && existing.status !== 'PENDING') {
+              // Retain existing non-pending status
+            } else {
+              allBookingsMap.set(uniqueKey, { ...existing, ...b });
+            }
           }
         }
       }
@@ -87,6 +95,10 @@ export default function BookingsPage() {
 
   useEffect(() => {
     fetchBookings();
+    const interval = setInterval(() => {
+      fetchBookings();
+    }, 3000);
+    return () => clearInterval(interval);
   }, []);
 
   const openNotifyModal = (booking, isAccepted) => {

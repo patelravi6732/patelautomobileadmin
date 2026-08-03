@@ -11,8 +11,10 @@ export default function MessagesPage() {
   const { garageInfo } = useAuth();
   const garagePhone = garageInfo?.phone || '+91 81403 71414';
 
-  const [messages, setMessages] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [messages, setMessages] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('local_messages') || '[]'); } catch (e) { return []; }
+  });
+  const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState('ALL'); // ALL, UNREAD, COMPLETED
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, messageObj: null });
 
@@ -23,19 +25,23 @@ export default function MessagesPage() {
   const [actionLoading, setActionLoading] = useState({});
 
   const fetchMessages = async () => {
-    setLoading(true);
     let backendMsgs = [];
+    let cloudMsgs = [];
+    let deletedIds = [];
+
     try {
-      const res = await API.get('/messages/');
+      const res = await API.get('/messages/', { timeout: 1500 }).catch(() => ({ data: [] }));
       backendMsgs = res.data || [];
-    } catch (err) {
-      console.warn('Backend API offline or error:', err);
-    }
+    } catch (err) {}
 
-    const deletedIds = await fetchCloudDeletedIds().catch(() => []);
+    try {
+      [cloudMsgs, deletedIds] = await Promise.all([
+        fetchCloudMessages().catch(() => []),
+        fetchCloudDeletedIds().catch(() => [])
+      ]);
+    } catch (e) {}
+
     const localMsgs = JSON.parse(localStorage.getItem('local_messages') || '[]');
-    const cloudMsgs = await fetchCloudMessages();
-
     const allMap = new Map();
     [...backendMsgs, ...localMsgs, ...cloudMsgs].forEach(m => {
       if (m && typeof m === 'object') {
@@ -68,14 +74,18 @@ export default function MessagesPage() {
       initialVars[m.id] = 0;
       initialDrafts[m.id] = m.reply_text || m.ai_draft_reply || generateInquiryReplyMessage(m, lang, 0, garagePhone);
     });
-    setDraftTexts(initialDrafts);
-    setDraftLangs(initialLangs);
-    setVariationIndices(initialVars);
+    setDraftTexts(prev => ({ ...initialDrafts, ...prev }));
+    setDraftLangs(prev => ({ ...initialLangs, ...prev }));
+    setVariationIndices(prev => ({ ...initialVars, ...prev }));
     setLoading(false);
   };
 
   useEffect(() => {
     fetchMessages();
+    const interval = setInterval(() => {
+      fetchMessages();
+    }, 3000);
+    return () => clearInterval(interval);
   }, []);
 
   const handleTextChange = (id, text) => {

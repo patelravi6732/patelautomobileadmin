@@ -53,7 +53,17 @@ export default function InventoryPage() {
 
     const deletedIds = await fetchCloudDeletedIds().catch(() => []);
     const cloudInv = await fetchCloudInventory().catch(() => []);
-    const localInv = JSON.parse(localStorage.getItem('inventory_items') || '[]');
+
+    if (cloudInv.length === 0) {
+      localStorage.removeItem('inventory_items');
+      const cache = JSON.parse(localStorage.getItem('master_cloud_cache') || '{}');
+      if (cache.inventory) {
+        cache.inventory = [];
+        localStorage.setItem('master_cloud_cache', JSON.stringify(cache));
+      }
+    }
+
+    const localInv = cloudInv.length === 0 ? [] : JSON.parse(localStorage.getItem('inventory_items') || '[]');
 
     const allMap = new Map();
     [...cloudInv, ...localInv, ...backendItems].forEach(item => {

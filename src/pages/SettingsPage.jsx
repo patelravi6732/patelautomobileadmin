@@ -5,26 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { fetchCloudAdminProfiles, pushCloudAdminProfile, deleteCloudAdminProfile, fetchCloudAuditLogs } from '../utils/cloudSync';
 import AdminPasswordModal from '../components/AdminPasswordModal';
 
-export const DEFAULT_ADMIN_PROFILES = [
-  {
-    id: 'admin_1',
-    user_name: 'Ravi Patel',
-    username: 'Ravi Patel',
-    phone: '+91 81403 71414',
-    email: 'patelraviii1019@gmail.com',
-    date_of_birth: '1998-05-15',
-    profile_photo: '/logo.png'
-  },
-  {
-    id: 'admin_2',
-    user_name: 'Patel Owner',
-    username: 'Patel Owner',
-    phone: '+91 81403 71414',
-    email: 'contact@patelautomobiles.com',
-    date_of_birth: '1990-01-01',
-    profile_photo: '/logo.png'
-  }
-];
+export const DEFAULT_ADMIN_PROFILES = [];
 
 export default function SettingsPage() {
   const { garageInfo, fetchGarageInfo, updateGarageSettings, user } = useAuth();

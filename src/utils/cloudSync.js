@@ -338,16 +338,26 @@ export async function restoreCloudRecycleBinItem(itemId) {
   let updatedJobs = store.jobs || [];
   let updatedKhata = store.khataEntries || [];
   let updatedInventory = store.inventory || [];
+  let updatedCustomers = store.customers || [];
+  let updatedBookings = store.bookings || [];
+  let updatedMessages = store.messages || [];
 
   if (target && target.payload) {
+    const payloadId = String(target.payload.id || '');
     if (target.item_type === 'Billing Invoice') {
-      updatedInvs = [target.payload, ...updatedInvs.filter(i => String(i.id) !== String(target.payload.id))];
+      updatedInvs = [target.payload, ...updatedInvs.filter(i => String(i.id) !== payloadId)];
     } else if (target.item_type === 'Workshop Job') {
-      updatedJobs = [target.payload, ...updatedJobs.filter(j => String(j.id) !== String(target.payload.id))];
+      updatedJobs = [target.payload, ...updatedJobs.filter(j => String(j.id) !== payloadId)];
     } else if (target.item_type === 'Khata Account') {
-      updatedKhata = [target.payload, ...updatedKhata.filter(k => String(k.id) !== String(target.payload.id))];
+      updatedKhata = [target.payload, ...updatedKhata.filter(k => String(k.id) !== payloadId)];
     } else if (target.item_type === 'Inventory') {
-      updatedInventory = [target.payload, ...updatedInventory.filter(i => String(i.id) !== String(target.payload.id))];
+      updatedInventory = [target.payload, ...updatedInventory.filter(i => String(i.id) !== payloadId)];
+    } else if (target.item_type === 'Customer Record') {
+      updatedCustomers = [target.payload, ...updatedCustomers.filter(c => String(c.id) !== payloadId)];
+    } else if (target.item_type === 'Online Booking') {
+      updatedBookings = [target.payload, ...updatedBookings.filter(b => String(b.id) !== payloadId)];
+    } else if (target.item_type === 'Contact Inquiry / Message') {
+      updatedMessages = [target.payload, ...updatedMessages.filter(m => String(m.id) !== payloadId)];
     }
   }
 
@@ -357,7 +367,10 @@ export async function restoreCloudRecycleBinItem(itemId) {
     invoices: updatedInvs,
     jobs: updatedJobs,
     khataEntries: updatedKhata,
-    inventory: updatedInventory
+    inventory: updatedInventory,
+    customers: updatedCustomers,
+    bookings: updatedBookings,
+    messages: updatedMessages
   });
 }
 

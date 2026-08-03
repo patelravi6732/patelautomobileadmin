@@ -90,9 +90,9 @@ export default function InventoryPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('ALL');
 
-  // Pagination State (50 items per page for ultra-fast rendering & zero lag)
+  // Pagination State (20 items per page as requested)
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 50;
+  const itemsPerPage = 20;
   
   // Modals
   const [showAddModal, setShowAddModal] = useState(false);
@@ -131,11 +131,12 @@ export default function InventoryPage() {
       console.warn('Backend API offline for inventory, using fast local+cloud store:', err);
     }
 
-    const localInv = JSON.parse(localStorage.getItem('inventory_items') || JSON.stringify(DEFAULT_SPARE_PARTS));
     const cloudInv = await fetchCloudInventory();
+    const localInv = JSON.parse(localStorage.getItem('inventory_items') || '[]');
 
     const allMap = new Map();
-    [...backendItems, ...localInv, ...cloudInv, ...DEFAULT_SPARE_PARTS].forEach(item => {
+    // Prioritize Cloud and Local updates over static default spare parts
+    [...cloudInv, ...localInv, ...backendItems, ...DEFAULT_SPARE_PARTS].forEach(item => {
       if (item && typeof item === 'object' && (item.part_name || item.name)) {
         const key = String(item.id || item.part_name || item.name);
         if (!allMap.has(key)) {

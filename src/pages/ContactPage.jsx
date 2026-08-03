@@ -26,16 +26,28 @@ export default function ContactPage() {
     }
     setLoading(true);
     setError(null);
-    const newMsgObj = { ...formData, id: Date.now(), created_at: new Date().toISOString() };
+    const nowTime = new Date().toISOString();
+    const newMsgObj = {
+      id: `msg_${Date.now()}`,
+      name: formData.name || 'Valued Customer',
+      customer_name: formData.name || 'Valued Customer',
+      email: formData.email || '',
+      phone: formData.phone || '',
+      mobile_number: formData.phone || '',
+      message: formData.message || '',
+      inquiry: formData.message || '',
+      created_at: nowTime,
+      date: nowTime,
+      is_read: false
+    };
     pushCloudMessage(newMsgObj).catch(console.warn);
+    const existing = JSON.parse(localStorage.getItem('local_messages') || '[]');
+    localStorage.setItem('local_messages', JSON.stringify([newMsgObj, ...existing]));
 
     try {
       await API.post('/public/contact/', formData);
     } catch (err) {
-      console.warn('Backend API offline on static host, saving inquiry locally:', err);
-      const existing = JSON.parse(localStorage.getItem('local_messages') || '[]');
-      existing.push(newMsgObj);
-      localStorage.setItem('local_messages', JSON.stringify(existing));
+      console.warn('Backend API offline on static host, saved inquiry locally & cloud bin:', err);
     } finally {
       setLoading(false);
       setSubmitted(true);

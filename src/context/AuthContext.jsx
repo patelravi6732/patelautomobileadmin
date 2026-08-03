@@ -30,28 +30,26 @@ export const AuthProvider = ({ children }) => {
   });
 
   const fetchGarageInfo = async () => {
-    let cloudInfo = null;
-    try {
-      cloudInfo = await fetchCloudGarageInfo();
-    } catch (e) {
-      console.warn('Cloud garage info fetch error:', e);
-    }
-
+    const cloudInfo = await fetchCloudGarageInfo().catch(() => null);
+    let backendInfo = null;
     try {
       const res = await API.get('/public/info/', { timeout: 1500 });
       if (res.data && res.data.phone) {
-        setGarageInfo(res.data);
-        localStorage.setItem('garage_info', JSON.stringify(res.data));
-        return;
+        backendInfo = res.data;
       }
     } catch (err) {
       console.warn('Backend API offline, using cloud + local garage info:', err);
     }
 
-    if (cloudInfo) {
-      setGarageInfo(cloudInfo);
-      localStorage.setItem('garage_info', JSON.stringify(cloudInfo));
-    }
+    const localSaved = JSON.parse(localStorage.getItem('garage_info') || 'null');
+    const merged = {
+      ...DEFAULT_GARAGE_INFO,
+      ...(backendInfo || {}),
+      ...(localSaved || {}),
+      ...(cloudInfo || {})
+    };
+    setGarageInfo(merged);
+    localStorage.setItem('garage_info', JSON.stringify(merged));
   };
 
   const updateGarageSettings = async (newInfo) => {

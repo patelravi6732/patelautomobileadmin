@@ -47,7 +47,7 @@ export default function AttendancePage() {
 
   useEffect(() => {
     if (garageInfo?.mechanics_list) {
-      const parsed = garageInfo.mechanics_list.split(',').map(m => m.trim()).filter(Boolean);
+      const parsed = garageInfo.mechanics_list.split(',').map(m => m.trim()).filter(m => m && !m.toLowerCase().includes('unassigned'));
       if (parsed.length > 0) {
         setMechanicOptions(parsed);
         setSelectedMechanic(parsed[0]);
@@ -82,15 +82,23 @@ export default function AttendancePage() {
     const cloudAtt = await fetchCloudAttendance();
     const combinedAtt = [...apiAtt, ...localAtt, ...cloudAtt];
 
-    // Deduplicate attendance records by id or mechanic_name + date
+    // Deduplicate attendance records strictly by mechanic_name + date (1 row per mechanic per day)
     const attMap = new Map();
     combinedAtt.forEach(item => {
-      if (item && typeof item === 'object') {
-        const key = item.id || `${item.mechanic_name}_${item.date}`;
+      if (item && typeof item === 'object' && item.mechanic_name && item.date && !item.mechanic_name.toLowerCase().includes('unassigned')) {
+        const key = `${item.mechanic_name.trim()}_${item.date}`;
         if (!attMap.has(key)) {
           attMap.set(key, item);
         } else {
-          attMap.set(key, { ...attMap.get(key), ...item });
+          const existing = attMap.get(key);
+          attMap.set(key, {
+            ...existing,
+            ...item,
+            check_in_time: existing.check_in_time || existing.check_in || item.check_in_time || item.check_in,
+            check_in: existing.check_in || existing.check_in_time || item.check_in || item.check_in_time,
+            check_out_time: item.check_out_time || item.check_out || existing.check_out_time || existing.check_out,
+            check_out: item.check_out || item.check_out_time || existing.check_out || existing.check_out_time
+          });
         }
       }
     });

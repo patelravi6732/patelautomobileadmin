@@ -486,10 +486,11 @@ export default function WorkshopPage() {
   };
 
   const activeJobs = jobs.filter(j => j && j.status === 'IN_PROGRESS');
-  const finishedJobs = jobs.filter(j => j && (j.status === 'FINISHED' || j.status === 'CANCELLED'));
+  const finishedJobs = jobs.filter(j => j && j.status === 'FINISHED');
+  const cancelledJobs = jobs.filter(j => j && j.status === 'CANCELLED');
   const onlineBookingJobs = jobs.filter(j => j && (j.is_online_booking || j.booking_id || j.source === 'ONLINE_BOOKING' || String(j.complaint || '').toLowerCase().includes('booking')));
 
-  const displayedJobs = tab === 'ONLINE_BOOKINGS' ? onlineBookingJobs : (tab === 'FINISHED' ? finishedJobs : activeJobs);
+  const displayedJobs = tab === 'ONLINE_BOOKINGS' ? onlineBookingJobs : activeJobs;
 
   return (
     <div className="space-y-8">
@@ -531,7 +532,18 @@ export default function WorkshopPage() {
                 : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
             }`}
           >
-            Finished / Closed Jobs ({finishedJobs.length})
+            Finished Jobs ({finishedJobs.length})
+          </button>
+
+          <button
+            onClick={() => setTab('CANCELLED')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+              tab === 'CANCELLED'
+                ? 'bg-red-600 text-white shadow-md'
+                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+            }`}
+          >
+            Cancelled Jobs ({cancelledJobs.length})
           </button>
         </div>
       </div>
@@ -743,7 +755,9 @@ export default function WorkshopPage() {
 
       {tab === 'FINISHED' && (
         <div className="bg-white rounded-3xl border border-slate-200/80 p-6 space-y-6">
-          <h2 className="text-lg font-bold text-slate-900 font-poppins">Finished & Closed Service Jobs</h2>
+          <h2 className="text-lg font-bold text-slate-900 font-poppins flex items-center gap-2">
+            <CheckCircle2 className="w-5 h-5 text-emerald-600" /> Finished Service Jobs
+          </h2>
           {finishedJobs.length === 0 ? (
             <p className="text-xs text-slate-400 italic py-4 text-center">No finished service jobs found.</p>
           ) : (
@@ -756,7 +770,7 @@ export default function WorkshopPage() {
                         {job.vehicle_number}
                       </span>
                       <h3 className="font-bold text-slate-900 text-sm">{job.customer_name} ({job.bike_model})</h3>
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700">
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">
                         FINISHED
                       </span>
                     </div>
@@ -767,7 +781,51 @@ export default function WorkshopPage() {
                     </p>
                     <p className="text-xs text-slate-600 font-medium flex items-center gap-1.5 pt-0.5">
                       <CalendarClock className="w-3.5 h-3.5 text-emerald-600" />
-                      {job.status === 'CANCELLED' ? 'Closed' : 'Finished'}: <strong>{formatCompletionDateTime(job.finished_at || job.completed_at || job.created_at)}</strong>
+                      Finished: <strong>{formatCompletionDateTime(job.finished_at || job.completed_at || job.created_at)}</strong>
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={() => setDeleteJobModal({ isOpen: true, job })}
+                    className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 font-bold text-xs rounded-xl border border-red-200 flex items-center gap-1.5 transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" /> Delete Job (Password Protected)
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === 'CANCELLED' && (
+        <div className="bg-white rounded-3xl border border-slate-200/80 p-6 space-y-6">
+          <h2 className="text-lg font-bold text-slate-900 font-poppins flex items-center gap-2">
+            <XCircle className="w-5 h-5 text-red-600" /> Cancelled Service Jobs
+          </h2>
+          {cancelledJobs.length === 0 ? (
+            <p className="text-xs text-slate-400 italic py-4 text-center">No cancelled service jobs found.</p>
+          ) : (
+            <div className="space-y-4">
+              {cancelledJobs.map((job) => (
+                <div key={job.id} className="p-4 rounded-2xl bg-red-50/40 border border-red-200/80 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-3">
+                      <span className="font-mono text-sm font-extrabold px-2.5 py-0.5 bg-slate-900 text-amber-400 rounded-lg">
+                        {job.vehicle_number}
+                      </span>
+                      <h3 className="font-bold text-slate-900 text-sm">{job.customer_name} ({job.bike_model})</h3>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700 border border-red-200">
+                        CANCELLED / CLOSED
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500">
+                      Primary Mechanic: <strong>{job.assigned_mechanic}</strong>
+                      {job.secondary_mechanic && <span> • Assistant: <strong>{job.secondary_mechanic}</strong></span>}
+                    </p>
+                    <p className="text-xs text-slate-600 font-medium flex items-center gap-1.5 pt-0.5">
+                      <CalendarClock className="w-3.5 h-3.5 text-red-600" />
+                      Cancelled Date: <strong>{formatCompletionDateTime(job.finished_at || job.completed_at || job.created_at)}</strong>
                     </p>
                   </div>
 

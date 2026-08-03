@@ -4,7 +4,8 @@ import API from '../services/api';
 import AdminPasswordModal from '../components/AdminPasswordModal';
 import { useAuth } from '../context/AuthContext';
 import { generateInquiryReplyMessage } from '../utils/aiMessageGenerator';
-import { fetchCloudMessages, markCloudMessageRead, deleteCloudMessage, pushCloudRecycleBinItem } from '../utils/cloudSync';
+import { fetchCloudMessages, markCloudMessageRead, deleteCloudMessage, pushCloudRecycleBinItem, fetchCloudDeletedIds } from '../utils/cloudSync';
+import { formatDateDMY, parseSafelyDate } from '../utils/dateFormatter';
 
 export default function MessagesPage() {
   const { garageInfo } = useAuth();
@@ -31,19 +32,29 @@ export default function MessagesPage() {
       console.warn('Backend API offline or error:', err);
     }
 
+    const deletedIds = await fetchCloudDeletedIds().catch(() => []);
     const localMsgs = JSON.parse(localStorage.getItem('local_messages') || '[]');
     const cloudMsgs = await fetchCloudMessages();
 
     const allMap = new Map();
     [...backendMsgs, ...localMsgs, ...cloudMsgs].forEach(m => {
-      const uniqueKey = m.id || `${m.phone}_${m.created_at}`;
-      if (!allMap.has(uniqueKey)) {
-        allMap.set(uniqueKey, m);
+      if (m && typeof m === 'object') {
+        const uniqueKey = String(m.id || `${m.phone || m.mobile_number}_${m.created_at || m.date}`);
+        if (!deletedIds.includes(uniqueKey) && !deletedIds.includes(String(m.id))) {
+          if (!allMap.has(uniqueKey)) {
+            allMap.set(uniqueKey, m);
+          }
+        }
       }
     });
 
-    const mergedMsgs = Array.from(allMap.values()).sort(
-      (a, b) => new Date(b.created_at || Date.now()) - new Date(a.created_at || Date.now())
+    const mergedMsgs = Array.from(allMap.values()).filter(m => {
+      const name = m.name || m.customer_name;
+      const phone = m.phone || m.mobile_number;
+      const msg = m.message || m.inquiry;
+      return Boolean(name || phone || msg);
+    }).sort(
+      (a, b) => new Date(b.created_at || b.date || Date.now()) - new Date(a.created_at || a.date || Date.now())
     );
 
     setMessages(mergedMsgs);
@@ -275,7 +286,7 @@ export default function MessagesPage() {
                     </div>
                     <div>
                       <h3 className="font-bold text-slate-900 font-poppins text-base flex items-center gap-2.5">
-                        {msg.name}
+                        {msg.name || msg.customer_name || 'Valued Customer'}
                         {isCompleted ? (
                           <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-emerald-100 text-emerald-700 border border-emerald-200 flex items-center gap-1">
                             <CheckCircle2 className="w-3 h-3" /> Completed
@@ -288,7 +299,7 @@ export default function MessagesPage() {
                       </h3>
                       <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500 mt-1">
                         <span className="flex items-center gap-1 font-bold text-slate-800">
-                          <Phone className="w-3.5 h-3.5 text-blue-600" /> {msg.phone}
+                          <Phone className="w-3.5 h-3.5 text-blue-600" /> {msg.phone || msg.mobile_number || 'N/A'}
                         </span>
                       </div>
                     </div>
@@ -297,7 +308,7 @@ export default function MessagesPage() {
                   <div className="flex items-center gap-3 shrink-0">
                     <span className="text-[11px] font-semibold text-slate-400 flex items-center gap-1">
                       <Clock className="w-3.5 h-3.5 text-slate-400" />
-                      {new Date(msg.created_at).toLocaleString()}
+                      {formatDateDMY(msg.created_at || msg.date)}
                     </span>
                     
                     {/* DELETE MESSAGE BUTTON WITH PASSWORD PROTECTION */}
@@ -316,7 +327,7 @@ export default function MessagesPage() {
                 <div className="py-4 space-y-2">
                   <span className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider block">Customer Inquiry:</span>
                   <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 text-xs sm:text-sm font-medium text-slate-800 leading-relaxed">
-                    "{msg.message}"
+                    "{msg.message || msg.inquiry || 'Inquiry message submitted'}"
                   </div>
                 </div>
 

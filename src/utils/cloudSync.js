@@ -240,9 +240,20 @@ export async function deleteCloudBooking(bookingId) {
 
 export async function deleteCloudMessage(msgId) {
   if (!msgId) return;
+  const strId = String(msgId);
+
+  // 1. Remove from local_messages
+  const localMsgs = JSON.parse(localStorage.getItem('local_messages') || '[]');
+  const updatedLocal = localMsgs.filter(m => m && String(m.id) !== strId);
+  localStorage.setItem('local_messages', JSON.stringify(updatedLocal));
+
+  // 2. Mark deleted in deletedIds
+  await markIdAsDeleted(msgId).catch(console.warn);
+
+  // 3. Remove from master_cloud_cache store.messages
   const store = await fetchMasterStore();
   const existing = (store.messages || []).filter(m => m && typeof m === 'object');
-  const updated = existing.filter(m => m.id !== msgId && String(m.id) !== String(msgId));
+  const updated = existing.filter(m => m && String(m.id) !== strId);
   await saveMasterStore({ ...store, messages: updated });
 }
 
@@ -262,6 +273,19 @@ export async function fetchCloudInventory() {
 
 export async function pushCloudInventoryItem(newItem) {
   if (!newItem || typeof newItem !== 'object') return;
+
+  // 1. Update local inventory_items
+  const localInv = JSON.parse(localStorage.getItem('inventory_items') || '[]');
+  const existsLocal = localInv.some(i => String(i.id) === String(newItem.id));
+  let updatedLocal = localInv;
+  if (!existsLocal) {
+    updatedLocal = [newItem, ...localInv];
+  } else {
+    updatedLocal = localInv.map(i => String(i.id) === String(newItem.id) ? { ...i, ...newItem } : i);
+  }
+  localStorage.setItem('inventory_items', JSON.stringify(updatedLocal));
+
+  // 2. Save to master_cloud_cache
   const store = await fetchMasterStore();
   const existing = (store.inventory || []).filter(i => i && typeof i === 'object');
   const exists = existing.some(i => i.id === newItem.id || String(i.id) === String(newItem.id));

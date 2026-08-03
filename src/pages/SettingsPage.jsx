@@ -190,7 +190,7 @@ export default function SettingsPage() {
         phone: garageInfo.phone || '+91 81403 71414',
         whatsapp_number: garageInfo.whatsapp_number || '+91 81403 71414',
         email: garageInfo.email || 'contact@patelautomobiles.com',
-        timing_text: garageInfo.timing_text || 'Mon - Sat: 09:00 AM - 08:30 PM, Sun: 09:00 AM - 02:00 PM',
+        timing_text: garageInfo.timing_text || 'Mon - Sat: 08:30 AM - 06:30 PM, Sun: 09:00 AM - 02:00 PM',
         safety_message: garageInfo.safety_message || 'Thank you for choosing us! Wish you a safe & smooth ride. 🛵⛑️',
         mechanics_list: garageInfo.mechanics_list || 'Unassigned, Amitbhai Mechanic, Vishalbhai Mechanic, Manojbhai Mechanic',
         default_labour_charge: garageInfo.default_labour_charge || 100.00,

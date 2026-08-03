@@ -116,7 +116,7 @@ export default function ContactPage() {
                 <div>
                   <h3 className="font-bold text-slate-900 font-poppins">Workshop Hours</h3>
                   <p className="text-slate-600 text-xs mt-1 leading-relaxed">
-                    {garageInfo?.timing_text || 'Mon - Sat: 09:00 AM - 08:30 PM, Sun: 09:00 AM - 02:00 PM'}
+                    {garageInfo?.timing_text || 'Mon - Sat: 08:30 AM - 06:30 PM, Sun: 09:00 AM - 02:00 PM'}
                   </p>
                 </div>
               </div>

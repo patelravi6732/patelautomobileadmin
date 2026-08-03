@@ -71,21 +71,28 @@ export default function WorkshopPage() {
     setLoading(true);
     let backendJobs = [];
     let invData = [];
+    let cloudJobs = [];
+    let cloudInv = [];
+    let deletedIds = [];
+
     try {
       const [jobsRes, invRes] = await Promise.all([
-        API.get('/workshop/', { timeout: 1500 }),
-        API.get('/inventory/', { timeout: 1500 })
+        API.get('/workshop/', { timeout: 1500 }).catch(() => ({ data: [] })),
+        API.get('/inventory/', { timeout: 1500 }).catch(() => ({ data: [] }))
       ]);
       backendJobs = jobsRes.data || [];
       invData = invRes.data || [];
-    } catch (err) {
-      console.warn('Backend API offline or unreachable, using fast local+cloud store:', err);
-    }
+    } catch (err) {}
 
-    const deletedIds = await fetchCloudDeletedIds().catch(() => []);
+    try {
+      [cloudJobs, cloudInv, deletedIds] = await Promise.all([
+        fetchCloudJobs().catch(() => []),
+        fetchCloudInventory().catch(() => []),
+        fetchCloudDeletedIds().catch(() => [])
+      ]);
+    } catch (e) {}
+
     const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
-    const cloudJobs = await fetchCloudJobs();
-
     const allMap = new Map();
     [...backendJobs, ...localJobs, ...cloudJobs].forEach(j => {
       if (j && typeof j === 'object') {
@@ -109,25 +116,16 @@ export default function WorkshopPage() {
     const mergedJobs = Array.from(allMap.values()).sort(
       (a, b) => new Date(b.created_at || Date.now()) - new Date(a.created_at || Date.now())
     );
-
     setJobs(mergedJobs);
 
-    // Fetch Inventory Fallback
     let localInv = JSON.parse(localStorage.getItem('inventory_items') || '[]');
-    if (localInv.length === 0) localInv = DEFAULT_SPARE_PARTS;
-    let cloudInv = [];
-    try {
-      cloudInv = await fetchCloudInventory();
-    } catch (e) {}
-
     const allInvMap = new Map();
     [...invData, ...localInv, ...cloudInv].forEach(item => {
       if (item && item.id) {
         allInvMap.set(String(item.id), item);
       }
     });
-    const finalInvList = Array.from(allInvMap.values());
-    setInventory(finalInvList);
+    setInventory(Array.from(allInvMap.values()));
     setLoading(false);
   };
 

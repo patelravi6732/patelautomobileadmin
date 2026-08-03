@@ -67,32 +67,33 @@ export default function AttendancePage() {
 
   const fetchData = async () => {
     setLoading(true);
-    let apiAtt = [];
-    let apiSum = [];
-    let apiCal = [];
-    let apiSal = [];
+    let apiAtt = [], apiSum = [], apiCal = [], apiSal = [];
+    let cloudAtt = [], cloudSal = [], deletedIds = [];
 
     try {
       const [attRes, sumRes, calRes, salRes] = await Promise.all([
-        API.get('/attendance/', { timeout: 1500 }),
-        API.get(`/attendance/monthly_summary/?month=${selectedMonth}&year=${selectedYear}`, { timeout: 1500 }),
-        API.get(`/attendance/monthly_calendar/?month=${selectedMonth}&year=${selectedYear}`, { timeout: 1500 }),
-        API.get('/salary-payments/', { timeout: 1500 })
+        API.get('/attendance/', { timeout: 1500 }).catch(() => ({ data: [] })),
+        API.get(`/attendance/monthly_summary/?month=${selectedMonth}&year=${selectedYear}`, { timeout: 1500 }).catch(() => ({ data: { summary: [] } })),
+        API.get(`/attendance/monthly_calendar/?month=${selectedMonth}&year=${selectedYear}`, { timeout: 1500 }).catch(() => ({ data: { calendar_data: [] } })),
+        API.get('/salary-payments/', { timeout: 1500 }).catch(() => ({ data: [] }))
       ]);
       apiAtt = attRes.data || [];
       apiSum = sumRes.data?.summary || [];
       apiCal = calRes.data?.calendar_data || [];
       apiSal = salRes.data || [];
-    } catch (err) {
-      console.warn('Backend API offline for Attendance, using resilient local & cloud fallback:', err);
-    }
+    } catch (err) {}
 
-    const deletedIds = await fetchCloudDeletedIds().catch(() => []);
+    try {
+      [cloudAtt, cloudSal, deletedIds] = await Promise.all([
+        fetchCloudAttendance().catch(() => []),
+        fetchCloudSalaryPayments().catch(() => []),
+        fetchCloudDeletedIds().catch(() => [])
+      ]);
+    } catch (e) {}
+
     const localAtt = JSON.parse(localStorage.getItem('local_attendance') || '[]');
-    const cloudAtt = await fetchCloudAttendance();
     const combinedAtt = [...apiAtt, ...localAtt, ...cloudAtt];
 
-    // Deduplicate attendance records strictly by mechanic_name + date (1 row per mechanic per day)
     const attMap = new Map();
     combinedAtt.forEach(item => {
       if (item && typeof item === 'object' && item.mechanic_name && item.date && !item.mechanic_name.toLowerCase().includes('unassigned')) {
@@ -114,21 +115,20 @@ export default function AttendancePage() {
         }
       }
     });
-    const finalAttList = Array.from(attMap.values());
-    setAttendanceList(finalAttList);
+    setAttendanceList(Array.from(attMap.values()));
 
     const localSal = JSON.parse(localStorage.getItem('local_salary_payments') || '[]');
-    const cloudSal = await fetchCloudSalaryPayments();
     const combinedSal = [...apiSal, ...localSal, ...cloudSal];
     const salMap = new Map();
     combinedSal.forEach(s => {
       if (s && typeof s === 'object') {
-        const key = s.id || `${s.mechanic_name}_${s.payment_date || s.date}_${s.amount}`;
-        salMap.set(key, s);
+        const key = String(s.id || `${s.mechanic_name}_${s.payment_date}_${s.amount}`);
+        if (!deletedIds.includes(key) && !deletedIds.includes(String(s.id))) {
+          salMap.set(key, s);
+        }
       }
     });
-    const finalSalList = Array.from(salMap.values());
-    setSalaryPayments(finalSalList);
+    setSalaryPayments(Array.from(salMap.values()));
 
     const totalDays = new Date(selectedYear, selectedMonth, 0).getDate();
     setTotalDaysInMonth(totalDays);

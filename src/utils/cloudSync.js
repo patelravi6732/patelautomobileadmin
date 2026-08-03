@@ -36,42 +36,42 @@ async function fetchMasterStore() {
   let freshStore = null;
 
   try {
-    const res = await axios.get(PRIMARY_BIN_URL, { timeout: 1500 });
-    if (res.data) {
+    const res = await axios.get(BACKUP_BIN_URL, { timeout: 2000 });
+    if (res.data && res.data.data) {
       freshStore = {
-        bookings: Array.isArray(res.data.bookings) ? res.data.bookings : [],
-        messages: Array.isArray(res.data.messages) ? res.data.messages : [],
-        jobs: Array.isArray(res.data.jobs) ? res.data.jobs : [],
-        inventory: Array.isArray(res.data.inventory) ? res.data.inventory : [],
-        recycleBin: Array.isArray(res.data.recycleBin) ? res.data.recycleBin : [],
-        garageInfo: res.data.garageInfo || null,
-        adminProfiles: Array.isArray(res.data.adminProfiles) ? res.data.adminProfiles : [],
-        khataEntries: Array.isArray(res.data.khataEntries) ? res.data.khataEntries : [],
-        customers: Array.isArray(res.data.customers) ? res.data.customers : [],
-        invoices: Array.isArray(res.data.invoices) ? res.data.invoices : [],
-        attendance: Array.isArray(res.data.attendance) ? res.data.attendance : [],
-        salaryPayments: Array.isArray(res.data.salaryPayments) ? res.data.salaryPayments : [],
-        deletedIds: Array.isArray(res.data.deletedIds) ? res.data.deletedIds : []
+        bookings: Array.isArray(res.data.data.bookings) ? res.data.data.bookings : [],
+        messages: Array.isArray(res.data.data.messages) ? res.data.data.messages : [],
+        jobs: Array.isArray(res.data.data.jobs) ? res.data.data.jobs : [],
+        inventory: Array.isArray(res.data.data.inventory) ? res.data.data.inventory : [],
+        recycleBin: Array.isArray(res.data.data.recycleBin) ? res.data.data.recycleBin : [],
+        garageInfo: res.data.data.garageInfo || null,
+        adminProfiles: Array.isArray(res.data.data.adminProfiles) ? res.data.data.adminProfiles : [],
+        khataEntries: Array.isArray(res.data.data.khataEntries) ? res.data.data.khataEntries : [],
+        customers: Array.isArray(res.data.data.customers) ? res.data.data.customers : [],
+        invoices: Array.isArray(res.data.data.invoices) ? res.data.data.invoices : [],
+        attendance: Array.isArray(res.data.data.attendance) ? res.data.data.attendance : [],
+        salaryPayments: Array.isArray(res.data.data.salaryPayments) ? res.data.data.salaryPayments : [],
+        deletedIds: Array.isArray(res.data.data.deletedIds) ? res.data.data.deletedIds : []
       };
     }
   } catch (e1) {
     try {
-      const res = await axios.get(BACKUP_BIN_URL, { timeout: 1500 });
-      if (res.data && res.data.data) {
+      const res = await axios.get(PRIMARY_BIN_URL, { timeout: 2000 });
+      if (res.data) {
         freshStore = {
-          bookings: Array.isArray(res.data.data.bookings) ? res.data.data.bookings : [],
-          messages: Array.isArray(res.data.data.messages) ? res.data.data.messages : [],
-          jobs: Array.isArray(res.data.data.jobs) ? res.data.data.jobs : [],
-          inventory: Array.isArray(res.data.data.inventory) ? res.data.data.inventory : [],
-          recycleBin: Array.isArray(res.data.data.recycleBin) ? res.data.data.recycleBin : [],
-          garageInfo: res.data.data.garageInfo || null,
-          adminProfiles: Array.isArray(res.data.data.adminProfiles) ? res.data.data.adminProfiles : [],
-          khataEntries: Array.isArray(res.data.data.khataEntries) ? res.data.data.khataEntries : [],
-          customers: Array.isArray(res.data.data.customers) ? res.data.data.customers : [],
-          invoices: Array.isArray(res.data.data.invoices) ? res.data.data.invoices : [],
-          attendance: Array.isArray(res.data.data.attendance) ? res.data.data.attendance : [],
-          salaryPayments: Array.isArray(res.data.data.salaryPayments) ? res.data.data.salaryPayments : [],
-          deletedIds: Array.isArray(res.data.data.deletedIds) ? res.data.data.deletedIds : []
+          bookings: Array.isArray(res.data.bookings) ? res.data.bookings : [],
+          messages: Array.isArray(res.data.messages) ? res.data.messages : [],
+          jobs: Array.isArray(res.data.jobs) ? res.data.jobs : [],
+          inventory: Array.isArray(res.data.inventory) ? res.data.inventory : [],
+          recycleBin: Array.isArray(res.data.recycleBin) ? res.data.recycleBin : [],
+          garageInfo: res.data.garageInfo || null,
+          adminProfiles: Array.isArray(res.data.adminProfiles) ? res.data.adminProfiles : [],
+          khataEntries: Array.isArray(res.data.khataEntries) ? res.data.khataEntries : [],
+          customers: Array.isArray(res.data.customers) ? res.data.customers : [],
+          invoices: Array.isArray(res.data.invoices) ? res.data.invoices : [],
+          attendance: Array.isArray(res.data.attendance) ? res.data.attendance : [],
+          salaryPayments: Array.isArray(res.data.salaryPayments) ? res.data.salaryPayments : [],
+          deletedIds: Array.isArray(res.data.deletedIds) ? res.data.deletedIds : []
         };
       }
     } catch (e2) {

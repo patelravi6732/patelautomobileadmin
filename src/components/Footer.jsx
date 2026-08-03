@@ -68,7 +68,7 @@ export default function Footer() {
               Garage Timings
             </h3>
             <p className="text-sm text-slate-300 font-medium leading-relaxed bg-slate-800/60 p-3 rounded-xl border border-slate-700/80">
-              {garageInfo?.timing_text || 'Mon - Sat: 09:00 AM - 08:30 PM, Sun: 09:00 AM - 02:00 PM'}
+              {garageInfo?.timing_text || 'Mon - Sat: 08:30 AM - 06:30 PM, Sun: 09:00 AM - 02:00 PM'}
             </p>
             <p className="pt-3 text-xs text-slate-400">
               Emergency Breakdown Assistance Available During Working Hours.

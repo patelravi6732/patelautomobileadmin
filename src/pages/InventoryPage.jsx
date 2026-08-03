@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Package, Plus, Search, AlertTriangle, Edit2, Trash2, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react';
 import API from '../services/api';
-import { fetchCloudInventory, pushCloudInventoryItem, deleteCloudInventoryItem, pushCloudRecycleBinItem } from '../utils/cloudSync';
+import { fetchCloudInventory, pushCloudInventoryItem, deleteCloudInventoryItem, pushCloudRecycleBinItem, fetchCloudDeletedIds } from '../utils/cloudSync';
 import AdminPasswordModal from '../components/AdminPasswordModal';
 
 export const DEFAULT_SPARE_PARTS = [];
@@ -53,23 +53,25 @@ export default function InventoryPage() {
       console.warn('Backend API offline for inventory, using fast local+cloud store:', err);
     }
 
-    const cloudInv = await fetchCloudInventory();
+    const deletedIds = await fetchCloudDeletedIds().catch(() => []);
+    const cloudInv = await fetchCloudInventory().catch(() => []);
     const localInv = JSON.parse(localStorage.getItem('inventory_items') || '[]');
 
     const allMap = new Map();
-    // Prioritize Cloud and Local updates over static default spare parts
-    [...cloudInv, ...localInv, ...backendItems, ...DEFAULT_SPARE_PARTS].forEach(item => {
+    [...cloudInv, ...localInv, ...backendItems].forEach(item => {
       if (item && typeof item === 'object' && (item.part_name || item.name)) {
         const key = String(item.id || item.part_name || item.name);
-        if (!allMap.has(key)) {
-          allMap.set(key, {
-            id: item.id || key,
-            part_name: item.part_name || item.name,
-            category: item.category || 'General',
-            price: parseFloat(item.price || 0),
-            current_stock: parseInt(item.current_stock || 0, 10),
-            min_stock_alert: item.min_stock_alert !== undefined && item.min_stock_alert !== '' ? parseInt(item.min_stock_alert, 10) : 2
-          });
+        if (!deletedIds.includes(key) && !deletedIds.includes(String(item.id)) && !deletedIds.includes(String(item.part_name))) {
+          if (!allMap.has(key)) {
+            allMap.set(key, {
+              id: item.id || key,
+              part_name: item.part_name || item.name,
+              category: item.category || 'General',
+              price: parseFloat(item.price || 0),
+              current_stock: parseInt(item.current_stock || 0, 10),
+              min_stock_alert: item.min_stock_alert !== undefined && item.min_stock_alert !== '' ? parseInt(item.min_stock_alert, 10) : 2
+            });
+          }
         }
       }
     });

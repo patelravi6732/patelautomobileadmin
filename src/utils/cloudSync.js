@@ -80,21 +80,21 @@ async function fetchMasterStore() {
   }
 
   if (freshStore) {
-    // Merge cloud and local cache to preserve rich records
+    // Use freshStore from cloud server directly when available to prevent resurrection of wiped/deleted items
     const mergedStore = {
-      bookings: Array.from(new Map([...localCache.bookings, ...freshStore.bookings].map(b => [b.id || `${b.customer_name}_${b.vehicle_number}`, b])).values()),
-      messages: Array.from(new Map([...localCache.messages, ...freshStore.messages].map(m => [m.id || m.title, m])).values()),
-      jobs: Array.from(new Map([...localCache.jobs, ...freshStore.jobs].map(j => [j.id, j])).values()),
-      inventory: Array.from(new Map([...localCache.inventory, ...freshStore.inventory].map(i => [i.id || i.name, i])).values()),
-      recycleBin: Array.from(new Map([...localCache.recycleBin, ...freshStore.recycleBin].map(r => [r.id, r])).values()),
+      bookings: freshStore.bookings,
+      messages: freshStore.messages,
+      jobs: freshStore.jobs,
+      inventory: freshStore.inventory,
+      recycleBin: freshStore.recycleBin,
       garageInfo: freshStore.garageInfo || localCache.garageInfo,
-      adminProfiles: Array.from(new Map([...localCache.adminProfiles, ...freshStore.adminProfiles].map(a => [a.id || a.email, a])).values()),
-      khataEntries: Array.from(new Map([...localCache.khataEntries, ...freshStore.khataEntries].map(k => [k.id, k])).values()),
-      customers: Array.from(new Map([...localCache.customers, ...freshStore.customers].map(c => [c.id || c.phone, c])).values()),
-      invoices: Array.from(new Map([...localCache.invoices, ...freshStore.invoices].map(inv => [inv.id, inv])).values()),
-      attendance: Array.from(new Map([...localCache.attendance, ...freshStore.attendance].map(att => [att.id || `${att.mechanic_name}_${att.date}`, att])).values()),
-      salaryPayments: Array.from(new Map([...localCache.salaryPayments, ...freshStore.salaryPayments].map(s => [s.id, s])).values()),
-      deletedIds: Array.from(new Set([...localCache.deletedIds, ...freshStore.deletedIds]))
+      adminProfiles: freshStore.adminProfiles,
+      khataEntries: freshStore.khataEntries,
+      customers: freshStore.customers,
+      invoices: freshStore.invoices,
+      attendance: freshStore.attendance,
+      salaryPayments: freshStore.salaryPayments,
+      deletedIds: freshStore.deletedIds
     };
     try {
       localStorage.setItem('master_cloud_cache', JSON.stringify(mergedStore));

@@ -228,8 +228,8 @@ export default function SettingsPage() {
 
   // Open Edit Admin Modal (WITH STRICT SELF-EDIT PROTECTION)
   const handleOpenEditAdmin = (targetAdmin) => {
-    const activeUsername = user?.username || 'Ravi Patel';
-    const isSelf = targetAdmin.username === activeUsername || activeUsername === 'Ravi Patel' || activeUsername === 'admin';
+    const activeUsername = user?.username || user?.user_name || 'admin';
+    const isSelf = targetAdmin.username === activeUsername || activeUsername === 'admin';
 
     if (!isSelf) {
       alert(`Access Restricted: You can only edit your own Admin profile and password!`);

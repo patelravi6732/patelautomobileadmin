@@ -207,11 +207,12 @@ export default function BookingsPage() {
 
   const availableYears = useMemo(() => {
     const bookingYears = bookings
-      .map((booking) => parseSafelyDate(booking.preferred_date || booking.created_at).getFullYear())
+      .map((booking) => parseSafelyDate(booking?.preferred_date || booking?.created_at).getFullYear())
       .filter((year) => Number.isInteger(year) && year > 2000);
-    const firstYear = Math.min(selectedYear, ...bookingYears, DEFAULT_BOOKING_DATE.getFullYear());
-    const lastYear = Math.max(selectedYear + 5, ...bookingYears, DEFAULT_BOOKING_DATE.getFullYear() + 5);
-    return Array.from({ length: lastYear - firstYear + 1 }, (_, index) => firstYear + index);
+    const validYears = bookingYears.length > 0 ? bookingYears : [DEFAULT_BOOKING_DATE.getFullYear()];
+    const firstYear = Math.min(selectedYear, ...validYears);
+    const lastYear = Math.max(selectedYear + 5, ...validYears);
+    return Array.from({ length: Math.max(1, lastYear - firstYear + 1) }, (_, index) => firstYear + index);
   }, [bookings, selectedYear]);
 
   const initiateAccept = (booking) => {

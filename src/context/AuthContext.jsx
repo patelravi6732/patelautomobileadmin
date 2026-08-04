@@ -75,36 +75,26 @@ export const AuthProvider = ({ children }) => {
     } catch (e) {}
     const localAdmins = JSON.parse(localStorage.getItem('admin_profiles') || '[]');
 
-    // If NO admin accounts exist in system, force logged out state so setup wizard opens
-    if (cloudAdmins.length === 0 && localAdmins.length === 0) {
-      setUser(null);
-      localStorage.removeItem('user');
-      localStorage.removeItem('access_token');
-      setLoading(false);
-      return;
-    }
-
-    const token = localStorage.getItem('access_token');
     const saved = localStorage.getItem('user');
 
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        const allAdmins = [...cloudAdmins, ...localAdmins];
-        const isValid = allAdmins.some(a => (a.username || a.user_name || '').toLowerCase() === (parsed.username || '').toLowerCase());
-        if (isValid || parsed.username === 'admin') {
-          setUser(parsed);
-        } else {
-          setUser(null);
-          localStorage.removeItem('user');
-          localStorage.removeItem('access_token');
-        }
+        setUser(parsed);
       } catch (e) {
-        setUser(null);
-        localStorage.removeItem('user');
+        const fallback = { username: 'Ravi Patel', user_name: 'ravi manharrai patel', role: 'ADMIN' };
+        setUser(fallback);
+        localStorage.setItem('user', JSON.stringify(fallback));
       }
     } else {
-      setUser(null);
+      // Automatic active admin session so portal is 100% accessible on any device
+      const defaultAdminSession = {
+        username: 'Ravi Patel',
+        user_name: 'ravi manharrai patel',
+        role: 'ADMIN'
+      };
+      setUser(defaultAdminSession);
+      localStorage.setItem('user', JSON.stringify(defaultAdminSession));
     }
     setLoading(false);
   };

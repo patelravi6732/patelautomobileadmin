@@ -414,14 +414,19 @@ export default function WorkshopPage() {
       }
     }
 
-    // 4. Create or Update Billing Invoice Object (Deduplicated)
+    // 4. Create or Update Billing Invoice Object (Keyed per Job/Visit)
     const localInvoices = JSON.parse(localStorage.getItem('local_invoices') || '[]');
     const existingInvIndex = localInvoices.findIndex(inv => 
-      inv && (String(inv.id) === String(targetId) || (inv.vehicle_number && inv.vehicle_number === selectedJob.vehicle_number && inv.invoice_number === `INV-${String(targetId).slice(-4)}`))
+      inv && (
+        String(inv.id) === `inv_${targetId}` || 
+        String(inv.job_id) === String(targetId) || 
+        inv.invoice_number === `INV-${String(targetId).slice(-4)}`
+      )
     );
 
     const newInvoiceObj = {
       id: existingInvIndex >= 0 ? localInvoices[existingInvIndex].id : `inv_${targetId}`,
+      job_id: targetId,
       invoice_number: `INV-${String(targetId).slice(-4)}`,
       customer_name: selectedJob.customer_name,
       mobile_number: selectedJob.mobile_number,
@@ -448,22 +453,26 @@ export default function WorkshopPage() {
     }
     localStorage.setItem('local_invoices', JSON.stringify(updatedInvoicesList));
 
-    // 5. Create or Update Khata Book Debit Entry (Deduplicated)
+    // 5. Create or Update Khata Book Debit Entry (Keyed per Job/Visit)
     const localKhata = JSON.parse(localStorage.getItem('khata_entries') || '[]');
     const existingKhataIndex = localKhata.findIndex(k => 
-      k && (k.vehicle_number === selectedJob.vehicle_number || String(k.id) === `khata_${targetId}`)
+      k && (
+        String(k.id) === `khata_${targetId}` ||
+        String(k.job_id) === String(targetId)
+      )
     );
 
     if (unpaidAmount > 0) {
       const khataDebitEntry = {
         id: existingKhataIndex >= 0 ? localKhata[existingKhataIndex].id : `khata_${targetId}`,
+        job_id: targetId,
         customer_name: selectedJob.customer_name,
         mobile_number: selectedJob.mobile_number,
         vehicle_number: selectedJob.vehicle_number,
         bike_model: selectedJob.bike_model || 'Two Wheeler',
         type: 'DEBIT',
         amount: unpaidAmount,
-        description: `Unpaid balance from Service Bill (Total: ₹${grandTotal.toFixed(2)}, Paid: ₹${paidAmountNum.toFixed(2)})`,
+        description: `Unpaid balance for Visit #${String(targetId).slice(-4)} (Total: ₹${grandTotal.toFixed(2)}, Paid: ₹${paidAmountNum.toFixed(2)})`,
         date: completionTime
       };
       pushCloudKhataEntry(khataDebitEntry).catch(console.warn);

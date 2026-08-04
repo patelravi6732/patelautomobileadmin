@@ -34,6 +34,7 @@ export default function BookingsPage() {
       return [];
     }
   });
+  const [loading, setLoading] = useState(false);
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, booking: null });
   
   // Action Confirmation Modal State (Prevents Accidental Accept/Reject)

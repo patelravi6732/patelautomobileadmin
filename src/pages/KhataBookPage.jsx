@@ -127,141 +127,113 @@ export default function KhataBookPage() {
 
       const legacyDebtors = backendData?.debtors || JSON.parse(localStorage.getItem('khata_debtors') || '[]');
 
-      const debtorMap = new Map();
+      const khataList = [];
 
-      // Helper to get or init debtor object
-      const getDebtor = (name, phone, vehicle, model) => {
-        const cleanVeh = (vehicle || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-        const cleanPhone = (phone || '').replace(/\D/g, '').slice(-10);
-        const key = cleanVeh || (cleanPhone ? `${name.toLowerCase()}_${cleanPhone}` : name.toLowerCase());
+      // 1. Process Invoices
+      combinedInvs.forEach(inv => {
+        if (!inv || deletedIds.includes(String(inv.id)) || deletedIds.includes(String(inv.invoice_number))) return;
+        const partsVal = parseFloat(inv.parts_total || 0);
+        const labourVal = parseFloat(inv.labour_charge || 0);
+        const discountVal = parseFloat(inv.discount_amount || 0);
+        const totalVal = parseFloat(inv.grand_total || inv.total_amount || Math.max(0, partsVal + labourVal - discountVal));
+        let paidVal = parseFloat(inv.paid_amount || 0);
+        const statusStr = String(inv.payment_status || inv.status || '').toUpperCase();
+        if (statusStr === 'PAID' && paidVal === 0) paidVal = totalVal;
 
-        if (!debtorMap.has(key)) {
-          debtorMap.set(key, {
-            id: key,
-            customer_name: name || 'Valued Customer',
-            phone: phone || 'N/A',
-            mobile_number: phone || 'N/A',
-            vehicle_number: vehicle || 'GJ-15',
-            bike_model: model || 'Two Wheeler',
-            total_billed: 0,
-            total_paid: 0,
-            pending_amount: 0,
-            balance: 0,
-            visit_date: 'N/A',
-            notes: ''
+        const pendingVal = Math.max(0, totalVal - paidVal);
+        if (pendingVal > 0) {
+          const itemDate = inv.created_at || inv.date || new Date().toISOString();
+          const formattedDate = new Date(itemDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+          khataList.push({
+            id: String(inv.id),
+            invoice_id: inv.id,
+            invoice_number: inv.invoice_number || `INV-${String(inv.id).slice(-4)}`,
+            customer_name: inv.customer_name || 'Valued Customer',
+            phone: inv.mobile_number || inv.phone || 'N/A',
+            mobile_number: inv.mobile_number || inv.phone || 'N/A',
+            vehicle_number: inv.vehicle_number || 'GJ-15',
+            bike_model: inv.bike_model || 'Two Wheeler',
+            total_billed: totalVal,
+            total_paid: paidVal,
+            pending_amount: pendingVal,
+            balance: pendingVal,
+            visit_date: formattedDate,
+            raw_date: itemDate,
+            parts: inv.parts || [],
+            labour_charge: labourVal
           });
         }
-        return debtorMap.get(key);
-      };
+      });
 
-      // 1. Process Finished Workshop Jobs & Invoices for total_billed & total_paid
-      const finishedJobs = combinedJobs.filter(j => j && (j.status === 'FINISHED' || j.status === 'COMPLETED'));
-      [...finishedJobs, ...combinedInvs].forEach(item => {
-        if (!item) return;
-        const name = item.customer_name || 'Valued Customer';
-        const phone = item.mobile_number || item.phone || item.phone_number || '';
-        const vehicle = item.vehicle_number || '';
-        const model = item.bike_model || '';
+      // 2. Process Finished Jobs not in invoices
+      finishedJobs.forEach(job => {
+        if (!job || deletedIds.includes(String(job.id))) return;
+        const alreadyInInvoices = combinedInvs.some(i => String(i.job_id) === String(job.id) || String(i.id) === `inv_${job.id}`);
+        if (alreadyInInvoices) return;
 
-        const d = getDebtor(name, phone, vehicle, model);
-        const partsVal = parseFloat(item.parts_total || 0);
-        const labourVal = parseFloat(item.labour_charge || 100);
-        const discountVal = parseFloat(item.discount_amount || 0);
-        const totalVal = parseFloat(item.grand_total || item.total_amount || item.live_total || Math.max(0, partsVal + labourVal - discountVal));
-        const statusStr = String(item.payment_status || item.status || '').toUpperCase();
-        let paidVal = 0;
+        const partsVal = parseFloat(job.parts_total || 0);
+        const labourVal = parseFloat(job.labour_charge || 0);
+        const discountVal = parseFloat(job.discount_amount || 0);
+        const totalVal = parseFloat(job.grand_total || job.live_total || Math.max(0, partsVal + labourVal - discountVal));
+        let paidVal = parseFloat(job.paid_amount || 0);
+        const statusStr = String(job.payment_status || job.status || '').toUpperCase();
+        if (statusStr === 'PAID' && paidVal === 0) paidVal = totalVal;
 
-        if (item.paid_amount !== undefined && item.paid_amount !== null && item.paid_amount !== '') {
-          paidVal = parseFloat(item.paid_amount);
-        } else if (item.received_amount !== undefined && item.received_amount !== null && item.received_amount !== '') {
-          paidVal = parseFloat(item.received_amount);
-        } else if (item.amount_paid !== undefined && item.amount_paid !== null && item.amount_paid !== '') {
-          paidVal = parseFloat(item.amount_paid);
-        } else if (statusStr.includes('PENDING') || statusStr.includes('UNPAID') || statusStr.includes('PARTIAL')) {
-          paidVal = 0;
-        } else {
-          paidVal = totalVal;
-        }
-
-        d.total_billed += totalVal;
-        d.total_paid += paidVal;
-        d.pending_amount += Math.max(0, totalVal - paidVal);
-
-        const itemDate = item.finished_at || item.completed_at || item.created_at || item.date;
-        if (itemDate && itemDate !== 'N/A') {
+        const pendingVal = Math.max(0, totalVal - paidVal);
+        if (pendingVal > 0) {
+          const itemDate = job.finished_at || job.completed_at || job.created_at || new Date().toISOString();
           const formattedDate = new Date(itemDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-          if (d.visit_date === 'N/A' || new Date(itemDate) > new Date(d.visit_date)) {
-            d.visit_date = formattedDate;
-            d.raw_date = itemDate;
-          }
+          khataList.push({
+            id: String(job.id),
+            invoice_id: job.id,
+            invoice_number: `INV-${String(job.id).slice(-4)}`,
+            customer_name: job.customer_name || 'Valued Customer',
+            phone: job.mobile_number || job.phone || 'N/A',
+            mobile_number: job.mobile_number || job.phone || 'N/A',
+            vehicle_number: job.vehicle_number || 'GJ-15',
+            bike_model: job.bike_model || 'Two Wheeler',
+            total_billed: totalVal,
+            total_paid: paidVal,
+            pending_amount: pendingVal,
+            balance: pendingVal,
+            visit_date: formattedDate,
+            raw_date: itemDate,
+            parts: job.parts || [],
+            labour_charge: labourVal
+          });
         }
       });
 
-      // 2. Process Manual Khata Entries (Debit / Credit)
+      // 3. Process Manual Khata Debit Entries
       combinedKhata.forEach(k => {
-        if (!k) return;
-        // Skip auto-generated service bill debit entries to prevent double counting
-        if (k.description && k.description.includes('Unpaid balance from Service Bill')) return;
+        if (!k || deletedIds.includes(String(k.id))) return;
+        if (k.description && (k.description.includes('Unpaid balance for Visit') || k.description.includes('Unpaid balance from Service Bill'))) return;
 
-        const name = k.customer_name || 'Valued Customer';
-        const phone = k.mobile_number || k.phone || '';
-        const vehicle = k.vehicle_number || '';
-        const model = k.bike_model || '';
-
-        const d = getDebtor(name, phone, vehicle, model);
         const amt = parseFloat(k.amount || 0);
-
-        if (k.type === 'DEBIT') {
-          d.total_billed += amt;
-          d.pending_amount += amt;
-        } else if (k.type === 'CREDIT') {
-          d.total_paid += amt;
-          d.pending_amount = Math.max(0, d.pending_amount - amt);
-        }
-
-        if (k.date) {
-          const formattedDate = new Date(k.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-          d.visit_date = formattedDate;
-          d.raw_date = k.date;
-        }
-      });
-
-      // 3. Process Legacy Debtors if needed
-      legacyDebtors.forEach(leg => {
-        if (!leg) return;
-        const amt = parseFloat(leg.pending_amount || leg.balance || leg.total_pending_amount || 0);
-        if (amt > 0) {
-          const d = getDebtor(leg.customer_name, leg.phone || leg.mobile_number, leg.vehicle_number, leg.bike_model);
-          if (d.pending_amount <= 0) {
-            d.pending_amount = amt;
-            d.total_billed = Math.max(d.total_billed, parseFloat(leg.total_billed || amt));
-            d.total_paid = parseFloat(leg.total_paid || 0);
-            if (leg.visit_date && leg.visit_date !== 'N/A') {
-              d.visit_date = leg.visit_date;
-              d.raw_date = leg.visit_date;
-            }
-          }
+        if (amt > 0 && k.type === 'DEBIT') {
+          const itemDate = k.date || new Date().toISOString();
+          const formattedDate = new Date(itemDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+          khataList.push({
+            id: String(k.id),
+            customer_name: k.customer_name || 'Valued Customer',
+            phone: k.mobile_number || k.phone || 'N/A',
+            mobile_number: k.mobile_number || k.phone || 'N/A',
+            vehicle_number: k.vehicle_number || 'GJ-15',
+            bike_model: k.bike_model || 'Two Wheeler',
+            total_billed: amt,
+            total_paid: 0,
+            pending_amount: amt,
+            balance: amt,
+            visit_date: formattedDate,
+            raw_date: itemDate,
+            parts: [],
+            labour_charge: 0
+          });
         }
       });
 
-      const allDebtorsList = Array.from(debtorMap.values()).filter(d => {
-        d.balance = d.pending_amount;
-        const strId = String(d.id || '');
-        
-        // Active pending dues from bills MUST ALWAYS display in KhataBook!
-        if (d.pending_amount > 0) return true;
-        
-        // Match deletedIds strictly against specific transaction IDs, never vehicle numbers
-        return !deletedIds.includes(strId);
-      });
-
-      const pendingDebtors = allDebtorsList.filter(d => d.pending_amount > 0);
-      const finalDebtors = pendingDebtors.length > 0 ? pendingDebtors : allDebtorsList;
-
-      const totalSum = pendingDebtors.reduce((acc, d) => acc + d.pending_amount, 0);
-
-      setDebtors(finalDebtors);
-      setTotalPending(totalSum);
+      setDebtors(khataList);
+      setTotalPending(khataList.reduce((sum, item) => sum + item.pending_amount, 0));
     } catch (err) {
       console.error('Error fetching Khata debtors:', err);
     } finally {

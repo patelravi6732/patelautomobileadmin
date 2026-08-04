@@ -75,7 +75,6 @@ export default function App() {
             <Route path="workshop" element={<WorkshopPage />} />
             <Route path="inventory" element={<InventoryPage />} />
             <Route path="customers" element={<CustomersPage />} />
-            <Route path="vehicle-history" element={<VehicleHistoryPage />} />
             <Route path="billing" element={<BillingPage />} />
             <Route path="khata-book" element={<KhataBookPage />} />
             <Route path="attendance" element={<AttendancePage />} />
@@ -100,7 +99,6 @@ export default function App() {
             <Route path="workshop" element={<WorkshopPage />} />
             <Route path="inventory" element={<InventoryPage />} />
             <Route path="customers" element={<CustomersPage />} />
-            <Route path="vehicle-history" element={<VehicleHistoryPage />} />
             <Route path="billing" element={<BillingPage />} />
             <Route path="khata-book" element={<KhataBookPage />} />
             <Route path="attendance" element={<AttendancePage />} />

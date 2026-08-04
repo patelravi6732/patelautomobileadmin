@@ -154,8 +154,9 @@ export default function KhataBookPage() {
         return debtorMap.get(key);
       };
 
-      // 1. Process Workshop Jobs & Invoices for total_billed & total_paid
-      [...combinedJobs, ...combinedInvs].forEach(item => {
+      // 1. Process Finished Workshop Jobs & Invoices for total_billed & total_paid
+      const finishedJobs = combinedJobs.filter(j => j && (j.status === 'FINISHED' || j.status === 'COMPLETED'));
+      [...finishedJobs, ...combinedInvs].forEach(item => {
         if (!item) return;
         const name = item.customer_name || 'Valued Customer';
         const phone = item.mobile_number || item.phone || item.phone_number || '';

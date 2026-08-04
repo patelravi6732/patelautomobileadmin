@@ -84,8 +84,8 @@ export default function DashboardLayout() {
 
   // Active Admin Details
   const displayName = adminProfile?.user_name || user?.admin_profile?.user_name || user?.user_name || user?.username || 'Garage Owner (Admin)';
-  const displayPhoto = adminProfile?.profile_photo || user?.admin_profile?.profile_photo || '/logo.png';
-  const displayUsername = adminProfile?.username || user?.username ? `@${adminProfile?.username || user?.username}` : '@admin';
+  const displayPhoto = adminProfile?.profile_photo || user?.admin_profile?.profile_photo || garageInfo?.logo || '/logo.png';
+  const displayUsername = (adminProfile?.username || user?.username || displayName || 'admin').replace(/^@+/, '');
 
   return (
     <div className="min-h-screen bg-slate-50 flex">
@@ -125,60 +125,38 @@ export default function DashboardLayout() {
             </button>
           </div>
 
-          {/* Direct Link to Public Website */}
-          <div className="px-4 pt-4 pb-1">
-            <Link
-              to="/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 hover:text-emerald-300 text-xs font-bold transition-all group"
-              title="Open Main Website in New Tab"
-            >
-              <div className="flex items-center gap-2.5">
-                <Globe className="w-4 h-4 text-emerald-400 group-hover:rotate-12 transition-transform" />
-                <span>Visit Main Website</span>
-              </div>
-              <ExternalLink className="w-3.5 h-3.5 opacity-80" />
-            </Link>
-          </div>
-
           {/* Navigation Links */}
-          <nav className="flex-1 px-4 py-4 space-y-1.5 overflow-y-auto scrollbar-none">
+          <div className="flex-1 px-4 py-6 space-y-1.5 overflow-y-auto scrollbar-none">
             {menuItems.map((item) => {
-              const Icon = item.icon;
               const active = isActive(item.path);
+              const Icon = item.icon;
               return (
                 <Link
                   key={item.path}
                   to={item.path}
-                  onClick={() => setSidebarOpen(false)}
-                  className={`flex items-center justify-between px-4 py-3 rounded-xl font-medium text-xs transition-all ${
+                  className={`flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all duration-200 ${
                     active
-                      ? 'bg-blue-600 text-white font-bold shadow-md shadow-blue-600/20'
-                      : 'hover:bg-slate-800 text-slate-400 hover:text-slate-200'
+                      ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
+                      : 'text-slate-400 hover:bg-slate-800/80 hover:text-slate-100'
                   }`}
                 >
-                  <div className="flex items-center gap-3">
-                    <Icon className={`w-4 h-4 ${active ? 'text-white' : 'text-slate-400'}`} />
-                    <span>{item.name}</span>
-                  </div>
-                  {active && <ChevronRight className="w-4 h-4 text-white/70" />}
+                  <Icon className={`w-5 h-5 ${active ? 'text-white' : 'text-slate-400'}`} />
+                  <span>{item.name}</span>
                 </Link>
               );
             })}
-          </nav>
+          </div>
 
-          {/* User Profile Footer */}
-          <div className="p-4 border-t border-slate-800 bg-slate-950/40">
+          {/* User Profile Footer (Bottom Sidebar) */}
+          <div className="p-4 border-t border-slate-800 bg-slate-950/60">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl overflow-hidden bg-blue-600 border border-slate-700 flex items-center justify-center shrink-0 text-white font-extrabold text-sm shadow-inner">
+                <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-base shadow-md overflow-hidden border border-blue-500/30 shrink-0">
                   {displayPhoto && displayPhoto !== '/logo.png' && !displayPhoto.includes('undefined') ? (
-                    <img
-                      src={displayPhoto}
-                      alt="Admin Avatar"
+                    <img 
+                      src={displayPhoto} 
+                      alt={displayName} 
                       className="w-full h-full object-cover"
-                      onError={(e) => { e.target.style.display = 'none'; }}
                     />
                   ) : (
                     <span>{displayName ? displayName.charAt(0).toUpperCase() : 'A'}</span>

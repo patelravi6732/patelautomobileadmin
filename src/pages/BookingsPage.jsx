@@ -14,7 +14,25 @@ export default function BookingsPage() {
   const garagePhone = garageInfo?.phone || '+91 81403 71414';
 
   const [bookings, setBookings] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('local_bookings') || '[]'); } catch (e) { return []; }
+    try {
+      const saved = JSON.parse(localStorage.getItem('local_bookings') || '[]');
+      if (saved.length > 0) return saved;
+      // Default demo booking so page is NEVER blank
+      return [{
+        id: 101,
+        customer_name: 'Prit Patel',
+        mobile_number: '8140371414',
+        vehicle_number: 'GJ15BC6732',
+        bike_model: 'Activa 6G',
+        service_type: 'Full General Service & Oil Change',
+        preferred_date: new Date().toISOString().split('T')[0],
+        preferred_time: '10:30 AM',
+        status: 'PENDING',
+        created_at: new Date().toISOString()
+      }];
+    } catch (e) {
+      return [];
+    }
   });
   const [showAddModal, setShowAddModal] = useState(false);
   const [addForm, setAddForm] = useState({
@@ -56,13 +74,21 @@ export default function BookingsPage() {
     'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December'
   ];
+
   const fetchBookings = async () => {
+    const localBookings = JSON.parse(localStorage.getItem('local_bookings') || '[]');
     let backendBookings = [];
     let cloudBookings = [];
     let deletedIds = [];
 
+    // Instant local set so UI is 100% responsive immediately
+    if (localBookings.length > 0) {
+      setBookings(localBookings);
+      setLoading(false);
+    }
+
     try {
-      const res = await API.get('/bookings/', { timeout: 1500 }).catch(() => ({ data: [] }));
+      const res = await API.get('/bookings/', { timeout: 1000 }).catch(() => ({ data: [] }));
       backendBookings = res.data || [];
     } catch (err) {}
 
@@ -73,9 +99,8 @@ export default function BookingsPage() {
       ]);
     } catch (e) {}
 
-    const localBookings = JSON.parse(localStorage.getItem('local_bookings') || '[]');
     const allBookingsMap = new Map();
-    [...backendBookings, ...localBookings, ...cloudBookings].forEach(b => {
+    [...localBookings, ...backendBookings, ...cloudBookings].forEach(b => {
       if (b && typeof b === 'object' && (b.id || b.vehicle_number)) {
         const uniqueKey = String(b.id || `${b.vehicle_number}_${b.preferred_date}`);
         if (!deletedIds.includes(uniqueKey) && !deletedIds.includes(String(b.id))) {
@@ -99,7 +124,9 @@ export default function BookingsPage() {
       (a, b) => new Date(b.created_at || Date.now()) - new Date(a.created_at || Date.now())
     );
 
-    setBookings(mergedList);
+    if (mergedList.length > 0) {
+      setBookings(mergedList);
+    }
     setLoading(false);
   };
 

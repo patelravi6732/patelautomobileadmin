@@ -745,6 +745,32 @@ export default function KhataBookPage() {
                   alt="HD Khata Statement Photo Card"
                   className="max-w-full h-auto rounded-2xl shadow-2xl border border-amber-500/30 object-contain"
                 />
+              ) : statementCustomer ? (
+                <div className="w-full bg-white text-slate-900 p-6 rounded-2xl space-y-4 shadow-xl text-xs font-sans">
+                  <div className="flex justify-between items-center border-b pb-3 border-amber-400">
+                    <div>
+                      <h4 className="text-base font-extrabold text-slate-900">{garageInfo?.garage_name || 'Patel Automobiles'}</h4>
+                      <p className="text-[11px] text-slate-600 font-medium">Dandi, Valsad | 📞 {garageInfo?.phone || '+91 81403 71414'}</p>
+                    </div>
+                    <span className="px-3 py-1 bg-rose-600 text-white font-extrabold rounded-full text-[10px] uppercase">
+                      DUES PENDING
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 bg-slate-50 p-3 rounded-xl">
+                    <div>
+                      <span className="text-[10px] text-slate-500 font-bold uppercase block">Customer Name</span>
+                      <strong className="text-slate-900 text-sm">{statementCustomer.customer_name}</strong>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-500 font-bold uppercase block">Vehicle Plate Number</span>
+                      <strong className="text-amber-700 text-sm font-mono">{statementCustomer.vehicle_number}</strong>
+                    </div>
+                  </div>
+                  <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-center">
+                    <span className="text-[11px] text-rose-700 font-bold uppercase block">Total Outstanding Balance</span>
+                    <span className="text-2xl font-black text-rose-600 font-poppins">₹{parseFloat(statementCustomer.pending_amount || 0).toFixed(2)}</span>
+                  </div>
+                </div>
               ) : (
                 <div className="py-16 text-center text-slate-400 font-medium animate-pulse space-y-3">
                   <Sparkles className="w-10 h-10 text-amber-400 mx-auto animate-spin" />

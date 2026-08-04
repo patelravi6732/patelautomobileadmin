@@ -374,9 +374,54 @@ export default function WorkshopPage() {
       localStorage.setItem('local_bookings', JSON.stringify(updatedBookings));
     }
 
-    // 3. Create Billing Invoice Object
+    // 3. Auto-Deduct Inventory Spare Parts Stock
+    const partsUsed = Array.isArray(selectedJob.parts) ? selectedJob.parts : [];
+    if (partsUsed.length > 0) {
+      try {
+        const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+        let invChanged = false;
+
+        const updatedInv = localInv.map(invItem => {
+          const usedPart = partsUsed.find(p => 
+            p && (
+              String(p.id) === String(invItem.id) ||
+              (p.part_name && (invItem.part_name || invItem.name) && p.part_name.trim().toLowerCase() === (invItem.part_name || invItem.name).trim().toLowerCase())
+            )
+          );
+          if (usedPart) {
+            invChanged = true;
+            const currentQty = parseInt(invItem.current_stock || invItem.stock_quantity || invItem.quantity || 0, 10);
+            const usedQty = parseInt(usedPart.quantity || 1, 10);
+            const newQty = Math.max(0, currentQty - usedQty);
+            const updatedItem = {
+              ...invItem,
+              current_stock: newQty,
+              stock_quantity: newQty,
+              quantity: newQty
+            };
+            pushCloudInventoryItem(updatedItem).catch(console.warn);
+            return updatedItem;
+          }
+          return invItem;
+        });
+
+        if (invChanged) {
+          localStorage.setItem('inventory_items', JSON.stringify(updatedInv));
+          localStorage.setItem('spare_parts', JSON.stringify(updatedInv));
+        }
+      } catch (invErr) {
+        console.warn('Error auto-deducting inventory stock:', invErr);
+      }
+    }
+
+    // 4. Create or Update Billing Invoice Object (Deduplicated)
+    const localInvoices = JSON.parse(localStorage.getItem('local_invoices') || '[]');
+    const existingInvIndex = localInvoices.findIndex(inv => 
+      inv && (String(inv.id) === String(targetId) || (inv.vehicle_number && inv.vehicle_number === selectedJob.vehicle_number && inv.invoice_number === `INV-${String(targetId).slice(-4)}`))
+    );
+
     const newInvoiceObj = {
-      id: `inv_${Date.now()}`,
+      id: existingInvIndex >= 0 ? localInvoices[existingInvIndex].id : `inv_${targetId}`,
       invoice_number: `INV-${String(targetId).slice(-4)}`,
       customer_name: selectedJob.customer_name,
       mobile_number: selectedJob.mobile_number,
@@ -393,14 +438,25 @@ export default function WorkshopPage() {
       created_at: completionTime,
       parts: selectedJob.parts || []
     };
-    pushCloudInvoice(newInvoiceObj).catch(console.warn);
-    const localInvoices = JSON.parse(localStorage.getItem('local_invoices') || '[]');
-    localStorage.setItem('local_invoices', JSON.stringify([newInvoiceObj, ...localInvoices]));
 
-    // 4. Auto-Push Unpaid Balance to Khata Book if pending amount > 0
+    pushCloudInvoice(newInvoiceObj).catch(console.warn);
+    let updatedInvoicesList = localInvoices;
+    if (existingInvIndex >= 0) {
+      updatedInvoicesList[existingInvIndex] = newInvoiceObj;
+    } else {
+      updatedInvoicesList = [newInvoiceObj, ...localInvoices];
+    }
+    localStorage.setItem('local_invoices', JSON.stringify(updatedInvoicesList));
+
+    // 5. Create or Update Khata Book Debit Entry (Deduplicated)
+    const localKhata = JSON.parse(localStorage.getItem('khata_entries') || '[]');
+    const existingKhataIndex = localKhata.findIndex(k => 
+      k && (k.vehicle_number === selectedJob.vehicle_number || String(k.id) === `khata_${targetId}`)
+    );
+
     if (unpaidAmount > 0) {
       const khataDebitEntry = {
-        id: `khata_${Date.now()}`,
+        id: existingKhataIndex >= 0 ? localKhata[existingKhataIndex].id : `khata_${targetId}`,
         customer_name: selectedJob.customer_name,
         mobile_number: selectedJob.mobile_number,
         vehicle_number: selectedJob.vehicle_number,
@@ -411,8 +467,16 @@ export default function WorkshopPage() {
         date: completionTime
       };
       pushCloudKhataEntry(khataDebitEntry).catch(console.warn);
-      const localKhata = JSON.parse(localStorage.getItem('khata_entries') || '[]');
-      localStorage.setItem('khata_entries', JSON.stringify([khataDebitEntry, ...localKhata]));
+      let updatedKhataList = localKhata;
+      if (existingKhataIndex >= 0) {
+        updatedKhataList[existingKhataIndex] = khataDebitEntry;
+      } else {
+        updatedKhataList = [khataDebitEntry, ...localKhata];
+      }
+      localStorage.setItem('khata_entries', JSON.stringify(updatedKhataList));
+    } else if (existingKhataIndex >= 0) {
+      const updatedKhataList = localKhata.filter((_, idx) => idx !== existingKhataIndex);
+      localStorage.setItem('khata_entries', JSON.stringify(updatedKhataList));
     }
 
     setShowFinishModal(false);

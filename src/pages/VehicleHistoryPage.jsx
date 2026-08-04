@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Search, Bike, Calendar, CheckCircle2, ShieldCheck, Wrench, Clock, FileText, Sparkles, AlertCircle, ArrowRight, Phone, User, Lock } from 'lucide-react';
 import API from '../services/api';
 import { useAuth } from '../context/AuthContext';

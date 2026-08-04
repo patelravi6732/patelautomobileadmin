@@ -44,14 +44,18 @@ export default function ContactPage() {
     const existing = JSON.parse(localStorage.getItem('local_messages') || '[]');
     localStorage.setItem('local_messages', JSON.stringify([newMsgObj, ...existing]));
 
-    try {
-      await API.post('/public/contact/', formData);
-    } catch (err) {
-      console.warn('Backend API offline on static host, saved inquiry locally & cloud bin:', err);
-    } finally {
-      setLoading(false);
-      setSubmitted(true);
-    }
+    const ownerPhone = '918140371414';
+    const waText = encodeURIComponent(
+      `💬 *NEW WEBSITE CONTACT INQUIRY (Patel Automobiles)*\n\n` +
+      `👤 *Name:* ${formData.name}\n` +
+      `📱 *Phone:* ${formData.phone}\n` +
+      `📧 *Email:* ${formData.email || 'N/A'}\n` +
+      `📝 *Message:* ${formData.message}`
+    );
+    window.open(`https://wa.me/${ownerPhone}?text=${waText}`, '_blank');
+
+    setLoading(false);
+    setSubmitted(true);
   };
 
   return (

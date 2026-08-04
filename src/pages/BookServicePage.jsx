@@ -94,10 +94,24 @@ export default function BookServicePage() {
       const existing = JSON.parse(localStorage.getItem('local_bookings') || '[]');
       existing.push(newBookingObj);
       localStorage.setItem('local_bookings', JSON.stringify(existing));
-    } finally {
-      setLoading(false);
-      setSuccess(true);
     }
+
+    const ownerPhone = '918140371414';
+    const waText = encodeURIComponent(
+      `🔧 *NEW SERVICE BOOKING REQUEST (Patel Automobiles)*\n\n` +
+      `👤 *Customer Name:* ${formData.customer_name}\n` +
+      `📱 *Mobile Number:* ${formData.mobile_number}\n` +
+      `🏍️ *Vehicle Number:* ${formData.vehicle_number}\n` +
+      `🛵 *Bike Model:* ${formData.bike_model || 'Two Wheeler'}\n` +
+      `🛠️ *Service Needed:* ${formData.service_type || 'General Service'}\n` +
+      `📅 *Date:* ${formData.preferred_date}\n` +
+      `⏰ *Time:* ${formData.preferred_time}\n` +
+      `📝 *Notes:* ${formData.notes || 'N/A'}`
+    );
+    window.open(`https://wa.me/${ownerPhone}?text=${waText}`, '_blank');
+
+    setLoading(false);
+    setSuccess(true);
   };
 
   return (

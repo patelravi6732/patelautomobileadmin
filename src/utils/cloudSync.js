@@ -131,7 +131,7 @@ async function saveMasterStore(storeData) {
 // ---------------- BOOKINGS ----------------
 export async function fetchCloudBookings() {
   const store = await fetchMasterStore();
-  return (store.bookings || []).filter(b => b && typeof b === 'object' && (b.id || b.customer_name || b.vehicle_number));
+  return (store.bookings || []).filter(b => b && typeof b === 'object' && (b.id || b.customer_name || b.vehicle_number) && b.id !== 101 && b.vehicle_number !== 'GJ15BC6732' && !String(b.customer_name).includes('Prit Patel'));
 }
 
 export async function pushCloudBooking(newBooking) {
@@ -246,9 +246,22 @@ export async function deleteCloudJob(jobId) {
 
 export async function deleteCloudBooking(bookingId) {
   if (!bookingId) return;
+  const strId = String(bookingId);
+
+  // 1. Remove from local_bookings
+  try {
+    const localBookings = JSON.parse(localStorage.getItem('local_bookings') || '[]');
+    const updatedLocal = localBookings.filter(b => b && String(b.id) !== strId && b.vehicle_number !== 'GJ15BC6732' && b.id !== 101);
+    localStorage.setItem('local_bookings', JSON.stringify(updatedLocal));
+  } catch (e) {}
+
+  // 2. Mark deleted in deletedIds array
+  await markIdAsDeleted(bookingId).catch(console.warn);
+
+  // 3. Remove from master_cloud_cache store.bookings
   const store = await fetchMasterStore();
   const existing = (store.bookings || []).filter(b => b && typeof b === 'object');
-  const updated = existing.filter(b => b.id !== bookingId && String(b.id) !== String(bookingId));
+  const updated = existing.filter(b => b && b.id !== bookingId && String(b.id) !== strId && b.vehicle_number !== 'GJ15BC6732' && b.id !== 101);
   await saveMasterStore({ ...store, bookings: updated });
 }
 

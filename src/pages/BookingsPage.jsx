@@ -15,21 +15,7 @@ export default function BookingsPage() {
 
   const [bookings, setBookings] = useState(() => {
     try {
-      const saved = JSON.parse(localStorage.getItem('local_bookings') || '[]');
-      if (saved.length > 0) return saved;
-      // Default demo booking so page is NEVER blank
-      return [{
-        id: 101,
-        customer_name: 'Prit Patel',
-        mobile_number: '8140371414',
-        vehicle_number: 'GJ15BC6732',
-        bike_model: 'Activa 6G',
-        service_type: 'Full General Service & Oil Change',
-        preferred_date: new Date().toISOString().split('T')[0],
-        preferred_time: '10:30 AM',
-        status: 'PENDING',
-        created_at: new Date().toISOString()
-      }];
+      return JSON.parse(localStorage.getItem('local_bookings') || '[]');
     } catch (e) {
       return [];
     }
@@ -114,9 +100,7 @@ export default function BookingsPage() {
       (a, b) => new Date(b.created_at || Date.now()) - new Date(a.created_at || Date.now())
     );
 
-    if (mergedList.length > 0) {
-      setBookings(mergedList);
-    }
+    setBookings(mergedList);
     setLoading(false);
   };
 

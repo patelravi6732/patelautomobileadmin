@@ -29,7 +29,7 @@ export default function CustomersPage() {
 
     const allJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
     const cloudJobs = await fetchCloudJobs().catch(() => []);
-    const combinedJobs = [...allJobs, ...cloudJobs];
+    const finishedJobs = [...allJobs, ...cloudJobs].filter(j => j && (j.status === 'FINISHED' || j.status === 'COMPLETED'));
 
     const localBookings = JSON.parse(localStorage.getItem('local_bookings') || '[]');
     const cloudBookings = await fetchCloudBookings().catch(() => []);
@@ -46,7 +46,7 @@ export default function CustomersPage() {
     const savedCustomers = JSON.parse(localStorage.getItem('local_customers') || '[]');
 
     const allMap = new Map();
-    [...backendCusts, ...combinedJobs, ...combinedInvoices, ...combinedKhata, ...combinedBookings, ...savedCustomers].forEach(c => {
+    [...backendCusts, ...finishedJobs, ...combinedInvoices, ...combinedKhata, ...combinedBookings, ...savedCustomers].forEach(c => {
       if (c && typeof c === 'object') {
         const name = (c.customer_name || c.name || '').trim();
         const vehicle = (c.vehicle_number || '').trim();
@@ -85,8 +85,8 @@ export default function CustomersPage() {
       const custVeh = (cust.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
       const custName = (cust.customer_name || '').toLowerCase();
 
-      // Count Visits
-      const matchingJobs = combinedJobs.filter(j => {
+      // Count Visits (Only Finished Jobs or Invoices)
+      const matchingJobs = finishedJobs.filter(j => {
         if (!j) return false;
         const jVeh = (j.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
         const jName = (j.customer_name || '').toLowerCase();

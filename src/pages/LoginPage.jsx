@@ -315,16 +315,7 @@ export default function LoginPage() {
               </div>
             </div>
 
-            <div>
-              <label className="block text-[11px] font-semibold text-slate-300 uppercase tracking-wider mb-1">Email Address</label>
-              <input
-                type="email"
-                placeholder="contact@patelautomobiles.com"
-                value={setupForm.email}
-                onChange={(e) => setSetupForm(prev => ({ ...prev, email: e.target.value }))}
-                className="w-full px-4 py-2.5 bg-slate-900/80 border border-slate-700 rounded-xl text-white text-xs focus:outline-none focus:border-emerald-500"
-              />
-            </div>
+
 
             <div className="grid grid-cols-2 gap-3">
               <div>

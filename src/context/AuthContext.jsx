@@ -7,7 +7,6 @@ export const DEFAULT_GARAGE_INFO = {
   address: 'Near Dandi Pond, Dandi, Valsad, Gujarat - 396385',
   phone: '+91 81403 71414',
   whatsapp_number: '+91 81403 71414',
-  email: 'contact@patelautomobiles.com',
   logo: '/logo.png',
   upi_id: 'pritpatel9397@oksbi',
   upi_payee_name: 'Prit Patel',

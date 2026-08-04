@@ -34,17 +34,6 @@ export default function BookingsPage() {
       return [];
     }
   });
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [addForm, setAddForm] = useState({
-    customer_name: '',
-    mobile_number: '',
-    vehicle_number: '',
-    bike_model: '',
-    service_type: 'General Service',
-    preferred_date: new Date().toISOString().split('T')[0],
-    preferred_time: '10:00 AM',
-    notes: ''
-  });
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, booking: null });
   
   // Action Confirmation Modal State (Prevents Accidental Accept/Reject)
@@ -401,12 +390,6 @@ export default function BookingsPage() {
           <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
             Showing: {visibleBookings.length}
           </div>
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs rounded-xl shadow-md shadow-blue-600/20 transition-all flex items-center gap-1.5"
-          >
-            + Add Booking
-          </button>
         </div>
       </div>
 
@@ -780,122 +763,6 @@ export default function BookingsPage() {
               </button>
             </div>
 
-          </div>
-        </div>
-      )}
-
-      {/* ADD MANUAL BOOKING MODAL */}
-      {showAddModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full space-y-6 shadow-2xl border border-slate-200">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-              <h3 className="text-lg font-bold text-slate-900 font-poppins flex items-center gap-2">
-                <CalendarCheck className="w-5 h-5 text-blue-600" /> Add New Service Booking
-              </h3>
-              <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={(e) => {
-              e.preventDefault();
-              const newBookingObj = {
-                ...addForm,
-                id: Date.now(),
-                created_at: new Date().toISOString(),
-                status: 'PENDING'
-              };
-              const localBookings = JSON.parse(localStorage.getItem('local_bookings') || '[]');
-              localBookings.unshift(newBookingObj);
-              localStorage.setItem('local_bookings', JSON.stringify(localBookings));
-              setShowAddModal(false);
-              setAddForm({
-                customer_name: '',
-                mobile_number: '',
-                vehicle_number: '',
-                bike_model: '',
-                service_type: 'General Service',
-                preferred_date: new Date().toISOString().split('T')[0],
-                preferred_time: '10:00 AM',
-                notes: ''
-              });
-              fetchBookings();
-              alert('✅ Booking added successfully to portal!');
-            }} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Customer Name *</label>
-                <input
-                  type="text"
-                  required
-                  value={addForm.customer_name}
-                  onChange={(e) => setAddForm({ ...addForm, customer_name: e.target.value })}
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm font-medium focus:outline-none focus:border-blue-600"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Mobile Number *</label>
-                  <input
-                    type="tel"
-                    required
-                    maxLength={10}
-                    value={addForm.mobile_number}
-                    onChange={(e) => setAddForm({ ...addForm, mobile_number: e.target.value.replace(/\D/g, '').slice(0, 10) })}
-                    className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm font-medium focus:outline-none focus:border-blue-600"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Vehicle Number *</label>
-                  <input
-                    type="text"
-                    required
-                    value={addForm.vehicle_number}
-                    onChange={(e) => setAddForm({ ...addForm, vehicle_number: e.target.value.toUpperCase() })}
-                    className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm font-mono uppercase font-bold focus:outline-none focus:border-blue-600"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Bike Model *</label>
-                  <input
-                    type="text"
-                    required
-                    value={addForm.bike_model}
-                    onChange={(e) => setAddForm({ ...addForm, bike_model: e.target.value })}
-                    className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm font-medium focus:outline-none focus:border-blue-600"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Preferred Date *</label>
-                  <input
-                    type="date"
-                    required
-                    value={addForm.preferred_date}
-                    onChange={(e) => setAddForm({ ...addForm, preferred_date: e.target.value })}
-                    className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm font-medium focus:outline-none focus:border-blue-600"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowAddModal(false)}
-                  className="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-bold text-xs hover:bg-slate-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs shadow-md shadow-blue-600/30"
-                >
-                  Save Booking
-                </button>
-              </div>
-            </form>
           </div>
         </div>
       )}

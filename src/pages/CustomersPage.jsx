@@ -110,7 +110,7 @@ export default function CustomersPage() {
         }
       });
 
-      // Also add unpaid invoice amounts if not already in Khata
+      // Also add unpaid invoice amounts if Khata balance is 0 or less
       combinedInvoices.forEach(inv => {
         if (!inv) return;
         const invVeh = (inv.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();

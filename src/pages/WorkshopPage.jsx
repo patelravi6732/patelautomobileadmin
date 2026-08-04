@@ -389,7 +389,7 @@ export default function WorkshopPage() {
       paid_amount: paidAmountNum,
       pending_amount: unpaidAmount,
       discount_amount: numericDiscount,
-      payment_status: unpaidAmount > 0 ? 'PARTIAL' : 'PAID',
+      payment_status: unpaidAmount > 0 ? (paidAmountNum > 0 ? 'PARTIAL' : 'UNPAID') : 'PAID',
       created_at: completionTime,
       parts: selectedJob.parts || []
     };

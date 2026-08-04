@@ -7,14 +7,44 @@ export default function ReportsPage() {
   const [loading, setLoading] = useState(true);
 
   const fetchReports = async () => {
+    setLoading(true);
+    let backendReports = null;
     try {
-      const res = await API.get('/reports/');
-      setReports(res.data);
+      const res = await API.get('/reports/', { timeout: 1500 });
+      backendReports = res.data;
     } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
+      console.warn('Backend API offline for reports, computing from local memory & cloud store:', err);
     }
+
+    const invoices = JSON.parse(localStorage.getItem('local_invoices') || '[]');
+    const inventory = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const currentMonth = new Date().getMonth();
+    const currentYear = new Date().getFullYear();
+
+    const dailyRevenue = invoices.filter(inv => inv && (inv.created_at || '').startsWith(todayStr))
+      .reduce((acc, inv) => acc + (parseFloat(inv.paid_amount || inv.grand_total) || 0), 0);
+
+    const monthlyRevenue = invoices.filter(inv => {
+      if (!inv || !inv.created_at) return false;
+      const d = new Date(inv.created_at);
+      return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+    }).reduce((acc, inv) => acc + (parseFloat(inv.paid_amount || inv.grand_total) || 0), 0);
+
+    const inventoryValue = inventory.reduce((acc, item) => {
+      const price = parseFloat(item.price || 0);
+      const stock = parseInt(item.current_stock || 0, 10);
+      return acc + (price * stock);
+    }, 0);
+
+    setReports({
+      daily_revenue: backendReports?.daily_revenue ?? dailyRevenue,
+      monthly_revenue: backendReports?.monthly_revenue ?? monthlyRevenue,
+      total_invoices: backendReports?.total_invoices ?? invoices.length,
+      inventory_valuation: backendReports?.inventory_valuation ?? inventoryValue
+    });
+    setLoading(false);
   };
 
   useEffect(() => {

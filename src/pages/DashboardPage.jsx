@@ -11,14 +11,41 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
 
   const fetchStats = async () => {
+    setLoading(true);
+    let backendStats = null;
     try {
-      const res = await API.get('/dashboard/stats/');
-      setStats(res.data);
+      const res = await API.get('/dashboard/stats/', { timeout: 1500 });
+      backendStats = res.data;
     } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
+      console.warn('Backend API offline for dashboard stats, computing from local memory & cloud store:', err);
     }
+
+    const jobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
+    const invoices = JSON.parse(localStorage.getItem('local_invoices') || '[]');
+    const inventory = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    const todayServices = jobs.filter(j => j && (j.created_at || '').startsWith(todayStr)).length;
+    const completedServices = jobs.filter(j => j && (j.status === 'FINISHED' || j.status === 'COMPLETED')).length;
+    const pendingServices = jobs.filter(j => j && j.status !== 'FINISHED' && j.status !== 'COMPLETED').length;
+
+    const pendingPayments = invoices.reduce((acc, inv) => acc + (parseFloat(inv.pending_amount) || 0), 0);
+    
+    const todayRevenue = invoices.filter(inv => inv && (inv.created_at || '').startsWith(todayStr))
+      .reduce((acc, inv) => acc + (parseFloat(inv.paid_amount || inv.grand_total) || 0), 0);
+
+    const lowStockCount = inventory.filter(i => (parseInt(i.current_stock || 0, 10)) <= (parseInt(i.min_stock_alert || 2, 10))).length;
+
+    setStats({
+      today_services: backendStats?.today_services ?? todayServices,
+      completed_services: backendStats?.completed_services ?? completedServices,
+      pending_services: backendStats?.pending_services ?? pendingServices,
+      pending_payments: backendStats?.pending_payments ?? pendingPayments,
+      today_revenue: backendStats?.today_revenue ?? todayRevenue,
+      low_stock_count: backendStats?.low_stock_count ?? lowStockCount
+    });
+    setLoading(false);
   };
 
   useEffect(() => {

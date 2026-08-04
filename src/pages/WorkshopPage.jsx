@@ -488,6 +488,31 @@ export default function WorkshopPage() {
       localStorage.setItem('khata_entries', JSON.stringify(updatedKhataList));
     }
 
+    // 6. Save Customer Record to local_customers
+    try {
+      const newCustomerObj = {
+        id: `cust_${selectedJob.vehicle_number || Date.now()}`,
+        customer_name: selectedJob.customer_name || 'Valued Customer',
+        mobile_number: selectedJob.mobile_number || 'N/A',
+        phone: selectedJob.mobile_number || 'N/A',
+        vehicle_number: selectedJob.vehicle_number || 'GJ-15',
+        bike_model: selectedJob.bike_model || 'Two Wheeler',
+        created_at: completionTime
+      };
+      const localCusts = JSON.parse(localStorage.getItem('local_customers') || '[]');
+      const existsCust = localCusts.some(c => 
+        c && (
+          (c.vehicle_number && selectedJob.vehicle_number && c.vehicle_number === selectedJob.vehicle_number) ||
+          (c.customer_name && selectedJob.customer_name && c.customer_name.toLowerCase() === selectedJob.customer_name.toLowerCase())
+        )
+      );
+      if (!existsCust) {
+        localStorage.setItem('local_customers', JSON.stringify([newCustomerObj, ...localCusts]));
+      }
+    } catch (custErr) {
+      console.warn('Error updating local_customers on finish bill:', custErr);
+    }
+
     setShowFinishModal(false);
 
     try {

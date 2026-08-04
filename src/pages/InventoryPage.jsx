@@ -53,17 +53,7 @@ export default function InventoryPage() {
 
     const deletedIds = await fetchCloudDeletedIds().catch(() => []);
     const cloudInv = await fetchCloudInventory().catch(() => []);
-
-    if (cloudInv.length === 0) {
-      localStorage.removeItem('inventory_items');
-      const cache = JSON.parse(localStorage.getItem('master_cloud_cache') || '{}');
-      if (cache.inventory) {
-        cache.inventory = [];
-        localStorage.setItem('master_cloud_cache', JSON.stringify(cache));
-      }
-    }
-
-    const localInv = cloudInv.length === 0 ? [] : JSON.parse(localStorage.getItem('inventory_items') || '[]');
+    const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
 
     const allMap = new Map();
     [...cloudInv, ...localInv, ...backendItems].forEach(item => {
@@ -144,9 +134,10 @@ export default function InventoryPage() {
 
     // Save locally and push to cloud bin
     pushCloudInventoryItem(newPartObj).catch(console.warn);
-    const existing = JSON.parse(localStorage.getItem('inventory_items') || JSON.stringify(DEFAULT_SPARE_PARTS));
+    const existing = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
     const updatedLocal = [newPartObj, ...existing];
     localStorage.setItem('inventory_items', JSON.stringify(updatedLocal));
+    localStorage.setItem('spare_parts', JSON.stringify(updatedLocal));
 
     setItems(prev => [newPartObj, ...prev]);
     setShowAddModal(false);

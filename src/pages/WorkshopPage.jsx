@@ -609,8 +609,8 @@ export default function WorkshopPage() {
     }
   };
 
-  const activeJobs = jobs.filter(j => j && j.status === 'IN_PROGRESS');
-  const finishedJobs = jobs.filter(j => j && j.status === 'FINISHED');
+  const activeJobs = jobs.filter(j => j && j.status !== 'FINISHED' && j.status !== 'COMPLETED' && j.status !== 'CANCELLED');
+  const finishedJobs = jobs.filter(j => j && (j.status === 'FINISHED' || j.status === 'COMPLETED'));
   const cancelledJobs = jobs.filter(j => j && j.status === 'CANCELLED');
   const onlineBookingJobs = jobs.filter(j => j && (j.is_online_booking || j.booking_id || j.source === 'ONLINE_BOOKING' || String(j.complaint || '').toLowerCase().includes('booking')));
 

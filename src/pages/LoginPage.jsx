@@ -59,7 +59,8 @@ export default function LoginPage() {
 
   // If already logged in, navigate directly to dashboard
   useEffect(() => {
-    if (user) {
+    const isLoggedIn = sessionStorage.getItem('admin_logged_in') === 'true' || Boolean(user);
+    if (isLoggedIn) {
       navigate('/admin/dashboard', { replace: true });
     }
   }, [user, navigate]);

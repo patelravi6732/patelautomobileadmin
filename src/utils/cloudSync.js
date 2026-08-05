@@ -1,8 +1,8 @@
 import axios from 'axios';
 
-// Primary & Backup Master Cloud Storage Endpoints
-const PRIMARY_BIN_URL = 'https://api.npoint.io/87b4fa8d9e2a4a754b2a';
-const BACKUP_BIN_URL = 'https://api.restful-api.dev/objects/ff8081819f7e10ae019fbcb185ca5b9e';
+// Primary & Backup Master Cloud Storage Endpoints (100% CORS-enabled real-time multi-origin bin)
+const PRIMARY_BIN_URL = 'https://jsonblob.com/api/jsonBlob/019fd0d0-8dfa-755c-9195-7f74e5af7d09';
+const BACKUP_BIN_URL = 'https://jsonblob.com/api/jsonBlob/019fd0d0-8dfa-755c-9195-7f74e5af7d09';
 
 async function fetchMasterStore() {
   const getLocalCache = () => {
@@ -36,7 +36,10 @@ async function fetchMasterStore() {
   let freshStore = null;
 
   try {
-    const res = await axios.get(PRIMARY_BIN_URL, { timeout: 2000 });
+    const res = await axios.get(PRIMARY_BIN_URL, {
+      headers: { 'Accept': 'application/json' },
+      timeout: 3000
+    });
     if (res.data) {
       freshStore = {
         bookings: Array.isArray(res.data.bookings) ? res.data.bookings : [],
@@ -55,30 +58,10 @@ async function fetchMasterStore() {
       };
     }
   } catch (e1) {
-    try {
-      const res = await axios.get(BACKUP_BIN_URL, { timeout: 2000 });
-      if (res.data && res.data.data) {
-        freshStore = {
-          bookings: Array.isArray(res.data.data.bookings) ? res.data.data.bookings : [],
-          messages: Array.isArray(res.data.data.messages) ? res.data.data.messages : [],
-          jobs: Array.isArray(res.data.data.jobs) ? res.data.data.jobs : [],
-          inventory: Array.isArray(res.data.data.inventory) ? res.data.data.inventory : [],
-          recycleBin: Array.isArray(res.data.data.recycleBin) ? res.data.data.recycleBin : [],
-          garageInfo: res.data.data.garageInfo || null,
-          adminProfiles: Array.isArray(res.data.data.adminProfiles) ? res.data.data.adminProfiles : [],
-          khataEntries: Array.isArray(res.data.data.khataEntries) ? res.data.data.khataEntries : [],
-          customers: Array.isArray(res.data.data.customers) ? res.data.data.customers : [],
-          invoices: Array.isArray(res.data.data.invoices) ? res.data.data.invoices : [],
-          attendance: Array.isArray(res.data.data.attendance) ? res.data.data.attendance : [],
-          salaryPayments: Array.isArray(res.data.data.salaryPayments) ? res.data.data.salaryPayments : [],
-          deletedIds: Array.isArray(res.data.data.deletedIds) ? res.data.data.deletedIds : []
-        };
-      }
-    } catch (e2) {}
+    console.warn('Primary cloud store fetch notice:', e1);
   }
 
   if (freshStore) {
-    // Use freshStore from cloud server directly when available to prevent resurrection of wiped/deleted items
     const mergedStore = {
       bookings: freshStore.bookings,
       messages: freshStore.messages,
@@ -97,7 +80,6 @@ async function fetchMasterStore() {
     try {
       localStorage.setItem('master_cloud_cache', JSON.stringify(mergedStore));
 
-      // Auto-sync cloud data to individual module local storage keys for multi-device parity
       if (Array.isArray(mergedStore.jobs)) localStorage.setItem('workshop_jobs', JSON.stringify(mergedStore.jobs));
       if (Array.isArray(mergedStore.invoices)) localStorage.setItem('local_invoices', JSON.stringify(mergedStore.invoices));
       if (Array.isArray(mergedStore.inventory)) {
@@ -127,15 +109,12 @@ async function saveMasterStore(storeData) {
   }
 
   try {
-    await axios.post(PRIMARY_BIN_URL, storeData, { timeout: 2500 });
+    await axios.put(PRIMARY_BIN_URL, storeData, {
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      timeout: 3000
+    });
   } catch (err) {
-    console.warn('Primary bin save failed, trying backup bin:', err);
-  }
-
-  try {
-    await axios.put(BACKUP_BIN_URL, { name: 'PatelAutomobilesMasterBin', data: storeData }, { timeout: 2500 });
-  } catch (err2) {
-    console.warn('Backup bin save failed:', err2);
+    console.warn('Master cloud store save notice:', err);
   }
 }
 

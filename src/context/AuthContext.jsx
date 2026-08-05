@@ -82,19 +82,11 @@ export const AuthProvider = ({ children }) => {
         const parsed = JSON.parse(saved);
         setUser(parsed);
       } catch (e) {
-        const fallback = { username: 'Ravi Patel', user_name: 'ravi manharrai patel', role: 'ADMIN' };
-        setUser(fallback);
-        localStorage.setItem('user', JSON.stringify(fallback));
+        setUser(null);
+        localStorage.removeItem('user');
       }
     } else {
-      // Automatic active admin session so portal is 100% accessible on any device
-      const defaultAdminSession = {
-        username: 'Ravi Patel',
-        user_name: 'ravi manharrai patel',
-        role: 'ADMIN'
-      };
-      setUser(defaultAdminSession);
-      localStorage.setItem('user', JSON.stringify(defaultAdminSession));
+      setUser(null);
     }
     setLoading(false);
   };

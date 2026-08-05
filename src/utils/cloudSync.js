@@ -96,6 +96,17 @@ async function fetchMasterStore() {
     };
     try {
       localStorage.setItem('master_cloud_cache', JSON.stringify(mergedStore));
+
+      // Auto-sync cloud data to individual module local storage keys for multi-device parity
+      if (Array.isArray(mergedStore.jobs)) localStorage.setItem('workshop_jobs', JSON.stringify(mergedStore.jobs));
+      if (Array.isArray(mergedStore.invoices)) localStorage.setItem('local_invoices', JSON.stringify(mergedStore.invoices));
+      if (Array.isArray(mergedStore.inventory)) {
+        localStorage.setItem('inventory_items', JSON.stringify(mergedStore.inventory));
+        localStorage.setItem('spare_parts', JSON.stringify(mergedStore.inventory));
+      }
+      if (Array.isArray(mergedStore.khataEntries)) localStorage.setItem('khata_entries', JSON.stringify(mergedStore.khataEntries));
+      if (Array.isArray(mergedStore.bookings)) localStorage.setItem('local_bookings', JSON.stringify(mergedStore.bookings));
+      if (Array.isArray(mergedStore.customers)) localStorage.setItem('local_customers', JSON.stringify(mergedStore.customers));
     } catch (e) {
       console.warn('Failed to update local master_cloud_cache:', e);
     }

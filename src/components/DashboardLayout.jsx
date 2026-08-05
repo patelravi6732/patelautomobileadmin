@@ -65,7 +65,6 @@ export default function DashboardLayout() {
     { name: 'New Service', path: `${basePrefix}/new-service`, icon: PlusCircle },
     { name: 'Workshop', path: `${basePrefix}/workshop`, icon: Wrench },
     { name: 'Inventory', path: `${basePrefix}/inventory`, icon: Package },
-    { name: 'Customers', path: `${basePrefix}/customers`, icon: Users },
     { name: 'Billing', path: `${basePrefix}/billing`, icon: Receipt },
     { name: 'Khata Book', path: `${basePrefix}/khata-book`, icon: BookOpen },
     { name: 'Attendance', path: `${basePrefix}/attendance`, icon: Clock },

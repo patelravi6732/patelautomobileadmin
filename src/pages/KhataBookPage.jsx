@@ -214,10 +214,11 @@ export default function KhataBookPage() {
         }
       });
 
-      // 3. Process Manual Khata Debit Entries
+      // 3. Process All Khata Debit Entries
       combinedKhata.forEach(k => {
         if (!k || deletedIds.includes(String(k.id))) return;
-        if (k.description && (k.description.includes('Unpaid balance for Visit') || k.description.includes('Unpaid balance from Service Bill'))) return;
+        const alreadyInList = khataList.some(item => String(item.id) === String(k.id) || (k.job_id && String(item.id) === String(k.job_id)));
+        if (alreadyInList) return;
 
         const amt = parseFloat(k.amount || 0);
         if (amt > 0 && k.type === 'DEBIT') {
@@ -225,6 +226,8 @@ export default function KhataBookPage() {
           const formattedDate = new Date(itemDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
           khataList.push({
             id: String(k.id),
+            invoice_id: k.job_id || k.id,
+            invoice_number: k.job_id ? `INV-${String(k.job_id).slice(-4)}` : `KHATA-${String(k.id).slice(-4)}`,
             customer_name: k.customer_name || 'Valued Customer',
             phone: k.mobile_number || k.phone || 'N/A',
             mobile_number: k.mobile_number || k.phone || 'N/A',

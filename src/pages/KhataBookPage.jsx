@@ -138,10 +138,20 @@ export default function KhataBookPage() {
         const totalVal = parseFloat(inv.grand_total || inv.total_amount || Math.max(0, partsVal + labourVal - discountVal));
         let paidVal = parseFloat(inv.paid_amount || 0);
         const statusStr = String(inv.payment_status || inv.status || '').toUpperCase();
-        if (statusStr === 'PAID' && paidVal === 0) paidVal = totalVal;
+        
+        let pendingVal = 0;
+        if (inv.pending_amount !== undefined && inv.pending_amount !== null) {
+          pendingVal = parseFloat(inv.pending_amount || 0);
+        } else {
+          pendingVal = Math.max(0, totalVal - paidVal);
+        }
 
-        const pendingVal = Math.max(0, totalVal - paidVal);
-        if (pendingVal > 0) {
+        if (statusStr === 'PAID' && pendingVal === 0) return;
+
+        if (pendingVal > 0 || statusStr === 'UNPAID' || statusStr === 'PARTIAL') {
+          const actualPending = pendingVal > 0 ? pendingVal : Math.max(0, totalVal - paidVal);
+          if (actualPending <= 0 && statusStr === 'PAID') return;
+
           const itemDate = inv.created_at || inv.date || new Date().toISOString();
           const formattedDate = new Date(itemDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
           khataList.push({
@@ -155,8 +165,8 @@ export default function KhataBookPage() {
             bike_model: inv.bike_model || 'Two Wheeler',
             total_billed: totalVal,
             total_paid: paidVal,
-            pending_amount: pendingVal,
-            balance: pendingVal,
+            pending_amount: actualPending > 0 ? actualPending : Math.max(0, totalVal - paidVal),
+            balance: actualPending > 0 ? actualPending : Math.max(0, totalVal - paidVal),
             visit_date: formattedDate,
             raw_date: itemDate,
             parts: inv.parts || [],

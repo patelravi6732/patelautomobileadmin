@@ -378,7 +378,7 @@ export default function WorkshopPage() {
     setFinishLabourCharge(initialLabour);
     setDiscountAmount('');
     const subtotal = parseFloat(job.parts_total || 0) + initialLabour;
-    setPaidAmount(subtotal);
+    setPaidAmount(parseFloat(job.paid_amount || 0));
     setShowFinishModal(true);
   };
 

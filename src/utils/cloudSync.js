@@ -433,19 +433,7 @@ export async function pushCloudGarageInfo(infoObj) {
 // ---------------- ADMIN PROFILES (MONGODB / CLOUD SYNC) ----------------
 export async function fetchCloudAdminProfiles() {
   const store = await fetchMasterStore();
-  const list = (store.adminProfiles || []).filter(a => a && typeof a === 'object' && (a.id || a.username || a.user_name));
-  if (list.length === 0) {
-    const defaultMasterAdmin = {
-      id: 'admin_master_1',
-      user_name: 'ravi manharrai patel',
-      username: 'Ravi Patel',
-      phone: '+91 81403 71414',
-      email: 'admin@patelautomobiles.com',
-      role: 'ADMIN'
-    };
-    return [defaultMasterAdmin];
-  }
-  return list;
+  return (store.adminProfiles || []).filter(a => a && typeof a === 'object' && (a.id || a.username || a.user_name));
 }
 
 export async function pushCloudAdminProfile(adminObj) {

@@ -19,7 +19,7 @@ const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(() => {
-    const saved = localStorage.getItem('user');
+    const saved = sessionStorage.getItem('user');
     return saved ? JSON.parse(saved) : null;
   });
   const [loading, setLoading] = useState(true);
@@ -49,7 +49,6 @@ export const AuthProvider = ({ children }) => {
       ...(cloudInfo || {})
     };
 
-    // Guarantee timing_text & phone from cloud or local take absolute priority over static defaults
     if (cloudInfo?.timing_text) merged.timing_text = cloudInfo.timing_text;
     else if (localSaved?.timing_text) merged.timing_text = localSaved.timing_text;
 
@@ -69,14 +68,8 @@ export const AuthProvider = ({ children }) => {
   };
 
   const fetchCurrentUser = async () => {
-    let cloudAdmins = [];
-    try {
-      cloudAdmins = await fetchCloudAdminProfiles().catch(() => []);
-    } catch (e) {}
-    const localAdmins = JSON.parse(localStorage.getItem('admin_profiles') || '[]');
-
-    const savedUser = localStorage.getItem('user');
-    const isLoggedIn = localStorage.getItem('admin_logged_in') === 'true';
+    const savedUser = sessionStorage.getItem('user');
+    const isLoggedIn = sessionStorage.getItem('admin_logged_in') === 'true';
 
     if (savedUser && isLoggedIn) {
       try {
@@ -84,36 +77,25 @@ export const AuthProvider = ({ children }) => {
         setUser(parsed);
       } catch (e) {
         setUser(null);
-        localStorage.removeItem('user');
-        localStorage.removeItem('admin_logged_in');
+        sessionStorage.removeItem('user');
+        sessionStorage.removeItem('admin_logged_in');
       }
     } else {
       setUser(null);
-      localStorage.removeItem('user');
-      localStorage.removeItem('admin_logged_in');
+      sessionStorage.removeItem('user');
+      sessionStorage.removeItem('admin_logged_in');
     }
     setLoading(false);
   };
 
   useEffect(() => {
-    if (localStorage.getItem('dummy_data_purged_v1') !== 'true') {
-      localStorage.removeItem('workshop_jobs');
-      localStorage.removeItem('local_invoices');
-      localStorage.removeItem('inventory_items');
-      localStorage.removeItem('spare_parts');
-      localStorage.removeItem('khata_entries');
-      localStorage.removeItem('local_bookings');
-      localStorage.removeItem('local_customers');
-      localStorage.removeItem('local_messages');
-      localStorage.removeItem('recycle_bin_items');
-      localStorage.removeItem('master_cloud_cache');
-      localStorage.setItem('dummy_data_purged_v1', 'true');
-    }
+    // Clean legacy persistent local storage user sessions so every session starts locked
+    localStorage.removeItem('user');
+    localStorage.removeItem('admin_logged_in');
 
     fetchGarageInfo();
     fetchCurrentUser();
 
-    // 1. Listen for local storage changes across tabs
     const handleStorageChange = (e) => {
       if (e.key === 'garage_info' || e.type === 'garage_info_updated') {
         const saved = localStorage.getItem('garage_info');
@@ -125,7 +107,6 @@ export const AuthProvider = ({ children }) => {
     window.addEventListener('storage', handleStorageChange);
     window.addEventListener('garage_info_updated', handleStorageChange);
 
-    // 2. Real-time background cloud sync interval (every 3 seconds)
     const syncInterval = setInterval(() => {
       fetchGarageInfo();
     }, 3000);
@@ -143,33 +124,36 @@ export const AuthProvider = ({ children }) => {
 
     try {
       const res = await API.post('/auth/token/', { username: cleanUser, password: cleanPass });
-      localStorage.setItem('access_token', res.data.access);
-      localStorage.setItem('refresh_token', res.data.refresh);
-      localStorage.setItem('admin_logged_in', 'true');
+      sessionStorage.setItem('access_token', res.data.access);
+      sessionStorage.setItem('refresh_token', res.data.refresh);
+      sessionStorage.setItem('admin_logged_in', 'true');
       
       const userRes = await API.get('/auth/me/');
       setUser(userRes.data);
-      localStorage.setItem('user', JSON.stringify(userRes.data));
+      sessionStorage.setItem('user', JSON.stringify(userRes.data));
       return userRes.data;
     } catch (err) {
       console.warn('Backend Auth API offline or static host, authenticating local admin session:', err);
       const fallbackUser = {
         username: cleanUser || 'admin',
+        user_name: cleanUser || 'Admin User',
         is_staff: true,
         is_superuser: true,
         role: 'ADMIN'
       };
-      localStorage.setItem('access_token', 'static_admin_token');
-      localStorage.setItem('admin_logged_in', 'true');
-      localStorage.setItem('user', JSON.stringify(fallbackUser));
+      sessionStorage.setItem('access_token', 'static_admin_token');
+      sessionStorage.setItem('admin_logged_in', 'true');
+      sessionStorage.setItem('user', JSON.stringify(fallbackUser));
       setUser(fallbackUser);
       return fallbackUser;
     }
   };
 
   const logout = () => {
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
+    sessionStorage.removeItem('access_token');
+    sessionStorage.removeItem('refresh_token');
+    sessionStorage.removeItem('user');
+    sessionStorage.removeItem('admin_logged_in');
     localStorage.removeItem('user');
     localStorage.removeItem('admin_logged_in');
     setUser(null);

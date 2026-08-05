@@ -8,25 +8,32 @@ const loadSingleImage = (src) => {
   if (imageCache.has(src)) return Promise.resolve(imageCache.get(src));
 
   return new Promise((resolve) => {
+    let done = false;
+    const finish = (result) => {
+      if (done) return;
+      done = true;
+      if (result) imageCache.set(src, result);
+      resolve(result);
+    };
+
+    const timer = setTimeout(() => finish(null), 1200);
+
     const img = new Image();
     img.crossOrigin = 'Anonymous';
     img.onload = () => {
-      imageCache.set(src, img);
-      resolve(img);
+      clearTimeout(timer);
+      finish(img);
     };
     img.onerror = () => {
-      // Fallback if custom image fails
+      clearTimeout(timer);
       if (src !== '/upi_qr.jpg' && src !== LOGO_BASE64) {
         const fallback = new Image();
         fallback.crossOrigin = 'Anonymous';
-        fallback.onload = () => {
-          imageCache.set(src, fallback);
-          resolve(fallback);
-        };
-        fallback.onerror = () => resolve(null);
+        fallback.onload = () => finish(fallback);
+        fallback.onerror = () => finish(null);
         fallback.src = '/upi_qr.jpg';
       } else {
-        resolve(null);
+        finish(null);
       }
     };
     img.src = src;

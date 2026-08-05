@@ -246,8 +246,29 @@ export default function KhataBookPage() {
         }
       });
 
-      setDebtors(khataList);
-      setTotalPending(khataList.reduce((sum, item) => sum + item.pending_amount, 0));
+      // Strictly deduplicate khataList so no bill/visit appears twice
+      const uniqueKhataMap = new Map();
+      khataList.forEach(item => {
+        const rawId = String(item.invoice_id || item.id || '').replace(/^inv_/, '').replace(/^khata_/, '');
+        const veh = (item.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+        const key = rawId ? `id_${rawId}` : `veh_${veh}_${item.total_billed}_${item.visit_date}`;
+
+        if (!uniqueKhataMap.has(key)) {
+          uniqueKhataMap.set(key, item);
+        } else {
+          const existing = uniqueKhataMap.get(key);
+          if ((!existing.parts || existing.parts.length === 0) && item.parts && item.parts.length > 0) {
+            existing.parts = item.parts;
+          }
+          if (item.labour_charge && !existing.labour_charge) {
+            existing.labour_charge = item.labour_charge;
+          }
+        }
+      });
+      const finalKhataList = Array.from(uniqueKhataMap.values());
+
+      setDebtors(finalKhataList);
+      setTotalPending(finalKhataList.reduce((sum, item) => sum + item.pending_amount, 0));
     } catch (err) {
       console.error('Error fetching Khata debtors:', err);
     } finally {

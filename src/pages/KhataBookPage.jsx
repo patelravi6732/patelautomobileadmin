@@ -353,22 +353,29 @@ export default function KhataBookPage() {
     setPayAmount(cleanNum > 0 ? cleanNum : '');
   };
 
-  const openStatementModal = async (customer) => {
+  const openStatementModal = (customer) => {
     setStatementCustomer(customer);
     setShowStatementModal(true);
-    // Instant 0ms synchronous HD Canvas PNG generation so image is ALWAYS visible immediately
-    const instantDataUrl = generateBillCanvasDataUrl(customer, garageInfo);
-    setStatementPreviewUrl(instantDataUrl);
+    setStatementPreviewUrl(null);
 
-    try {
-      const asyncDataUrl = await generateBillCanvasDataUrlAsync(customer, garageInfo);
-      if (asyncDataUrl) setStatementPreviewUrl(asyncDataUrl);
-    } catch (err) {
-      console.warn('Async canvas update notice:', err);
-    }
+    // Run canvas generation safely in background without EVER throwing or crashing React
+    setTimeout(() => {
+      try {
+        const instantDataUrl = generateBillCanvasDataUrl(customer, garageInfo);
+        if (instantDataUrl) setStatementPreviewUrl(instantDataUrl);
+      } catch (err) {
+        console.warn('Sync canvas notice:', err);
+      }
+
+      generateBillCanvasDataUrlAsync(customer, garageInfo)
+        .then(asyncDataUrl => {
+          if (asyncDataUrl) setStatementPreviewUrl(asyncDataUrl);
+        })
+        .catch(err => console.warn('Async canvas notice:', err));
+    }, 20);
   };
 
-  const handleRecordPayment = async (e) => {
+  const handleRecordPayment = (e) => {
     if (e && e.preventDefault) e.preventDefault();
     if (!selectedCustomer) return;
 
@@ -385,7 +392,6 @@ export default function KhataBookPage() {
 
     // 1. Update Invoices
     const localInvoices = JSON.parse(localStorage.getItem('local_invoices') || '[]');
-    let invMatched = false;
     const updatedInvoices = localInvoices.map(inv => {
       if (!inv) return inv;
       const curInvId = String(inv.id || '');
@@ -394,7 +400,6 @@ export default function KhataBookPage() {
       const isMatch = (curInvId === targetId || curInvId === `inv_${rawId}` || curJobId === rawId || (invNum && inv.invoice_number === invNum) || (vehNum && curVeh === vehNum && (parseFloat(inv.pending_amount || 0) > 0)));
 
       if (isMatch) {
-        invMatched = true;
         const total = parseFloat(inv.grand_total || inv.total_amount || 0);
         const oldPaid = parseFloat(inv.paid_amount || 0);
         const newPaid = oldPaid + paymentNum;
@@ -468,16 +473,14 @@ export default function KhataBookPage() {
 
     localStorage.setItem('khata_entries', JSON.stringify([creditKhataEntry, ...updatedKhataList]));
 
-    try {
-      await API.post('/khata-book/record-payment/', {
-        invoice_id: selectedCustomer.invoice_id || null,
-        customer_id: selectedCustomer.customer_id || null,
-        amount: paymentNum
-      }, { timeout: 1500 });
-    } catch (err) {
-      console.warn('Backend API offline, payment recorded locally & cloud store:', err);
-    }
+    // Push to backend asynchronously without blocking UI
+    API.post('/khata-book/record-payment/', {
+      invoice_id: selectedCustomer.invoice_id || null,
+      customer_id: selectedCustomer.customer_id || null,
+      amount: paymentNum
+    }, { timeout: 1500 }).catch(console.warn);
 
+    // Instant 0ms UI Confirmation & Refresh
     alert(`🎉 Payment of ₹${paymentNum} Recorded Successfully!`);
     showToast('🎉 Payment Recorded!', `₹${paymentNum} payment successfully credited!`);
     setSelectedCustomer(null);

@@ -133,19 +133,34 @@ export const AuthProvider = ({ children }) => {
       sessionStorage.setItem('user', JSON.stringify(userRes.data));
       return userRes.data;
     } catch (err) {
-      console.warn('Backend Auth API offline or static host, authenticating local admin session:', err);
-      const fallbackUser = {
-        username: cleanUser || 'admin',
-        user_name: cleanUser || 'Admin User',
-        is_staff: true,
-        is_superuser: true,
-        role: 'ADMIN'
+      console.warn('Backend Auth API offline or static host, checking registered cloud & local admin profiles:', err);
+      const cloudAdmins = await fetchCloudAdminProfiles().catch(() => []);
+      const localAdmins = JSON.parse(localStorage.getItem('admin_profiles') || '[]');
+      const allAdmins = [...cloudAdmins, ...localAdmins];
+
+      const matchedAdmin = allAdmins.find(a => 
+        a && (
+          (a.username && a.username.trim().toLowerCase() === cleanUser.toLowerCase()) ||
+          (a.user_name && a.user_name.trim().toLowerCase() === cleanUser.toLowerCase())
+        )
+      );
+
+      if (!matchedAdmin) {
+        throw new Error(`Invalid credentials! No registered admin account exists for '${cleanUser}'. Please create your Admin account using the Setup Wizard.`);
+      }
+
+      const activeUser = {
+        username: matchedAdmin.username || cleanUser,
+        user_name: matchedAdmin.user_name || cleanUser,
+        role: 'ADMIN',
+        phone: matchedAdmin.phone || ''
       };
+
       sessionStorage.setItem('access_token', 'static_admin_token');
       sessionStorage.setItem('admin_logged_in', 'true');
-      sessionStorage.setItem('user', JSON.stringify(fallbackUser));
-      setUser(fallbackUser);
-      return fallbackUser;
+      sessionStorage.setItem('user', JSON.stringify(activeUser));
+      setUser(activeUser);
+      return activeUser;
     }
   };
 

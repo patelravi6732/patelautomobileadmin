@@ -383,7 +383,12 @@ const renderCanvasInternal = (invoice, garageInfo, logoImg, qrImg) => {
 
   ctx.textAlign = 'left';
 
-  return canvas.toDataURL('image/png');
+  try {
+    return canvas.toDataURL('image/png');
+  } catch (err) {
+    console.warn('Canvas toDataURL notice, returning fallback rendering:', err);
+    return renderCanvasInternal(invoice, garageInfo, null, null);
+  }
 };
 
 export const getDynamicUpiQrUrl = (invoice, garageInfo) => {

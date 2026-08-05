@@ -370,62 +370,71 @@ export default function KhataBookPage() {
     const paymentNum = parseFloat(payAmount) || 0;
     if (paymentNum <= 0) return;
 
-    const targetId = selectedCustomer.invoice_id || selectedCustomer.id;
+    const targetId = String(selectedCustomer.invoice_id || selectedCustomer.id || '');
+    const rawId = targetId.replace(/^inv_/, '').replace(/^khata_/, '');
+    const vehNum = (selectedCustomer.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+    const invNum = selectedCustomer.invoice_number || '';
 
-    // 1. Update Invoice locally & cloud
+    // 1. Update Invoices
     const localInvoices = JSON.parse(localStorage.getItem('local_invoices') || '[]');
-    let updatedInvObj = null;
+    let invMatched = false;
     const updatedInvoices = localInvoices.map(inv => {
-      if (String(inv.id) === String(targetId) || String(inv.job_id) === String(targetId) || inv.invoice_number === selectedCustomer.invoice_number) {
+      if (!inv) return inv;
+      const curInvId = String(inv.id || '');
+      const curJobId = String(inv.job_id || '');
+      const curVeh = (inv.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+      const isMatch = (curInvId === targetId || curInvId === `inv_${rawId}` || curJobId === rawId || (invNum && inv.invoice_number === invNum) || (vehNum && curVeh === vehNum && (parseFloat(inv.pending_amount || 0) > 0)));
+
+      if (isMatch) {
+        invMatched = true;
+        const total = parseFloat(inv.grand_total || inv.total_amount || 0);
         const oldPaid = parseFloat(inv.paid_amount || 0);
         const newPaid = oldPaid + paymentNum;
-        const total = parseFloat(inv.grand_total || inv.total_amount || 0);
         const newPending = Math.max(0, total - newPaid);
-        updatedInvObj = {
+        const updatedInv = {
           ...inv,
           paid_amount: newPaid,
           pending_amount: newPending,
-          payment_status: newPending === 0 ? 'PAID' : (newPaid > 0 ? 'PARTIAL' : 'UNPAID')
+          payment_status: newPending === 0 ? 'PAID' : 'PARTIAL'
         };
-        return updatedInvObj;
+        pushCloudInvoice(updatedInv).catch(console.warn);
+        return updatedInv;
       }
       return inv;
     });
+    localStorage.setItem('local_invoices', JSON.stringify(updatedInvoices));
 
-    if (updatedInvObj) {
-      localStorage.setItem('local_invoices', JSON.stringify(updatedInvoices));
-      pushCloudInvoice(updatedInvObj).catch(console.warn);
-    }
-
-    // 2. Update Workshop Job locally & cloud
+    // 2. Update Workshop Jobs
     const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
-    let updatedJobObj = null;
     const updatedJobs = localJobs.map(j => {
-      if (String(j.id) === String(targetId) || `inv_${j.id}` === String(targetId)) {
+      if (!j) return j;
+      const curJobId = String(j.id || '');
+      const curVeh = (j.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+      const isMatch = (curJobId === rawId || curJobId === targetId || (vehNum && curVeh === vehNum && (j.status === 'FINISHED' || j.status === 'COMPLETED')));
+
+      if (isMatch) {
+        const total = parseFloat(j.grand_total || j.live_total || 0);
         const oldPaid = parseFloat(j.paid_amount || 0);
         const newPaid = oldPaid + paymentNum;
-        const total = parseFloat(j.grand_total || j.live_total || 0);
         const newPending = Math.max(0, total - newPaid);
-        updatedJobObj = {
+        const updatedJob = {
           ...j,
           paid_amount: newPaid,
           pending_amount: newPending,
-          payment_status: newPending === 0 ? 'PAID' : (newPaid > 0 ? 'PARTIAL' : 'UNPAID')
+          payment_status: newPending === 0 ? 'PAID' : 'PARTIAL'
         };
-        return updatedJobObj;
+        pushCloudJob(updatedJob).catch(console.warn);
+        return updatedJob;
       }
       return j;
     });
+    localStorage.setItem('workshop_jobs', JSON.stringify(updatedJobs));
 
-    if (updatedJobObj) {
-      localStorage.setItem('workshop_jobs', JSON.stringify(updatedJobs));
-      pushCloudJob(updatedJobObj).catch(console.warn);
-    }
-
-    // 3. Create CREDIT entry in Khata entries
+    // 3. Update Debit entries & add Credit entry in Khata entries
+    const localKhata = JSON.parse(localStorage.getItem('khata_entries') || '[]');
     const creditKhataEntry = {
       id: `khata_credit_${Date.now()}`,
-      job_id: targetId,
+      job_id: rawId || targetId,
       customer_name: selectedCustomer.customer_name,
       mobile_number: selectedCustomer.phone || selectedCustomer.mobile_number,
       vehicle_number: selectedCustomer.vehicle_number,
@@ -436,8 +445,20 @@ export default function KhataBookPage() {
       date: new Date().toISOString()
     };
     pushCloudKhataEntry(creditKhataEntry).catch(console.warn);
-    const localKhata = JSON.parse(localStorage.getItem('khata_entries') || '[]');
-    localStorage.setItem('khata_entries', JSON.stringify([creditKhataEntry, ...localKhata]));
+
+    const updatedKhataList = localKhata.map(k => {
+      if (!k) return k;
+      const curKId = String(k.id || '');
+      const curKVeh = (k.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+      if ((curKId === targetId || curKId === `khata_${rawId}` || (vehNum && curKVeh === vehNum && k.type === 'DEBIT'))) {
+        const curAmt = parseFloat(k.amount || 0);
+        const newAmt = Math.max(0, curAmt - paymentNum);
+        return { ...k, amount: newAmt };
+      }
+      return k;
+    });
+
+    localStorage.setItem('khata_entries', JSON.stringify([creditKhataEntry, ...updatedKhataList]));
 
     try {
       await API.post('/khata-book/record-payment/', {

@@ -107,25 +107,20 @@ export default function LoginPage() {
   }, [showOtpModal, otpStep, otpTimer]);
 
   const handleLogin = async (e) => {
-    e.preventDefault();
-    if (lockoutSeconds > 0) return;
-    
+    if (e) e.preventDefault();
     setLoading(true);
     setError(null);
     try {
       await login(username, password);
-      sessionStorage.setItem('admin_logged_in', 'true');
+      try {
+        localStorage.setItem('admin_logged_in', 'true');
+        sessionStorage.setItem('admin_logged_in', 'true');
+      } catch (e) {}
       window.location.href = '/admin/dashboard';
       return;
     } catch (err) {
       console.error(err);
-      const data = err.response?.data;
-      if (data?.locked_out) {
-        setLockoutSeconds(data.remaining_seconds || 600);
-        setError(data.error || 'Account is locked out due to 5 consecutive failed attempts.');
-      } else {
-        setError(data?.error || 'Invalid username or password.');
-      }
+      setError(err.message || 'Invalid username or password.');
     } finally {
       setLoading(false);
     }
@@ -382,16 +377,7 @@ export default function LoginPage() {
         </div>
 
         {/* Lockout Warning */}
-        {lockoutSeconds > 0 ? (
-          <div className="p-4 rounded-2xl bg-red-500/20 border border-red-500/40 text-red-300 text-xs space-y-2 text-center">
-            <Clock className="w-6 h-6 text-red-400 mx-auto animate-pulse" />
-            <span className="font-bold text-sm block font-poppins">Account Locked</span>
-            <p>5 consecutive failed login attempts detected.</p>
-            <p className="font-mono text-base font-extrabold text-amber-400 pt-1">
-              Try again in: {formatLockoutTime(lockoutSeconds)}
-            </p>
-          </div>
-        ) : error && (
+        {error && (
           <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center gap-2">
             <AlertCircle className="w-4 h-4 shrink-0" />
             <span>{error}</span>
@@ -406,10 +392,9 @@ export default function LoginPage() {
               <input
                 type="text"
                 required
-                disabled={lockoutSeconds > 0}
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="w-full pl-11 pr-4 py-3 bg-slate-900/80 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 disabled:opacity-40"
+                className="w-full pl-11 pr-4 py-3 bg-slate-900/80 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
               />
             </div>
           </div>
@@ -435,21 +420,20 @@ export default function LoginPage() {
               <input
                 type="password"
                 required
-                disabled={lockoutSeconds > 0}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full pl-11 pr-4 py-3 bg-slate-900/80 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 disabled:opacity-40"
+                className="w-full pl-11 pr-4 py-3 bg-slate-900/80 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
               />
             </div>
           </div>
 
           <button
             type="submit"
-            disabled={loading || lockoutSeconds > 0}
+            disabled={loading}
             className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-blue-600/30 transition-all text-sm flex items-center justify-center gap-2 disabled:opacity-40"
           >
             <ShieldCheck className="w-5 h-5" />
-            {loading ? 'Authenticating...' : lockoutSeconds > 0 ? 'Locked (Wait Cooldown)' : 'Sign In as Admin'}
+            {loading ? 'Authenticating...' : 'Sign In as Admin'}
           </button>
         </form>
 

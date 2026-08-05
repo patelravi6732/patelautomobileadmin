@@ -28,14 +28,20 @@ export default function LoginPage() {
   });
   const [setupError, setSetupError] = useState('');
 
-  // Check if system has 0 existing admin profiles
+  // Check if system has 0 existing admin profiles across central cloud store
   useEffect(() => {
     async function checkAdminCount() {
       try {
         const cloudAdmins = await fetchCloudAdminProfiles();
-        const localAdmins = JSON.parse(localStorage.getItem('admin_profiles') || '[]');
-        if (cloudAdmins.length === 0 && localAdmins.length === 0) {
+        if (cloudAdmins.length === 0) {
+          // Central cloud database is empty: clear stale local caches on device & trigger setup wizard
+          localStorage.removeItem('admin_profiles');
+          localStorage.removeItem('user');
+          localStorage.removeItem('admin_logged_in');
+          sessionStorage.clear();
           setIsFirstTimeSetup(true);
+        } else {
+          setIsFirstTimeSetup(false);
         }
       } catch (err) {
         console.warn('Error checking initial admin setup:', err);
@@ -284,7 +290,6 @@ export default function LoginPage() {
               <input
                 type="text"
                 required
-                placeholder="e.g. Patel Owner"
                 value={setupForm.user_name}
                 onChange={(e) => setSetupForm(prev => ({ ...prev, user_name: e.target.value }))}
                 className="w-full px-4 py-2.5 bg-slate-900/80 border border-slate-700 rounded-xl text-white text-xs focus:outline-none focus:border-emerald-500"
@@ -297,7 +302,6 @@ export default function LoginPage() {
                 <input
                   type="text"
                   required
-                  placeholder="e.g. admin"
                   value={setupForm.username}
                   onChange={(e) => setSetupForm(prev => ({ ...prev, username: e.target.value }))}
                   className="w-full px-4 py-2.5 bg-slate-900/80 border border-slate-700 rounded-xl text-white text-xs focus:outline-none focus:border-emerald-500"
@@ -307,7 +311,6 @@ export default function LoginPage() {
                 <label className="block text-[11px] font-semibold text-slate-300 uppercase tracking-wider mb-1">Mobile Number</label>
                 <input
                   type="text"
-                  placeholder="+91 81403 71414"
                   value={setupForm.phone}
                   onChange={(e) => setSetupForm(prev => ({ ...prev, phone: e.target.value }))}
                   className="w-full px-4 py-2.5 bg-slate-900/80 border border-slate-700 rounded-xl text-white text-xs focus:outline-none focus:border-emerald-500"
@@ -315,15 +318,12 @@ export default function LoginPage() {
               </div>
             </div>
 
-
-
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-[11px] font-semibold text-slate-300 uppercase tracking-wider mb-1">Password *</label>
                 <input
                   type="password"
                   required
-                  placeholder="••••••••"
                   value={setupForm.password}
                   onChange={(e) => setSetupForm(prev => ({ ...prev, password: e.target.value }))}
                   className="w-full px-4 py-2.5 bg-slate-900/80 border border-slate-700 rounded-xl text-white text-xs focus:outline-none focus:border-emerald-500"
@@ -334,7 +334,6 @@ export default function LoginPage() {
                 <input
                   type="password"
                   required
-                  placeholder="••••••••"
                   value={setupForm.confirm_password}
                   onChange={(e) => setSetupForm(prev => ({ ...prev, confirm_password: e.target.value }))}
                   className="w-full px-4 py-2.5 bg-slate-900/80 border border-slate-700 rounded-xl text-white text-xs focus:outline-none focus:border-emerald-500"

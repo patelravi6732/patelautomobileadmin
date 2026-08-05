@@ -96,6 +96,20 @@ export const AuthProvider = ({ children }) => {
   };
 
   useEffect(() => {
+    if (localStorage.getItem('dummy_data_purged_v1') !== 'true') {
+      localStorage.removeItem('workshop_jobs');
+      localStorage.removeItem('local_invoices');
+      localStorage.removeItem('inventory_items');
+      localStorage.removeItem('spare_parts');
+      localStorage.removeItem('khata_entries');
+      localStorage.removeItem('local_bookings');
+      localStorage.removeItem('local_customers');
+      localStorage.removeItem('local_messages');
+      localStorage.removeItem('recycle_bin_items');
+      localStorage.removeItem('master_cloud_cache');
+      localStorage.setItem('dummy_data_purged_v1', 'true');
+    }
+
     fetchGarageInfo();
     fetchCurrentUser();
 

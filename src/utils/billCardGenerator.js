@@ -40,6 +40,18 @@ const loadSingleImage = (src) => {
   });
 };
 
+const drawRoundedRect = (ctx, x, y, w, h, r = 12) => {
+  if (w < 2 * r) r = w / 2;
+  if (h < 2 * r) r = h / 2;
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+};
+
 const renderCanvasInternal = (invoice, garageInfo, logoImg, qrImg) => {
   const inv = invoice || {};
   // Ultra HD 4K Quality: Scale = 4, width = 800 => 3200px resolution
@@ -64,12 +76,6 @@ const renderCanvasInternal = (invoice, garageInfo, logoImg, qrImg) => {
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
 
-  if (!ctx.roundRect) {
-    ctx.roundRect = function(x, y, w, h, r) {
-      ctx.rect(x, y, w, h);
-    };
-  }
-
   // 1. Pure White Clean Background
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, width, height);
@@ -82,22 +88,19 @@ const renderCanvasInternal = (invoice, garageInfo, logoImg, qrImg) => {
 
   if (logoImg && (logoImg.naturalWidth > 0 || logoImg.complete)) {
     ctx.save();
-    ctx.beginPath();
-    ctx.roundRect(pad, currentY, logoSize, logoSize, 14);
+    drawRoundedRect(ctx, pad, currentY, logoSize, logoSize, 14);
     ctx.clip();
     ctx.drawImage(logoImg, pad, currentY, logoSize, logoSize);
     ctx.restore();
 
     ctx.strokeStyle = '#f59e0b';
     ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.roundRect(pad, currentY, logoSize, logoSize, 14);
+    drawRoundedRect(ctx, pad, currentY, logoSize, logoSize, 14);
     ctx.stroke();
   } else {
     // Fallback Gold Badge
     ctx.fillStyle = '#f59e0b';
-    ctx.beginPath();
-    ctx.roundRect(pad, currentY, logoSize, logoSize, 14);
+    drawRoundedRect(ctx, pad, currentY, logoSize, logoSize, 14);
     ctx.fill();
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 26px "Segoe UI", Roboto, sans-serif';
@@ -146,11 +149,11 @@ const renderCanvasInternal = (invoice, garageInfo, logoImg, qrImg) => {
   const boxY = currentY;
 
   ctx.fillStyle = '#fffbe5';
-  ctx.beginPath();
-  ctx.roundRect(pad, boxY, width - (pad * 2), boxHeight, 16);
+  drawRoundedRect(ctx, pad, boxY, width - (pad * 2), boxHeight, 16);
   ctx.fill();
   ctx.strokeStyle = '#fde68a';
   ctx.lineWidth = 1.5;
+  drawRoundedRect(ctx, pad, boxY, width - (pad * 2), boxHeight, 16);
   ctx.stroke();
 
   // Customer Details Left
@@ -187,8 +190,7 @@ const renderCanvasInternal = (invoice, garageInfo, logoImg, qrImg) => {
   const tblHeaderH = 40;
 
   ctx.fillStyle = '#0b132b';
-  ctx.beginPath();
-  ctx.roundRect(pad, tblHeaderY, width - (pad * 2), tblHeaderH, 12);
+  drawRoundedRect(ctx, pad, tblHeaderY, width - (pad * 2), tblHeaderH, 12);
   ctx.fill();
 
   ctx.fillStyle = '#fcd34d';
@@ -359,11 +361,11 @@ const renderCanvasInternal = (invoice, garageInfo, logoImg, qrImg) => {
   // 8. Bottom Safety Banner Box
   const bannerH = 92;
   ctx.fillStyle = '#fffbe5';
-  ctx.beginPath();
-  ctx.roundRect(pad, currentY, width - (pad * 2), bannerH, 16);
+  drawRoundedRect(ctx, pad, currentY, width - (pad * 2), bannerH, 16);
   ctx.fill();
   ctx.strokeStyle = '#fde68a';
   ctx.lineWidth = 1.5;
+  drawRoundedRect(ctx, pad, currentY, width - (pad * 2), bannerH, 16);
   ctx.stroke();
 
   ctx.textAlign = 'center';

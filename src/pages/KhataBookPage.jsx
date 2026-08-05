@@ -348,7 +348,9 @@ export default function KhataBookPage() {
 
   const openPaymentModal = (customer) => {
     setSelectedCustomer(customer);
-    setPayAmount(parseFloat(customer.pending_amount));
+    const rawVal = customer?.pending_amount !== undefined ? customer.pending_amount : (customer?.balance || 0);
+    const cleanNum = parseFloat(String(rawVal).replace(/[^0-9.]/g, '')) || 0;
+    setPayAmount(cleanNum > 0 ? cleanNum : '');
   };
 
   const openStatementModal = async (customer) => {

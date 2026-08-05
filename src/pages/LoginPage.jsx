@@ -38,6 +38,11 @@ export default function LoginPage() {
           localStorage.removeItem('admin_profiles');
           localStorage.removeItem('user');
           localStorage.removeItem('admin_logged_in');
+          try {
+            const cache = JSON.parse(localStorage.getItem('master_cloud_cache') || '{}');
+            cache.adminProfiles = [];
+            localStorage.setItem('master_cloud_cache', JSON.stringify(cache));
+          } catch (e) {}
           sessionStorage.clear();
           setIsFirstTimeSetup(true);
         } else {

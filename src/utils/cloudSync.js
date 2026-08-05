@@ -411,6 +411,26 @@ export async function pushCloudGarageInfo(infoObj) {
 
 // ---------------- ADMIN PROFILES (MONGODB / CLOUD SYNC) ----------------
 export async function fetchCloudAdminProfiles() {
+  try {
+    const res = await axios.get(PRIMARY_BIN_URL + '?t=' + Date.now(), {
+      headers: { 'Accept': 'application/json', 'Cache-Control': 'no-cache' },
+      timeout: 3000
+    });
+    if (res.data && Array.isArray(res.data.adminProfiles)) {
+      const list = res.data.adminProfiles.filter(a => a && typeof a === 'object' && (a.id || a.username || a.user_name));
+      if (list.length === 0) {
+        try {
+          const cache = JSON.parse(localStorage.getItem('master_cloud_cache') || '{}');
+          cache.adminProfiles = [];
+          localStorage.setItem('master_cloud_cache', JSON.stringify(cache));
+          localStorage.removeItem('admin_profiles');
+        } catch (e) {}
+      }
+      return list;
+    }
+  } catch (err) {
+    console.warn('Direct cloud fetch notice for adminProfiles:', err);
+  }
   const store = await fetchMasterStore();
   return (store.adminProfiles || []).filter(a => a && typeof a === 'object' && (a.id || a.username || a.user_name));
 }

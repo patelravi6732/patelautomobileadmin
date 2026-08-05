@@ -225,6 +225,7 @@ export default function LoginPage() {
       username: setupForm.username.trim(),
       phone: setupForm.phone.trim() || '+91 81403 71414',
       email: setupForm.email.trim() || 'contact@patelautomobiles.com',
+      password: setupForm.password.trim(),
       date_of_birth: '1990-01-01',
       profile_photo: '/logo.png'
     };

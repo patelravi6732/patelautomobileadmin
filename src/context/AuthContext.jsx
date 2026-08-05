@@ -141,12 +141,17 @@ export const AuthProvider = ({ children }) => {
       const matchedAdmin = allAdmins.find(a => 
         a && (
           (a.username && a.username.trim().toLowerCase() === cleanUser.toLowerCase()) ||
-          (a.user_name && a.user_name.trim().toLowerCase() === cleanUser.toLowerCase())
+          (a.user_name && a.user_name.trim().toLowerCase() === cleanUser.toLowerCase()) ||
+          (a.phone && a.phone.trim() === cleanUser)
         )
       );
 
       if (!matchedAdmin) {
-        throw new Error(`Invalid credentials! No registered admin account exists for '${cleanUser}'. Please create your Admin account using the Setup Wizard.`);
+        throw new Error(`Invalid Admin Username! No registered admin account exists for '${cleanUser}'.`);
+      }
+
+      if (matchedAdmin.password && matchedAdmin.password.trim() !== cleanPass) {
+        throw new Error(`Invalid Password for admin '${cleanUser}'! Please check your password.`);
       }
 
       const activeUser = {

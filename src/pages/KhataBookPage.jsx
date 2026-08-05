@@ -331,18 +331,92 @@ export default function KhataBookPage() {
   const handleRecordPayment = async (e) => {
     e.preventDefault();
     if (!selectedCustomer) return;
+
+    const paymentNum = parseFloat(payAmount) || 0;
+    if (paymentNum <= 0) return;
+
+    const targetId = selectedCustomer.invoice_id || selectedCustomer.id;
+
+    // 1. Update Invoice locally & cloud
+    const localInvoices = JSON.parse(localStorage.getItem('local_invoices') || '[]');
+    let updatedInvObj = null;
+    const updatedInvoices = localInvoices.map(inv => {
+      if (String(inv.id) === String(targetId) || String(inv.job_id) === String(targetId) || inv.invoice_number === selectedCustomer.invoice_number) {
+        const oldPaid = parseFloat(inv.paid_amount || 0);
+        const newPaid = oldPaid + paymentNum;
+        const total = parseFloat(inv.grand_total || inv.total_amount || 0);
+        const newPending = Math.max(0, total - newPaid);
+        updatedInvObj = {
+          ...inv,
+          paid_amount: newPaid,
+          pending_amount: newPending,
+          payment_status: newPending === 0 ? 'PAID' : (newPaid > 0 ? 'PARTIAL' : 'UNPAID')
+        };
+        return updatedInvObj;
+      }
+      return inv;
+    });
+
+    if (updatedInvObj) {
+      localStorage.setItem('local_invoices', JSON.stringify(updatedInvoices));
+      pushCloudInvoice(updatedInvObj).catch(console.warn);
+    }
+
+    // 2. Update Workshop Job locally & cloud
+    const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
+    let updatedJobObj = null;
+    const updatedJobs = localJobs.map(j => {
+      if (String(j.id) === String(targetId) || `inv_${j.id}` === String(targetId)) {
+        const oldPaid = parseFloat(j.paid_amount || 0);
+        const newPaid = oldPaid + paymentNum;
+        const total = parseFloat(j.grand_total || j.live_total || 0);
+        const newPending = Math.max(0, total - newPaid);
+        updatedJobObj = {
+          ...j,
+          paid_amount: newPaid,
+          pending_amount: newPending,
+          payment_status: newPending === 0 ? 'PAID' : (newPaid > 0 ? 'PARTIAL' : 'UNPAID')
+        };
+        return updatedJobObj;
+      }
+      return j;
+    });
+
+    if (updatedJobObj) {
+      localStorage.setItem('workshop_jobs', JSON.stringify(updatedJobs));
+      pushCloudJob(updatedJobObj).catch(console.warn);
+    }
+
+    // 3. Create CREDIT entry in Khata entries
+    const creditKhataEntry = {
+      id: `khata_credit_${Date.now()}`,
+      job_id: targetId,
+      customer_name: selectedCustomer.customer_name,
+      mobile_number: selectedCustomer.phone || selectedCustomer.mobile_number,
+      vehicle_number: selectedCustomer.vehicle_number,
+      bike_model: selectedCustomer.bike_model || 'Two Wheeler',
+      type: 'CREDIT',
+      amount: paymentNum,
+      description: `Payment received of ₹${paymentNum} for ${selectedCustomer.invoice_number || 'Bill'}`,
+      date: new Date().toISOString()
+    };
+    pushCloudKhataEntry(creditKhataEntry).catch(console.warn);
+    const localKhata = JSON.parse(localStorage.getItem('khata_entries') || '[]');
+    localStorage.setItem('khata_entries', JSON.stringify([creditKhataEntry, ...localKhata]));
+
     try {
       await API.post('/khata-book/record-payment/', {
         invoice_id: selectedCustomer.invoice_id || null,
         customer_id: selectedCustomer.customer_id || null,
-        amount: payAmount
-      });
-      showToast('Payment Recorded', 'Payment recorded successfully!');
-      setSelectedCustomer(null);
-      fetchKhata();
+        amount: paymentNum
+      }, { timeout: 1500 });
     } catch (err) {
-      showToast('Payment Failed', 'Failed to record payment', 'error');
+      console.warn('Backend API offline, payment recorded locally & cloud store:', err);
     }
+
+    showToast('🎉 Payment Recorded!', `₹${paymentNum} payment successfully credited!`);
+    setSelectedCustomer(null);
+    fetchKhata();
   };
 
   const handleDownloadStatementPhoto = async (customer) => {

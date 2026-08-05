@@ -407,8 +407,7 @@ export default function WorkshopPage() {
       discount_amount: numericDiscount
     };
 
-    // 1. Update cloud jobs & local workshop memory
-    await pushCloudJob(finishedJobData).catch(console.warn);
+    // 1. Update local workshop memory immediately
     const currentJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
     const updatedLocal = currentJobs.map(j => (String(j.id) === String(targetId) ? finishedJobData : j));
     if (!updatedLocal.some(j => String(j.id) === String(targetId))) {
@@ -416,10 +415,11 @@ export default function WorkshopPage() {
     }
     localStorage.setItem('workshop_jobs', JSON.stringify(updatedLocal));
     setJobs(prev => prev.map(j => (String(j.id) === String(targetId) ? finishedJobData : j)));
+    pushCloudJob(finishedJobData).catch(console.warn);
 
     // 2. Mark matching booking as COMPLETED
     if (selectedJob.vehicle_number) {
-      await updateCloudBookingStatus(null, 'COMPLETED', selectedJob.vehicle_number, selectedJob.preferred_date).catch(console.warn);
+      updateCloudBookingStatus(null, 'COMPLETED', selectedJob.vehicle_number, selectedJob.preferred_date).catch(console.warn);
       const localBookings = JSON.parse(localStorage.getItem('local_bookings') || '[]');
       const updatedBookings = localBookings.map(b => (b.vehicle_number === selectedJob.vehicle_number ? { ...b, status: 'COMPLETED' } : b));
       localStorage.setItem('local_bookings', JSON.stringify(updatedBookings));
@@ -495,7 +495,6 @@ export default function WorkshopPage() {
       parts: selectedJob.parts || []
     };
 
-    await pushCloudInvoice(newInvoiceObj).catch(console.warn);
     let updatedInvoicesList = localInvoices;
     if (existingInvIndex >= 0) {
       updatedInvoicesList[existingInvIndex] = newInvoiceObj;
@@ -503,6 +502,7 @@ export default function WorkshopPage() {
       updatedInvoicesList = [newInvoiceObj, ...localInvoices];
     }
     localStorage.setItem('local_invoices', JSON.stringify(updatedInvoicesList));
+    pushCloudInvoice(newInvoiceObj).catch(console.warn);
 
     // 5. Create or Update Khata Book Debit Entry (Keyed per Job/Visit)
     const localKhata = JSON.parse(localStorage.getItem('khata_entries') || '[]');
@@ -526,7 +526,6 @@ export default function WorkshopPage() {
         description: `Unpaid balance for Visit #${String(targetId).slice(-4)} (Total: ₹${grandTotal.toFixed(2)}, Paid: ₹${paidAmountNum.toFixed(2)})`,
         date: completionTime
       };
-      await pushCloudKhataEntry(khataDebitEntry).catch(console.warn);
       let updatedKhataList = localKhata;
       if (existingKhataIndex >= 0) {
         updatedKhataList[existingKhataIndex] = khataDebitEntry;
@@ -534,6 +533,7 @@ export default function WorkshopPage() {
         updatedKhataList = [khataDebitEntry, ...localKhata];
       }
       localStorage.setItem('khata_entries', JSON.stringify(updatedKhataList));
+      pushCloudKhataEntry(khataDebitEntry).catch(console.warn);
     } else if (existingKhataIndex >= 0) {
       const updatedKhataList = localKhata.filter((_, idx) => idx !== existingKhataIndex);
       localStorage.setItem('khata_entries', JSON.stringify(updatedKhataList));
@@ -565,18 +565,7 @@ export default function WorkshopPage() {
     }
 
     setShowFinishModal(false);
-
-    try {
-      const res = await API.post(`/workshop/${targetId}/finish_service/`, {
-        labour_charge: finishLabourNum,
-        discount_amount: numericDiscount,
-        paid_amount: paidAmountNum
-      }, { timeout: 2000 });
-      alert(`🎉 Service finished! Invoice ${res.data?.invoice?.invoice_number || newInvoiceObj.invoice_number} generated.`);
-    } catch (err) {
-      console.warn('Backend API offline on static host, finished service bill locally:', err);
-      alert(`🎉 Service finished successfully! Invoice ${newInvoiceObj.invoice_number} generated.`);
-    }
+    alert(`🎉 Service finished successfully! Invoice ${newInvoiceObj.invoice_number} generated.`);
   };
 
   const handleCancelService = async (jobId) => {

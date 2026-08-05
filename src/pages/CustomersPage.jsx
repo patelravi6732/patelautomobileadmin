@@ -106,32 +106,27 @@ export default function CustomersPage() {
       });
       const visitCount = Math.max(1, matchingJobs.length);
 
-      // Calculate Pending Khata Amount
+      // Calculate Pending Amount from all unpaid invoices for this customer
       let pendingBalance = 0;
-      combinedKhata.forEach(k => {
-        if (!k) return;
-        const kVeh = (k.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-        const kName = (k.customer_name || '').toLowerCase();
-        if ((custVeh && kVeh && custVeh === kVeh) || (custName && kName && custName === kName)) {
-          const amt = parseFloat(k.amount || 0);
-          if (k.type === 'DEBIT') {
-            pendingBalance += amt;
-          } else if (k.type === 'CREDIT') {
-            pendingBalance -= amt;
-          }
-        }
-      });
-
-      // Also add unpaid invoice amounts if Khata balance is 0 or less
       combinedInvoices.forEach(inv => {
         if (!inv) return;
         const invVeh = (inv.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
         const invName = (inv.customer_name || '').toLowerCase();
         if ((custVeh && invVeh && custVeh === invVeh) || (custName && invName && custName === invName)) {
-          const due = parseFloat(inv.pending_amount || 0);
-          if (due > 0 && pendingBalance <= 0) {
-            pendingBalance += due;
-          }
+          pendingBalance += parseFloat(inv.pending_amount || 0);
+        }
+      });
+
+      // Also process manual Khata entries not linked to invoices
+      combinedKhata.forEach(k => {
+        if (!k) return;
+        const kVeh = (k.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+        const kName = (k.customer_name || '').toLowerCase();
+        if ((custVeh && kVeh && custVeh === kVeh) || (custName && kName && custName === kName)) {
+          if (k.description && (k.description.includes('Unpaid balance for Visit') || k.description.includes('Unpaid balance from Service Bill'))) return;
+          const amt = parseFloat(k.amount || 0);
+          if (k.type === 'DEBIT') pendingBalance += amt;
+          if (k.type === 'CREDIT') pendingBalance -= amt;
         }
       });
 

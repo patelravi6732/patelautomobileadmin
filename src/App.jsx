@@ -42,7 +42,11 @@ export const SECRET_ADMIN_LOGIN_PATH = "/patel-admin-portal";
 const ProtectedRoute = ({ children }) => {
   const { user, loading } = useAuth();
   if (loading) return <div className="p-8 text-center text-slate-400 font-medium">Verifying Admin Session...</div>;
-  const isLoggedIn = sessionStorage.getItem('admin_logged_in') === 'true' || Boolean(user);
+  const isLoggedIn = (
+    localStorage.getItem('admin_logged_in') === 'true' || 
+    sessionStorage.getItem('admin_logged_in') === 'true' || 
+    Boolean(user)
+  );
   if (!isLoggedIn) return <Navigate to={SECRET_ADMIN_LOGIN_PATH} replace />;
   return children;
 };

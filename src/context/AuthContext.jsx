@@ -168,9 +168,16 @@ export const AuthProvider = ({ children }) => {
       phone: matchedAdmin?.phone || '+91 81403 71414'
     };
 
-    sessionStorage.setItem('access_token', 'static_admin_token');
-    sessionStorage.setItem('admin_logged_in', 'true');
-    sessionStorage.setItem('user', JSON.stringify(activeUser));
+    try {
+      sessionStorage.setItem('access_token', 'static_admin_token');
+      sessionStorage.setItem('admin_logged_in', 'true');
+      sessionStorage.setItem('user', JSON.stringify(activeUser));
+    } catch (e) {}
+    try {
+      localStorage.setItem('access_token', 'static_admin_token');
+      localStorage.setItem('admin_logged_in', 'true');
+      localStorage.setItem('user', JSON.stringify(activeUser));
+    } catch (e) {}
     setUser(activeUser);
     return activeUser;
   };

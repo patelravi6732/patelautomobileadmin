@@ -291,11 +291,35 @@ const renderCanvasInternal = (invoice, garageInfo, logoImg, qrImg) => {
     currentY = Math.max(currentY, startY + qrBoxSize + 60);
   }
 
-  const grandTotal = parseFloat(inv.grand_total || inv.total_billed || 0).toFixed(2);
+  const totPartsVal = parseFloat(inv.parts_total || inv.service_job?.parts_total || 0);
+  const totLabourVal = parseFloat(inv.labour_charge || inv.service_job?.labour_charge || 0);
+  const discountVal = parseFloat(inv.discount_amount || inv.discount || inv.service_job?.discount_amount || 0);
+  const subtotalVal = (totPartsVal > 0 || totLabourVal > 0) ? (totPartsVal + totLabourVal) : 0;
+
+  const grandTotal = parseFloat(inv.grand_total || inv.total_amount || inv.total_billed || 0).toFixed(2);
   const paidAmount = parseFloat(inv.paid_amount || inv.total_paid || 0).toFixed(2);
   const pendingAmount = parseFloat(inv.pending_amount || 0).toFixed(2);
 
   ctx.textAlign = 'right';
+
+  // Subtotal row if discount was applied
+  if (discountVal > 0 && subtotalVal > 0) {
+    ctx.fillStyle = '#64748b';
+    ctx.font = 'bold 14px "Segoe UI", Roboto, system-ui, -apple-system, sans-serif';
+    ctx.fillText('Subtotal (Parts + Labour):', width - pad - 150, currentY + 20);
+    ctx.fillStyle = '#334155';
+    ctx.font = 'bold 16px Consolas, "Liberation Mono", monospace, sans-serif';
+    ctx.fillText(`₹${subtotalVal.toFixed(2)}`, width - pad - 18, currentY + 20);
+    currentY += 28;
+
+    ctx.fillStyle = '#dc2626';
+    ctx.font = 'bold 14px "Segoe UI", Roboto, system-ui, -apple-system, sans-serif';
+    ctx.fillText('Discount Given (-):', width - pad - 150, currentY + 20);
+    ctx.fillStyle = '#dc2626';
+    ctx.font = 'bold 17px Consolas, "Liberation Mono", monospace, sans-serif';
+    ctx.fillText(`- ₹${discountVal.toFixed(2)}`, width - pad - 18, currentY + 20);
+    currentY += 28;
+  }
 
   ctx.fillStyle = '#475569';
   ctx.font = 'bold 15px "Segoe UI", Roboto, system-ui, -apple-system, sans-serif';

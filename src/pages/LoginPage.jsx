@@ -110,7 +110,9 @@ export default function LoginPage() {
     setError(null);
     try {
       await login(username, password);
-      navigate('/admin/dashboard');
+      sessionStorage.setItem('admin_logged_in', 'true');
+      window.location.href = '/admin/dashboard';
+      return;
     } catch (err) {
       console.error(err);
       const data = err.response?.data;
@@ -257,7 +259,7 @@ export default function LoginPage() {
 
       setIsFirstTimeSetup(false);
       alert(`🎉 Welcome ${newOwnerAdmin.user_name}! Primary Admin Account created & system is now LOCKED to your credentials!`);
-      navigate('/admin/dashboard', { replace: true });
+      window.location.href = '/admin/dashboard';
       setLoading(false);
     }
   };

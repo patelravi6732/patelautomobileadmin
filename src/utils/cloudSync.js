@@ -411,28 +411,39 @@ export async function pushCloudGarageInfo(infoObj) {
 
 // ---------------- ADMIN PROFILES (MONGODB / CLOUD SYNC) ----------------
 export async function fetchCloudAdminProfiles() {
+  const localAdmins = (() => {
+    try {
+      return JSON.parse(localStorage.getItem('admin_profiles') || '[]');
+    } catch (e) {
+      return [];
+    }
+  })();
+
+  let cloudList = [];
   try {
     const res = await axios.get(PRIMARY_BIN_URL + '?t=' + Date.now(), {
       headers: { 'Accept': 'application/json', 'Cache-Control': 'no-cache' },
       timeout: 3000
     });
     if (res.data && Array.isArray(res.data.adminProfiles)) {
-      const list = res.data.adminProfiles.filter(a => a && typeof a === 'object' && (a.id || a.username || a.user_name));
-      if (list.length === 0) {
-        try {
-          const cache = JSON.parse(localStorage.getItem('master_cloud_cache') || '{}');
-          cache.adminProfiles = [];
-          localStorage.setItem('master_cloud_cache', JSON.stringify(cache));
-          localStorage.removeItem('admin_profiles');
-        } catch (e) {}
-      }
-      return list;
+      cloudList = res.data.adminProfiles.filter(a => a && typeof a === 'object' && (a.id || a.username || a.user_name));
     }
   } catch (err) {
     console.warn('Direct cloud fetch notice for adminProfiles:', err);
   }
-  const store = await fetchMasterStore();
-  return (store.adminProfiles || []).filter(a => a && typeof a === 'object' && (a.id || a.username || a.user_name));
+
+  const allAdminsMap = new Map();
+  cloudList.forEach(a => { if (a.username) allAdminsMap.set(a.username.toLowerCase(), a); });
+  localAdmins.forEach(a => { if (a.username && !allAdminsMap.has(a.username.toLowerCase())) allAdminsMap.set(a.username.toLowerCase(), a); });
+
+  const finalAdmins = Array.from(allAdminsMap.values());
+
+  if (cloudList.length === 0 && finalAdmins.length > 0) {
+    const store = await fetchMasterStore();
+    saveMasterStore({ ...store, adminProfiles: finalAdmins }).catch(console.warn);
+  }
+
+  return finalAdmins;
 }
 
 export async function pushCloudAdminProfile(adminObj) {

@@ -95,19 +95,20 @@ export default function WorkshopPage() {
 
     const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
     const allMap = new Map();
-    [...backendJobs, ...localJobs, ...cloudJobs].forEach(j => {
-      if (j && typeof j === 'object') {
-        const uniqueKey = String(j.id || `${j.vehicle_number || 'UNKNOWN'}_${j.created_at || Date.now()}`);
+    [...cloudJobs, ...localJobs, ...backendJobs].forEach(j => {
+      if (j && typeof j === 'object' && j.id) {
+        const uniqueKey = String(j.id);
         if (!deletedIds.includes(uniqueKey) && !deletedIds.includes(String(j.id))) {
-          if (!allMap.has(uniqueKey)) {
-            const sanitizedJob = {
-              ...j,
-              parts: Array.isArray(j.parts) ? j.parts : [],
-              parts_total: parseFloat(j.parts_total || 0),
-              labour_charge: parseFloat(j.labour_charge || 0),
-              live_total: parseFloat(j.live_total || (parseFloat(j.parts_total || 0) + parseFloat(j.labour_charge || 0))),
-              status: j.status || 'IN_PROGRESS'
-            };
+          const existing = allMap.get(uniqueKey);
+          const sanitizedJob = {
+            ...j,
+            parts: Array.isArray(j.parts) ? j.parts : [],
+            parts_total: parseFloat(j.parts_total || 0),
+            labour_charge: parseFloat(j.labour_charge || 0),
+            live_total: parseFloat(j.live_total || j.grand_total || (parseFloat(j.parts_total || 0) + parseFloat(j.labour_charge || 0))),
+            status: (j.status === 'FINISHED' || j.status === 'COMPLETED') ? 'FINISHED' : (j.status || 'IN_PROGRESS')
+          };
+          if (!existing || (sanitizedJob.status === 'FINISHED' && existing.status !== 'FINISHED')) {
             allMap.set(uniqueKey, sanitizedJob);
           }
         }
@@ -900,7 +901,7 @@ export default function WorkshopPage() {
                     <p className="text-xs text-slate-500">
                       Primary Mechanic: <strong>{job.assigned_mechanic}</strong>
                       {job.secondary_mechanic && <span> • Assistant: <strong>{job.secondary_mechanic}</strong></span>}
-                      <span> • Total Bill: <strong>₹{job.live_total.toFixed(2)}</strong></span>
+                      <span> • Total Bill: <strong>₹{parseFloat(job.live_total || job.grand_total || job.total_amount || 0).toFixed(2)}</strong></span>
                     </p>
                     <p className="text-xs text-slate-600 font-medium flex items-center gap-1.5 pt-0.5">
                       <CalendarClock className="w-3.5 h-3.5 text-emerald-600" />

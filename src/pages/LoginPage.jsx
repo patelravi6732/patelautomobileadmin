@@ -238,18 +238,20 @@ export default function LoginPage() {
     } catch (err) {
       console.warn('Backend API offline, saved primary admin locally & cloud store:', err);
     } finally {
-      // 2. Save in Cloud Master Bin & LocalStorage
-      pushCloudAdminProfile(newOwnerAdmin).catch(console.warn);
+      // 2. Save in Cloud Master Bin & LocalStorage (AWAITED to guarantee cloud persist before navigation)
+      await pushCloudAdminProfile(newOwnerAdmin).catch(console.warn);
       localStorage.setItem('admin_profiles', JSON.stringify([newOwnerAdmin]));
       
       const adminSessionUser = {
         username: newOwnerAdmin.username,
+        user_name: newOwnerAdmin.user_name,
         is_staff: true,
         is_superuser: true,
         role: 'ADMIN'
       };
-      localStorage.setItem('access_token', 'static_admin_token');
-      localStorage.setItem('user', JSON.stringify(adminSessionUser));
+      sessionStorage.setItem('access_token', 'static_admin_token');
+      sessionStorage.setItem('admin_logged_in', 'true');
+      sessionStorage.setItem('user', JSON.stringify(adminSessionUser));
 
       setIsFirstTimeSetup(false);
       alert(`🎉 Welcome ${newOwnerAdmin.user_name}! Primary Admin Account created & system is now LOCKED to your credentials!`);

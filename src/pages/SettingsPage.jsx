@@ -399,12 +399,13 @@ export default function SettingsPage() {
       username: adminForm.username || adminForm.user_name,
       phone: adminForm.phone || '+91 81403 71414',
       email: adminForm.email || 'contact@patelautomobiles.com',
+      password: adminForm.new_password || adminForm.password || '',
       date_of_birth: adminForm.date_of_birth || '',
       profile_photo: adminForm.profile_photo || '/logo.png'
     };
 
     // Save locally to local_storage and cloud store
-    pushCloudAdminProfile(newOrUpdatedAdmin).catch(console.warn);
+    await pushCloudAdminProfile(newOrUpdatedAdmin).catch(console.warn);
     const existingLocal = JSON.parse(localStorage.getItem('admin_profiles') || JSON.stringify(DEFAULT_ADMIN_PROFILES));
     let updatedLocal = [];
     if (editingAdmin) {

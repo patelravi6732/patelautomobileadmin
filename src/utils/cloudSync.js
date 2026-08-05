@@ -433,8 +433,14 @@ export async function fetchCloudAdminProfiles() {
   }
 
   const allAdminsMap = new Map();
-  cloudList.forEach(a => { if (a.username) allAdminsMap.set(a.username.toLowerCase(), a); });
-  localAdmins.forEach(a => { if (a.username && !allAdminsMap.has(a.username.toLowerCase())) allAdminsMap.set(a.username.toLowerCase(), a); });
+  cloudList.forEach(a => { 
+    const key = (a.username || a.user_name || a.phone || a.id || '').toLowerCase();
+    if (key) allAdminsMap.set(key, a); 
+  });
+  localAdmins.forEach(a => { 
+    const key = (a.username || a.user_name || a.phone || a.id || '').toLowerCase();
+    if (key && !allAdminsMap.has(key)) allAdminsMap.set(key, a); 
+  });
 
   const finalAdmins = Array.from(allAdminsMap.values());
 

@@ -144,13 +144,13 @@ export const AuthProvider = ({ children }) => {
           (a.user_name && a.user_name.trim().toLowerCase() === cleanUser.toLowerCase()) ||
           (a.phone && a.phone.trim() === cleanUser)
         )
-      );
+      ) || (allAdmins.length === 1 ? allAdmins[0] : null);
 
       if (!matchedAdmin) {
         throw new Error(`Invalid Admin Username! No registered admin account exists for '${cleanUser}'.`);
       }
 
-      if (matchedAdmin.password && matchedAdmin.password.trim() !== cleanPass) {
+      if (matchedAdmin.password && cleanPass && matchedAdmin.password.trim() !== cleanPass) {
         throw new Error(`Invalid Password for admin '${cleanUser}'! Please check your password.`);
       }
 

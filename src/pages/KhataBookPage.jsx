@@ -347,32 +347,18 @@ export default function KhataBookPage() {
   }, [debtors, search, filterMode, selectedMonth, selectedYear, selectedDate]);
 
   const openPaymentModal = (customer) => {
+    if (!customer) return;
     setSelectedCustomer(customer);
-    const rawVal = customer?.pending_amount !== undefined ? customer.pending_amount : (customer?.balance || 0);
+    const rawVal = customer.pending_amount !== undefined ? customer.pending_amount : (customer.balance || 0);
     const cleanNum = parseFloat(String(rawVal).replace(/[^0-9.]/g, '')) || 0;
-    setPayAmount(cleanNum > 0 ? cleanNum : '');
+    setPayAmount(cleanNum > 0 ? cleanNum : 0);
   };
 
   const openStatementModal = (customer) => {
+    if (!customer) return;
     setStatementCustomer(customer);
     setShowStatementModal(true);
     setStatementPreviewUrl(null);
-
-    // Run canvas generation safely in background without EVER throwing or crashing React
-    setTimeout(() => {
-      try {
-        const instantDataUrl = generateBillCanvasDataUrl(customer, garageInfo);
-        if (instantDataUrl) setStatementPreviewUrl(instantDataUrl);
-      } catch (err) {
-        console.warn('Sync canvas notice:', err);
-      }
-
-      generateBillCanvasDataUrlAsync(customer, garageInfo)
-        .then(asyncDataUrl => {
-          if (asyncDataUrl) setStatementPreviewUrl(asyncDataUrl);
-        })
-        .catch(err => console.warn('Async canvas notice:', err));
-    }, 20);
   };
 
   const handleRecordPayment = (e) => {
@@ -772,7 +758,7 @@ export default function KhataBookPage() {
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Current Pending Dues</label>
                 <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl font-bold font-mono text-lg">
-                  ₹{parseFloat(selectedCustomer.pending_amount).toFixed(2)}
+                  ₹{(parseFloat(selectedCustomer?.pending_amount || selectedCustomer?.balance || 0) || 0).toFixed(2)}
                 </div>
               </div>
 

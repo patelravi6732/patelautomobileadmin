@@ -354,21 +354,27 @@ export default function KhataBookPage() {
   const openStatementModal = async (customer) => {
     setStatementCustomer(customer);
     setShowStatementModal(true);
-    setStatementPreviewUrl(null);
+    // Instant 0ms synchronous HD Canvas PNG generation so image is ALWAYS visible immediately
+    const instantDataUrl = generateBillCanvasDataUrl(customer, garageInfo);
+    setStatementPreviewUrl(instantDataUrl);
+
     try {
-      const dataUrl = await generateBillCanvasDataUrlAsync(customer, garageInfo);
-      setStatementPreviewUrl(dataUrl);
+      const asyncDataUrl = await generateBillCanvasDataUrlAsync(customer, garageInfo);
+      if (asyncDataUrl) setStatementPreviewUrl(asyncDataUrl);
     } catch (err) {
-      setStatementPreviewUrl(generateBillCanvasDataUrl(customer, garageInfo));
+      console.warn('Async canvas update notice:', err);
     }
   };
 
   const handleRecordPayment = async (e) => {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
     if (!selectedCustomer) return;
 
     const paymentNum = parseFloat(payAmount) || 0;
-    if (paymentNum <= 0) return;
+    if (paymentNum <= 0) {
+      alert('⚠️ Please enter a valid payment amount greater than ₹0!');
+      return;
+    }
 
     const targetId = String(selectedCustomer.invoice_id || selectedCustomer.id || '');
     const rawId = targetId.replace(/^inv_/, '').replace(/^khata_/, '');

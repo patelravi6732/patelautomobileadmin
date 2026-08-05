@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import API from '../services/api';
-import { fetchCloudGarageInfo, pushCloudGarageInfo } from '../utils/cloudSync';
+import { fetchCloudGarageInfo, pushCloudGarageInfo, fetchCloudAdminProfiles } from '../utils/cloudSync';
 
 export const DEFAULT_GARAGE_INFO = {
   garage_name: 'Patel Automobiles',

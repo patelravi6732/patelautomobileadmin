@@ -207,6 +207,8 @@ export default function WorkshopPage() {
 
     const newPartEntry = {
       id: Date.now(),
+      inventory_id: partObj.id,
+      part_id: partObj.id,
       part_name: partObj.part_name || partObj.name,
       price: unitPrice,
       unit_price: unitPrice,
@@ -215,6 +217,24 @@ export default function WorkshopPage() {
       status: 'STAGED',
       is_confirmed: false
     };
+
+    // Auto-Deduct Inventory Stock immediately
+    const currentStock = parseInt(partObj.current_stock || partObj.stock_quantity || partObj.quantity || 0, 10);
+    const newStock = Math.max(0, currentStock - qty);
+    const updatedInventoryItem = {
+      ...partObj,
+      current_stock: newStock,
+      stock_quantity: newStock,
+      quantity: newStock
+    };
+
+    setInventory(prev => prev.map(inv => (String(inv.id) === String(partObj.id) ? updatedInventoryItem : inv)));
+
+    const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+    const updatedInvLocal = localInv.map(inv => (String(inv.id) === String(partObj.id) ? updatedInventoryItem : inv));
+    localStorage.setItem('inventory_items', JSON.stringify(updatedInvLocal));
+    localStorage.setItem('spare_parts', JSON.stringify(updatedInvLocal));
+    pushCloudInventoryItem(updatedInventoryItem).catch(console.warn);
 
     const existingParts = Array.isArray(selectedJob.parts) ? selectedJob.parts : [];
     const updatedParts = [...existingParts, newPartEntry];
@@ -248,7 +268,7 @@ export default function WorkshopPage() {
     } catch (err) {
       console.warn('Backend API offline, added staged part locally & cloud store:', err);
     } finally {
-      alert(`Part '${partObj.part_name || partObj.name}' added to Job Card!`);
+      alert(`Part '${partObj.part_name || partObj.name}' added to Job Card & Stock Deducted by ${qty}!`);
     }
   };
 

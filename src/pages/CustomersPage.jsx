@@ -29,19 +29,31 @@ export default function CustomersPage() {
 
     const allJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
     const cloudJobs = await fetchCloudJobs().catch(() => []);
-    const finishedJobs = [...allJobs, ...cloudJobs].filter(j => j && (j.status === 'FINISHED' || j.status === 'COMPLETED'));
+    const jobsMap = new Map();
+    [...cloudJobs, ...allJobs].forEach(j => {
+      if (j && j.id && (j.status === 'FINISHED' || j.status === 'COMPLETED')) {
+        jobsMap.set(String(j.id), j);
+      }
+    });
+    const finishedJobs = Array.from(jobsMap.values());
 
     const localBookings = JSON.parse(localStorage.getItem('local_bookings') || '[]');
     const cloudBookings = await fetchCloudBookings().catch(() => []);
-    const combinedBookings = [...localBookings, ...cloudBookings];
+    const bkMap = new Map();
+    [...cloudBookings, ...localBookings].forEach(b => { if (b && b.id) bkMap.set(String(b.id), b); });
+    const combinedBookings = Array.from(bkMap.values());
 
     const localKhata = JSON.parse(localStorage.getItem('khata_entries') || '[]');
     const cloudKhata = await fetchCloudKhataEntries().catch(() => []);
-    const combinedKhata = [...localKhata, ...cloudKhata];
+    const khataMap = new Map();
+    [...cloudKhata, ...localKhata].forEach(k => { if (k && k.id) khataMap.set(String(k.id), k); });
+    const combinedKhata = Array.from(khataMap.values());
 
     const localInvoices = JSON.parse(localStorage.getItem('local_invoices') || '[]');
     const cloudInvoices = await fetchCloudInvoices().catch(() => []);
-    const combinedInvoices = [...localInvoices, ...cloudInvoices];
+    const invMap = new Map();
+    [...cloudInvoices, ...localInvoices].forEach(i => { if (i && i.id) invMap.set(String(i.id), i); });
+    const combinedInvoices = Array.from(invMap.values());
 
     const savedCustomers = JSON.parse(localStorage.getItem('local_customers') || '[]');
 

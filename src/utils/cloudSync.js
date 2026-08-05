@@ -104,6 +104,15 @@ async function saveMasterStore(storeData) {
     if (storeData.garageInfo) {
       localStorage.setItem('garage_info', JSON.stringify(storeData.garageInfo));
     }
+    if (Array.isArray(storeData.jobs)) localStorage.setItem('workshop_jobs', JSON.stringify(storeData.jobs));
+    if (Array.isArray(storeData.invoices)) localStorage.setItem('local_invoices', JSON.stringify(storeData.invoices));
+    if (Array.isArray(storeData.khataEntries)) localStorage.setItem('khata_entries', JSON.stringify(storeData.khataEntries));
+    if (Array.isArray(storeData.customers)) localStorage.setItem('local_customers', JSON.stringify(storeData.customers));
+    if (Array.isArray(storeData.inventory)) {
+      localStorage.setItem('inventory_items', JSON.stringify(storeData.inventory));
+      localStorage.setItem('spare_parts', JSON.stringify(storeData.inventory));
+    }
+    if (Array.isArray(storeData.bookings)) localStorage.setItem('local_bookings', JSON.stringify(storeData.bookings));
   } catch (e) {
     console.warn('Error writing local master_cloud_cache:', e);
   }

@@ -378,7 +378,7 @@ export default function WorkshopPage() {
     };
 
     // 1. Update cloud jobs & local workshop memory
-    pushCloudJob(finishedJobData).catch(console.warn);
+    await pushCloudJob(finishedJobData).catch(console.warn);
     const currentJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
     const updatedLocal = currentJobs.map(j => (String(j.id) === String(targetId) ? finishedJobData : j));
     if (!updatedLocal.some(j => String(j.id) === String(targetId))) {
@@ -389,7 +389,7 @@ export default function WorkshopPage() {
 
     // 2. Mark matching booking as COMPLETED
     if (selectedJob.vehicle_number) {
-      updateCloudBookingStatus(null, 'COMPLETED', selectedJob.vehicle_number, selectedJob.preferred_date).catch(console.warn);
+      await updateCloudBookingStatus(null, 'COMPLETED', selectedJob.vehicle_number, selectedJob.preferred_date).catch(console.warn);
       const localBookings = JSON.parse(localStorage.getItem('local_bookings') || '[]');
       const updatedBookings = localBookings.map(b => (b.vehicle_number === selectedJob.vehicle_number ? { ...b, status: 'COMPLETED' } : b));
       localStorage.setItem('local_bookings', JSON.stringify(updatedBookings));
@@ -465,7 +465,7 @@ export default function WorkshopPage() {
       parts: selectedJob.parts || []
     };
 
-    pushCloudInvoice(newInvoiceObj).catch(console.warn);
+    await pushCloudInvoice(newInvoiceObj).catch(console.warn);
     let updatedInvoicesList = localInvoices;
     if (existingInvIndex >= 0) {
       updatedInvoicesList[existingInvIndex] = newInvoiceObj;
@@ -496,7 +496,7 @@ export default function WorkshopPage() {
         description: `Unpaid balance for Visit #${String(targetId).slice(-4)} (Total: ₹${grandTotal.toFixed(2)}, Paid: ₹${paidAmountNum.toFixed(2)})`,
         date: completionTime
       };
-      pushCloudKhataEntry(khataDebitEntry).catch(console.warn);
+      await pushCloudKhataEntry(khataDebitEntry).catch(console.warn);
       let updatedKhataList = localKhata;
       if (existingKhataIndex >= 0) {
         updatedKhataList[existingKhataIndex] = khataDebitEntry;
@@ -509,7 +509,7 @@ export default function WorkshopPage() {
       localStorage.setItem('khata_entries', JSON.stringify(updatedKhataList));
     }
 
-    // 6. Save Customer Record to local_customers
+    // 6. Save Customer Record to local_customers & cloud
     try {
       const newCustomerObj = {
         id: `cust_${selectedJob.vehicle_number || Date.now()}`,

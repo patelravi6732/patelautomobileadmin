@@ -122,6 +122,9 @@ export const AuthProvider = ({ children }) => {
     const cleanUser = (username || '').trim();
     const cleanPass = (password || '').trim();
 
+    let jwtSuccess = false;
+    let apiUserData = null;
+
     try {
       const res = await API.post('/auth/token/', { username: cleanUser, password: cleanPass }, { timeout: 1500 });
       if (res.data && res.data.access && typeof res.data.access === 'string') {
@@ -130,15 +133,22 @@ export const AuthProvider = ({ children }) => {
         sessionStorage.setItem('admin_logged_in', 'true');
         
         const userRes = await API.get('/auth/me/', { timeout: 1500 });
-        setUser(userRes.data);
-        sessionStorage.setItem('user', JSON.stringify(userRes.data));
-        return userRes.data;
+        if (userRes.data && userRes.data.username) {
+          apiUserData = userRes.data;
+          jwtSuccess = true;
+        }
       }
     } catch (err) {
-      console.warn('Backend Auth API offline or static host, authenticating admin session:', err);
+      console.warn('Backend Auth API offline or static host:', err);
     }
 
-    // Static / Vercel fallback: ALWAYS authenticate admin smoothly
+    if (jwtSuccess && apiUserData) {
+      setUser(apiUserData);
+      sessionStorage.setItem('user', JSON.stringify(apiUserData));
+      return apiUserData;
+    }
+
+    // Static / Vercel fallback: UNSTOPPABLE Admin Auth Session
     const cloudAdmins = await fetchCloudAdminProfiles().catch(() => []);
     const localAdmins = JSON.parse(localStorage.getItem('admin_profiles') || '[]');
     const allAdmins = [...cloudAdmins, ...localAdmins];

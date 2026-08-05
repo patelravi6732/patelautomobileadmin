@@ -43,7 +43,7 @@ export default function MessagesPage() {
 
     const localMsgs = JSON.parse(localStorage.getItem('local_messages') || '[]');
     const allMap = new Map();
-    [...backendMsgs, ...localMsgs, ...cloudMsgs].forEach(m => {
+    [...cloudMsgs, ...backendMsgs, ...localMsgs].forEach(m => {
       if (m && typeof m === 'object') {
         const uniqueKey = String(m.id || `${m.phone || m.mobile_number}_${m.created_at || m.date}`);
         if (!deletedIds.includes(uniqueKey) && !deletedIds.includes(String(m.id))) {

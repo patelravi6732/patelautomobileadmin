@@ -44,6 +44,12 @@ export default function ContactPage() {
     const existing = JSON.parse(localStorage.getItem('local_messages') || '[]');
     localStorage.setItem('local_messages', JSON.stringify([newMsgObj, ...existing]));
 
+    try {
+      await API.post('/public/contact/', formData);
+    } catch (apiErr) {
+      console.warn('Backend API offline for contact submission:', apiErr);
+    }
+
     const ownerPhone = '918140371414';
     const waText = encodeURIComponent(
       `💬 *NEW WEBSITE CONTACT INQUIRY (Patel Automobiles)*\n\n` +

@@ -76,7 +76,7 @@ export default function BookingsPage() {
     } catch (e) {}
 
     const allBookingsMap = new Map();
-    [...localBookings, ...backendBookings, ...cloudBookings].forEach(b => {
+    [...cloudBookings, ...backendBookings, ...localBookings].forEach(b => {
       if (b && typeof b === 'object' && (b.id || b.vehicle_number)) {
         const uniqueKey = String(b.id || `${b.vehicle_number}_${b.preferred_date}`);
         if (!deletedIds.includes(uniqueKey) && !deletedIds.includes(String(b.id))) {
@@ -84,13 +84,7 @@ export default function BookingsPage() {
             allBookingsMap.set(uniqueKey, b);
           } else {
             const existing = allBookingsMap.get(uniqueKey);
-            if (existing.status === 'PENDING' && b.status && b.status !== 'PENDING') {
-              allBookingsMap.set(uniqueKey, { ...existing, ...b });
-            } else if (b.status === 'PENDING' && existing.status && existing.status !== 'PENDING') {
-              // Retain existing non-pending status
-            } else {
-              allBookingsMap.set(uniqueKey, { ...existing, ...b });
-            }
+            allBookingsMap.set(uniqueKey, { ...existing, ...b });
           }
         }
       }

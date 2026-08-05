@@ -36,8 +36,8 @@ async function fetchMasterStore() {
   let freshStore = null;
 
   try {
-    const res = await axios.get(PRIMARY_BIN_URL, {
-      headers: { 'Accept': 'application/json' },
+    const res = await axios.get(PRIMARY_BIN_URL + '?t=' + Date.now(), {
+      headers: { 'Accept': 'application/json', 'Cache-Control': 'no-cache' },
       timeout: 3000
     });
     if (res.data) {

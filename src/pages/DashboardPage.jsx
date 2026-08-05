@@ -5,6 +5,7 @@ import {
   ArrowUpRight, Package, Calendar, Activity, ChevronRight 
 } from 'lucide-react';
 import API from '../services/api';
+import { fetchCloudAdminProfiles } from '../utils/cloudSync';
 
 export default function DashboardPage() {
   const [stats, setStats] = useState(null);
@@ -13,16 +14,28 @@ export default function DashboardPage() {
   const fetchStats = async () => {
     setLoading(true);
     let backendStats = null;
+
+    // First fetch fresh master store so any new device gets latest jobs, invoices & inventory
+    let cloudStore = null;
+    try {
+      const axios = (await import('axios')).default;
+      const res = await axios.get('https://jsonblob.com/api/jsonBlob/019fd0d0-8dfa-755c-9195-7f74e5af7d09?t=' + Date.now(), {
+        headers: { 'Accept': 'application/json', 'Cache-Control': 'no-cache' },
+        timeout: 3000
+      });
+      if (res.data) cloudStore = res.data;
+    } catch (e) {}
+
     try {
       const res = await API.get('/dashboard/stats/', { timeout: 1500 });
       backendStats = res.data;
     } catch (err) {
-      console.warn('Backend API offline for dashboard stats, computing from local memory & cloud store:', err);
+      console.warn('Backend API offline for dashboard stats, computing from cloud & local memory:', err);
     }
 
-    const jobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
-    const invoices = JSON.parse(localStorage.getItem('local_invoices') || '[]');
-    const inventory = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+    const jobs = Array.isArray(cloudStore?.jobs) ? cloudStore.jobs : JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
+    const invoices = Array.isArray(cloudStore?.invoices) ? cloudStore.invoices : JSON.parse(localStorage.getItem('local_invoices') || '[]');
+    const inventory = Array.isArray(cloudStore?.inventory) ? cloudStore.inventory : JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
 
     const todayStr = new Date().toISOString().split('T')[0];
 

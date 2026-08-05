@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { BarChart3, IndianRupee, Package, Users, TrendingUp, AlertCircle, Wrench } from 'lucide-react';
 import API from '../services/api';
+import { getCleanDeletedIds, fetchCloudInvoices, fetchCloudInventory } from '../utils/cloudSync';
 
 export default function ReportsPage() {
   const [reports, setReports] = useState(null);
@@ -16,8 +17,28 @@ export default function ReportsPage() {
       console.warn('Backend API offline for reports, computing from local memory & cloud store:', err);
     }
 
-    const invoices = JSON.parse(localStorage.getItem('local_invoices') || '[]');
-    const inventory = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+    const deletedIds = await getCleanDeletedIds().catch(() => []);
+    const isDeleted = (id) => id && deletedIds.includes(String(id));
+
+    const localInvoices = JSON.parse(localStorage.getItem('local_invoices') || '[]');
+    const cloudInvoices = await fetchCloudInvoices().catch(() => []);
+    const invMap = new Map();
+    [...cloudInvoices, ...localInvoices].forEach(inv => {
+      if (inv && inv.id && !isDeleted(inv.id) && !isDeleted(inv.invoice_number)) {
+        invMap.set(String(inv.id), inv);
+      }
+    });
+    const invoices = Array.from(invMap.values());
+
+    const localInventory = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+    const cloudInventory = await fetchCloudInventory().catch(() => []);
+    const invItemMap = new Map();
+    [...cloudInventory, ...localInventory].forEach(item => {
+      if (item && item.id && !isDeleted(item.id) && !isDeleted(item.part_name)) {
+        invItemMap.set(String(item.id), item);
+      }
+    });
+    const inventory = Array.from(invItemMap.values());
 
     const todayStr = new Date().toISOString().split('T')[0];
     const currentMonth = new Date().getMonth();
@@ -38,11 +59,15 @@ export default function ReportsPage() {
       return acc + (price * stock);
     }, 0);
 
+    const totalPendingDues = invoices.reduce((acc, inv) => acc + (parseFloat(inv.pending_amount) || 0), 0);
+
     setReports({
       daily_revenue: backendReports?.daily_revenue ?? dailyRevenue,
       monthly_revenue: backendReports?.monthly_revenue ?? monthlyRevenue,
       total_invoices: backendReports?.total_invoices ?? invoices.length,
-      inventory_valuation: backendReports?.inventory_valuation ?? inventoryValue
+      inventory_valuation: backendReports?.inventory_valuation ?? inventoryValue,
+      total_inventory_value: backendReports?.inventory_valuation ?? inventoryValue,
+      total_pending_payments: totalPendingDues
     });
     setLoading(false);
   };

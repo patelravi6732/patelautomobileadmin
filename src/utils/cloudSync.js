@@ -653,6 +653,25 @@ export async function fetchCloudDeletedIds() {
   return Array.from(new Set(filtered));
 }
 
+export async function getCleanDeletedIds() {
+  const cloudDeleted = await fetchCloudDeletedIds().catch(() => []);
+  const localDeleted = JSON.parse(localStorage.getItem('deleted_item_ids') || '[]');
+  const recycleItems = JSON.parse(localStorage.getItem('recycle_bin_items') || '[]');
+  
+  const allSet = new Set([...cloudDeleted, ...localDeleted]);
+  recycleItems.forEach(item => {
+    if (item && typeof item === 'object') {
+      if (item.id) allSet.add(String(item.id));
+      if (item.payload && typeof item.payload === 'object') {
+        if (item.payload.id) allSet.add(String(item.payload.id));
+        if (item.payload.invoice_number) allSet.add(String(item.payload.invoice_number));
+        if (item.payload.job_id) allSet.add(String(item.payload.job_id));
+      }
+    }
+  });
+  return Array.from(allSet);
+}
+
 export async function markIdAsDeleted(targetId) {
   if (!targetId) return;
   const strId = String(targetId);

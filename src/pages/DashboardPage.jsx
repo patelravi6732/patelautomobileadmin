@@ -5,7 +5,7 @@ import {
   ArrowUpRight, Package, Calendar, Activity, ChevronRight 
 } from 'lucide-react';
 import API from '../services/api';
-import { fetchCloudAdminProfiles } from '../utils/cloudSync';
+import { fetchCloudAdminProfiles, getCleanDeletedIds } from '../utils/cloudSync';
 
 export default function DashboardPage() {
   const [stats, setStats] = useState(null);
@@ -26,6 +26,9 @@ export default function DashboardPage() {
       if (res.data) cloudStore = res.data;
     } catch (e) {}
 
+    const deletedIds = await getCleanDeletedIds().catch(() => []);
+    const isDeleted = (id) => id && deletedIds.includes(String(id));
+
     try {
       const res = await API.get('/dashboard/stats/', { timeout: 1500 });
       backendStats = res.data;
@@ -33,15 +36,19 @@ export default function DashboardPage() {
       console.warn('Backend API offline for dashboard stats, computing from cloud & local memory:', err);
     }
 
-    const jobs = Array.isArray(cloudStore?.jobs) ? cloudStore.jobs : JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
-    const invoices = Array.isArray(cloudStore?.invoices) ? cloudStore.invoices : JSON.parse(localStorage.getItem('local_invoices') || '[]');
-    const inventory = Array.isArray(cloudStore?.inventory) ? cloudStore.inventory : JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+    const rawJobs = Array.isArray(cloudStore?.jobs) ? cloudStore.jobs : JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
+    const rawInvoices = Array.isArray(cloudStore?.invoices) ? cloudStore.invoices : JSON.parse(localStorage.getItem('local_invoices') || '[]');
+    const rawInventory = Array.isArray(cloudStore?.inventory) ? cloudStore.inventory : JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+
+    const jobs = rawJobs.filter(j => j && !isDeleted(j.id));
+    const invoices = rawInvoices.filter(inv => inv && !isDeleted(inv.id) && !isDeleted(inv.invoice_number));
+    const inventory = rawInventory.filter(i => i && !isDeleted(i.id) && !isDeleted(i.part_name));
 
     const todayStr = new Date().toISOString().split('T')[0];
 
     const todayServices = jobs.filter(j => j && (j.created_at || '').startsWith(todayStr)).length;
     const completedServices = jobs.filter(j => j && (j.status === 'FINISHED' || j.status === 'COMPLETED')).length;
-    const pendingServices = jobs.filter(j => j && j.status !== 'FINISHED' && j.status !== 'COMPLETED').length;
+    const pendingServices = jobs.filter(j => j && j.status !== 'FINISHED' && j.status !== 'COMPLETED' && j.status !== 'CANCELLED').length;
 
     const pendingPayments = invoices.reduce((acc, inv) => acc + (parseFloat(inv.pending_amount) || 0), 0);
     

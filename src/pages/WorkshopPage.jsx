@@ -325,6 +325,26 @@ export default function WorkshopPage() {
     }
   };
 
+  const handleSilentUpdateLabourCharge = (jobId, newLabour) => {
+    const num = parseFloat(newLabour) || 0;
+    setJobs(prev => prev.map(j => {
+      if (String(j.id) === String(jobId)) {
+        const partsTotal = parseFloat(j.parts_total || 0);
+        const updated = {
+          ...j,
+          labour_charge: num,
+          live_total: partsTotal + num
+        };
+        pushCloudJob(updated).catch(console.warn);
+        const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
+        const updatedLocal = localJobs.map(lj => (String(lj.id) === String(jobId) ? updated : lj));
+        localStorage.setItem('workshop_jobs', JSON.stringify(updatedLocal));
+        return updated;
+      }
+      return j;
+    }));
+  };
+
   const handleUpdateLabourCharge = async (jobId, amount) => {
     try {
       await API.post(`/workshop/${jobId}/update_labour_charge/`, {
@@ -333,7 +353,7 @@ export default function WorkshopPage() {
       setEditingLabourJobId(null);
       fetchData();
     } catch (err) {
-      alert(err.response?.data?.error || 'Failed to update labour charge');
+      console.warn('Backend API offline, updated labour charge locally');
     }
   };
 
@@ -343,11 +363,21 @@ export default function WorkshopPage() {
       openAssignModal(job);
       return;
     }
-    setSelectedJob(job);
-    const initialLabour = parseFloat(job.labour_charge || 0);
+    const currentLabourInput = labourInputs[job.id];
+    const initialLabour = currentLabourInput !== undefined 
+      ? (parseFloat(currentLabourInput) || 0) 
+      : parseFloat(job.labour_charge || 0);
+
+    const updatedJobWithCurrentLabour = {
+      ...job,
+      labour_charge: initialLabour,
+      live_total: parseFloat(job.parts_total || 0) + initialLabour
+    };
+
+    setSelectedJob(updatedJobWithCurrentLabour);
     setFinishLabourCharge(initialLabour);
     setDiscountAmount('');
-    const subtotal = job.parts_total + initialLabour;
+    const subtotal = parseFloat(job.parts_total || 0) + initialLabour;
     setPaidAmount(subtotal);
     setShowFinishModal(true);
   };

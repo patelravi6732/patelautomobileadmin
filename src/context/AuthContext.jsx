@@ -75,18 +75,22 @@ export const AuthProvider = ({ children }) => {
     } catch (e) {}
     const localAdmins = JSON.parse(localStorage.getItem('admin_profiles') || '[]');
 
-    const saved = localStorage.getItem('user');
+    const savedUser = localStorage.getItem('user');
+    const isLoggedIn = localStorage.getItem('admin_logged_in') === 'true';
 
-    if (saved) {
+    if (savedUser && isLoggedIn) {
       try {
-        const parsed = JSON.parse(saved);
+        const parsed = JSON.parse(savedUser);
         setUser(parsed);
       } catch (e) {
         setUser(null);
         localStorage.removeItem('user');
+        localStorage.removeItem('admin_logged_in');
       }
     } else {
       setUser(null);
+      localStorage.removeItem('user');
+      localStorage.removeItem('admin_logged_in');
     }
     setLoading(false);
   };
@@ -127,6 +131,7 @@ export const AuthProvider = ({ children }) => {
       const res = await API.post('/auth/token/', { username: cleanUser, password: cleanPass });
       localStorage.setItem('access_token', res.data.access);
       localStorage.setItem('refresh_token', res.data.refresh);
+      localStorage.setItem('admin_logged_in', 'true');
       
       const userRes = await API.get('/auth/me/');
       setUser(userRes.data);
@@ -141,6 +146,7 @@ export const AuthProvider = ({ children }) => {
         role: 'ADMIN'
       };
       localStorage.setItem('access_token', 'static_admin_token');
+      localStorage.setItem('admin_logged_in', 'true');
       localStorage.setItem('user', JSON.stringify(fallbackUser));
       setUser(fallbackUser);
       return fallbackUser;
@@ -151,6 +157,7 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');
     localStorage.removeItem('user');
+    localStorage.removeItem('admin_logged_in');
     setUser(null);
   };
 

@@ -124,6 +124,7 @@ export default function KhataBookPage() {
       const allJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]').filter(j => j && !deletedIds.includes(String(j.id)));
       const cloudJobs = (await fetchCloudJobs().catch(() => [])).filter(j => j && !deletedIds.includes(String(j.id)));
       const combinedJobs = [...allJobs, ...cloudJobs];
+      const finishedJobs = combinedJobs.filter(j => j && (j.status === 'FINISHED' || j.status === 'COMPLETED'));
 
       const legacyDebtors = backendData?.debtors || JSON.parse(localStorage.getItem('khata_debtors') || '[]');
 

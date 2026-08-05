@@ -470,8 +470,10 @@ export default function KhataBookPage() {
       console.warn('Backend API offline, payment recorded locally & cloud store:', err);
     }
 
+    alert(`🎉 Payment of ₹${paymentNum} Recorded Successfully!`);
     showToast('🎉 Payment Recorded!', `₹${paymentNum} payment successfully credited!`);
     setSelectedCustomer(null);
+    setPayAmount(0);
     fetchKhata();
   };
 
@@ -784,7 +786,8 @@ export default function KhataBookPage() {
                   Cancel
                 </button>
                 <button
-                  type="submit"
+                  type="button"
+                  onClick={(e) => handleRecordPayment(e)}
                   className="flex-1 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5"
                 >
                   <CheckCircle2 className="w-4 h-4" /> Save Payment
@@ -848,29 +851,133 @@ export default function KhataBookPage() {
                   className="max-w-full h-auto rounded-2xl shadow-2xl border border-amber-500/30 object-contain"
                 />
               ) : statementCustomer ? (
-                <div className="w-full bg-white text-slate-900 p-6 rounded-2xl space-y-4 shadow-xl text-xs font-sans">
-                  <div className="flex justify-between items-center border-b pb-3 border-amber-400">
-                    <div>
-                      <h4 className="text-base font-extrabold text-slate-900">{garageInfo?.garage_name || 'Patel Automobiles'}</h4>
-                      <p className="text-[11px] text-slate-600 font-medium">Dandi, Valsad | 📞 {garageInfo?.phone || '+91 81403 71414'}</p>
+                <div className="w-full bg-white text-slate-900 p-6 sm:p-8 rounded-2xl space-y-5 shadow-xl border border-slate-200 text-xs font-sans">
+                  {/* HEADER */}
+                  <div className="flex justify-between items-start border-b-2 border-amber-500 pb-4">
+                    <div className="flex items-center gap-3">
+                      <img
+                        src={garageInfo?.logo && garageInfo.logo !== '/logo.png' ? garageInfo.logo : LOGO_BASE64}
+                        alt="Logo"
+                        className="w-12 h-12 rounded-xl object-cover border-2 border-amber-400 shadow-md shrink-0"
+                      />
+                      <div>
+                        <h4 className="text-lg font-black text-slate-900 font-poppins">{garageInfo?.garage_name || 'Patel Automobiles'}</h4>
+                        <p className="text-[11px] text-slate-600 font-medium">{garageInfo?.address || 'Near Dandi Pond, Dandi, Valsad, Gujarat - 396385'}</p>
+                        <p className="text-[11px] font-bold text-slate-800 font-mono mt-0.5">📞 {garageInfo?.phone || '+91 81403 71414'}</p>
+                      </div>
                     </div>
-                    <span className="px-3 py-1 bg-rose-600 text-white font-extrabold rounded-full text-[10px] uppercase">
+                    <span className="px-3 py-1 bg-rose-600 text-white font-extrabold rounded-full text-[10px] uppercase tracking-wider shrink-0">
                       DUES PENDING
                     </span>
                   </div>
-                  <div className="grid grid-cols-2 gap-2 bg-slate-50 p-3 rounded-xl">
+
+                  {/* CUSTOMER & VEHICLE DETAILS */}
+                  <div className="grid grid-cols-2 gap-3 p-3.5 rounded-xl bg-amber-500/5 border border-amber-200">
                     <div>
-                      <span className="text-[10px] text-slate-500 font-bold uppercase block">Customer Name</span>
-                      <strong className="text-slate-900 text-sm">{statementCustomer.customer_name}</strong>
+                      <span className="text-[10px] font-bold text-amber-700 uppercase tracking-wider block">Customer Details</span>
+                      <strong className="text-slate-900 text-sm block">{statementCustomer.customer_name}</strong>
+                      <span className="text-slate-700 font-bold font-mono text-[11px]">📞 {statementCustomer.phone || statementCustomer.mobile_number || 'N/A'}</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-500 font-bold uppercase block">Vehicle Plate Number</span>
-                      <strong className="text-amber-700 text-sm font-mono">{statementCustomer.vehicle_number}</strong>
+                      <span className="text-[10px] font-bold text-amber-700 uppercase tracking-wider block">Vehicle Details</span>
+                      <strong className="text-amber-700 text-sm font-mono block">{statementCustomer.vehicle_number}</strong>
+                      <span className="text-slate-600 font-medium text-[11px]">{statementCustomer.bike_model || 'Two Wheeler'}</span>
                     </div>
                   </div>
-                  <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-center">
-                    <span className="text-[11px] text-rose-700 font-bold uppercase block">Total Outstanding Balance</span>
-                    <span className="text-2xl font-black text-rose-600 font-poppins">₹{parseFloat(statementCustomer.pending_amount || 0).toFixed(2)}</span>
+
+                  {/* PARTS & SERVICES TABLE */}
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-slate-900 text-amber-300 font-bold uppercase tracking-wider text-[10px]">
+                        <th className="p-2.5 rounded-l-lg">Description</th>
+                        <th className="p-2.5 text-center">Qty</th>
+                        <th className="p-2.5 text-right">Price</th>
+                        <th className="p-2.5 text-right rounded-r-lg">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {statementCustomer.parts && statementCustomer.parts.length > 0 ? (
+                        statementCustomer.parts.map((part, idx) => (
+                          <tr key={idx}>
+                            <td className="p-2.5 font-bold text-slate-800">{cleanPartName(part.part_name || part.name)}</td>
+                            <td className="p-2.5 text-center font-mono">{part.quantity || 1}</td>
+                            <td className="p-2.5 text-right font-mono">₹{parseFloat(part.unit_price || part.price || 0).toFixed(2)}</td>
+                            <td className="p-2.5 text-right font-mono font-bold">₹{parseFloat(part.subtotal || (part.price * (part.quantity || 1)) || 0).toFixed(2)}</td>
+                          </tr>
+                        ))
+                      ) : null}
+
+                      {parseFloat(statementCustomer.labour_charge || 0) > 0 && (
+                        <tr>
+                          <td className="p-2.5 font-bold text-slate-900">Labour Service Charge</td>
+                          <td className="p-2.5 text-center font-mono">1</td>
+                          <td className="p-2.5 text-right font-mono">₹{parseFloat(statementCustomer.labour_charge || 0).toFixed(2)}</td>
+                          <td className="p-2.5 text-right font-mono font-bold">₹{parseFloat(statementCustomer.labour_charge || 0).toFixed(2)}</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+
+                  {/* SUMMARY & UPI QR CODE */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center bg-slate-50 p-4 rounded-xl border border-slate-200">
+                    {parseFloat(statementCustomer.pending_amount || 0) > 0 && (() => {
+                      const pendingAmtStr = parseFloat(statementCustomer.pending_amount || 0).toFixed(2);
+                      const upiId = garageInfo?.upi_id || 'pritpatel9397@oksbi';
+                      const payeeName = garageInfo?.upi_payee_name || garageInfo?.garage_name || 'Patel Automobiles';
+                      const fixedUpiUri = `upi://pay?pa=${upiId}&pn=${encodeURIComponent(payeeName)}&am=${pendingAmtStr}&cu=INR&tn=${encodeURIComponent(`Invoice Payment #${statementCustomer.id || ''}`)}`;
+                      const dynamicQrImage = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(fixedUpiUri)}`;
+
+                      return (
+                        <div className="flex flex-col items-center justify-center p-3 bg-white rounded-xl border border-slate-300 shadow-sm text-center">
+                          <a
+                            href={fixedUpiUri}
+                            title={`Click to Pay ₹${pendingAmtStr} directly via GPay / UPI`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="block p-1 bg-white hover:scale-105 transition-transform"
+                          >
+                            <img
+                              src={dynamicQrImage}
+                              alt={`Fixed Price UPI QR Code ₹${pendingAmtStr}`}
+                              onError={(e) => { e.target.onerror = null; e.target.src = '/upi_qr.jpg'; }}
+                              className="w-40 h-40 object-contain mx-auto"
+                            />
+                          </a>
+                          <span className="text-[10px] font-black text-slate-900 mt-1 uppercase tracking-wide">
+                            Scan & Pay Dues: <strong className="text-rose-600">₹{pendingAmtStr}</strong>
+                          </span>
+                          <span className="text-[10px] font-mono text-emerald-700 font-extrabold">{upiId}</span>
+                        </div>
+                      );
+                    })()}
+
+                    <div className="space-y-2 text-xs font-bold">
+                      <div className="flex justify-between text-slate-700">
+                        <span>Total Billed:</span>
+                        <span className="font-mono text-slate-900">₹{parseFloat(statementCustomer.total_billed || 0).toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between text-emerald-700">
+                        <span>Paid Amount:</span>
+                        <span className="font-mono">₹{parseFloat(statementCustomer.total_paid || 0).toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between text-rose-700 pt-1 border-t border-slate-200 text-sm">
+                        <span>Balance Due:</span>
+                        <span className="font-mono font-black text-rose-600">₹{parseFloat(statementCustomer.pending_amount || 0).toFixed(2)}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* SAFETY FOOTER */}
+                  <div className="pt-3 border-t border-dashed border-amber-300 text-center bg-amber-500/10 rounded-xl p-3 space-y-1">
+                    <p className="text-[11px] font-black text-slate-900 font-poppins">
+                      {garageInfo?.safety_message || 'Thank you for choosing us! Wish you a safe & smooth ride. 🛵⛑️'}
+                    </p>
+                    <p className="text-[11px] font-bold text-slate-700 font-mono">
+                      📞 Contact: {garageInfo?.phone || '+91 81403 71414'}
+                    </p>
+                    <p className="text-[11px] font-black text-slate-900 font-poppins">
+                      — {garageInfo?.garage_name || 'Patel Automobiles'}
+                    </p>
                   </div>
                 </div>
               ) : (

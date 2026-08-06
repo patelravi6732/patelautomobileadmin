@@ -273,24 +273,7 @@ export default function WorkshopPage() {
       is_confirmed: false
     };
 
-    // Auto-Deduct Inventory Stock immediately
-    const currentStock = parseInt(partObj.current_stock || partObj.stock_quantity || partObj.quantity || 0, 10);
-    const newStock = Math.max(0, currentStock - qty);
-    const updatedInventoryItem = {
-      ...partObj,
-      current_stock: newStock,
-      stock_quantity: newStock,
-      quantity: newStock
-    };
-
-    setInventory(prev => prev.map(inv => (String(inv.id) === String(partObj.id) ? updatedInventoryItem : inv)));
-
-    const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
-    const updatedInvLocal = localInv.map(inv => (String(inv.id) === String(partObj.id) ? updatedInventoryItem : inv));
-    localStorage.setItem('inventory_items', JSON.stringify(updatedInvLocal));
-    localStorage.setItem('spare_parts', JSON.stringify(updatedInvLocal));
-    pushCloudInventoryItem(updatedInventoryItem).catch(console.warn);
-
+    // Keep Inventory stock intact until user clicks "Confirm Parts"
     const existingParts = Array.isArray(selectedJob.parts) ? selectedJob.parts : [];
     const updatedParts = [...existingParts, newPartEntry];
     const newPartsTotal = updatedParts.reduce((acc, p) => acc + parseFloat(p.staged_total || (parseFloat(p.price || p.unit_price || 0) * parseInt(p.quantity || 1, 10))), 0);
@@ -323,7 +306,7 @@ export default function WorkshopPage() {
     } catch (err) {
       console.warn('Backend API offline, added staged part locally & cloud store:', err);
     } finally {
-      alert(`Part '${partObj.part_name || partObj.name}' added to Job Card & Stock Deducted by ${qty}!`);
+      alert(`Part '${partObj.part_name || partObj.name}' added to Job Card (Staged)! Click 'Confirm Parts' on the bike card to deduct stock from Inventory.`);
     }
   };
 
@@ -984,9 +967,13 @@ export default function WorkshopPage() {
                       <button
                         onClick={() => handleConfirmParts(job.id)}
                         disabled={partsList.length === 0}
-                        className="inline-flex items-center justify-center gap-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2.5 rounded-xl transition-colors disabled:opacity-40 shadow-sm"
+                        className={`inline-flex items-center justify-center gap-1 text-xs font-bold py-2.5 rounded-xl transition-all shadow-md ${
+                          hasStagedParts
+                            ? 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-extrabold ring-2 ring-amber-400/60 shadow-amber-500/20'
+                            : 'bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-40'
+                        }`}
                       >
-                        <Check className="w-4 h-4" /> Confirm Parts
+                        <Check className="w-4 h-4" /> {hasStagedParts ? '✔ Confirm & Deduct Stock' : 'Confirm Parts'}
                       </button>
                     </div>
 

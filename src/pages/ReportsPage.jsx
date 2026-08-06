@@ -122,42 +122,7 @@ export default function ReportsPage() {
 
           </div>
 
-          {/* MECHANIC PERFORMANCE TABLE */}
-          <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200/80 soft-shadow space-y-6">
-            <h2 className="text-lg font-bold text-slate-900 font-poppins flex items-center gap-2">
-              <Wrench className="w-5 h-5 text-orange-500" /> Mechanic Productivity Report
-            </h2>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs text-slate-600">
-                <thead className="bg-slate-50 uppercase font-bold text-slate-500 font-poppins border-b border-slate-200">
-                  <tr>
-                    <th className="px-6 py-4">Mechanic Name</th>
-                    <th className="px-6 py-4">Total Jobs Assigned</th>
-                    <th className="px-6 py-4">Completed Jobs</th>
-                    <th className="px-6 py-4">Completion Rate</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {reports?.mechanic_performance?.map((m, idx) => {
-                    const rate = m.total_jobs > 0 ? ((m.completed_jobs / m.total_jobs) * 100).toFixed(0) : 0;
-                    return (
-                      <tr key={idx} className="hover:bg-slate-50">
-                        <td className="px-6 py-4 font-bold text-slate-900 font-poppins">{m.assigned_mechanic}</td>
-                        <td className="px-6 py-4 font-bold text-slate-700">{m.total_jobs}</td>
-                        <td className="px-6 py-4 font-bold text-emerald-600">{m.completed_jobs}</td>
-                        <td className="px-6 py-4">
-                          <span className="px-3 py-1 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                            {rate}% Completed
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
 
         </div>
       )}

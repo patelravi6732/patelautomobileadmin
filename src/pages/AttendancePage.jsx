@@ -389,8 +389,16 @@ export default function AttendancePage() {
       if (targetItem.mechanic_name && targetItem.date) {
         deleteCloudAttendanceRecord(`${targetItem.mechanic_name.trim()}_${targetItem.date}`).catch(console.warn);
       }
+      const targetAttId = String(targetItem.id || '');
+      const localAtt = JSON.parse(localStorage.getItem('local_attendance') || '[]');
+      const updatedLocalAtt = localAtt.filter(a => a && String(a.id) !== targetAttId && String(a.id) !== String(targetItem.id));
+      localStorage.setItem('local_attendance', JSON.stringify(updatedLocalAtt));
     } else if (deleteModal.type === 'SALARY') {
       deleteCloudSalaryPayment(targetItem.id).catch(console.warn);
+      const targetSalId = String(targetItem.id || '');
+      const localSal = JSON.parse(localStorage.getItem('local_salary_payments') || '[]');
+      const updatedLocalSal = localSal.filter(s => s && String(s.id) !== targetSalId && String(s.id) !== String(targetItem.id));
+      localStorage.setItem('local_salary_payments', JSON.stringify(updatedLocalSal));
     }
 
     try {

@@ -146,10 +146,9 @@ async function saveMasterStore(storeData) {
   }
 }
 
-// ---------------- BOOKINGS ----------------
 export async function fetchCloudBookings() {
   const store = await fetchMasterStore();
-  return (store.bookings || []).filter(b => b && typeof b === 'object' && (b.id || b.customer_name || b.vehicle_number) && b.id !== 101 && b.vehicle_number !== 'GJ15BC6732' && !String(b.customer_name).includes('Prit Patel'));
+  return (store.bookings || []).filter(b => b && typeof b === 'object' && (b.id || b.customer_name || b.vehicle_number));
 }
 
 export async function pushCloudBooking(newBooking) {

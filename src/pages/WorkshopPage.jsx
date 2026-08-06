@@ -97,8 +97,10 @@ export default function WorkshopPage() {
 
     const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
     const localBookings = JSON.parse(localStorage.getItem('local_bookings') || '[]');
+    const cachedBookings = JSON.parse(localStorage.getItem('workshop_online_bookings') || '[]');
+    
+    // 1. Process Workshop Jobs first
     const allMap = new Map();
-
     [...cloudJobs, ...localJobs, ...backendJobs].forEach(j => {
       if (j && typeof j === 'object' && j.id) {
         const uniqueKey = String(j.id);
@@ -119,7 +121,23 @@ export default function WorkshopPage() {
       }
     });
 
-    [...cloudBookings, ...localBookings].forEach(b => {
+    // 2. Process Persistent Bookings Memory (Prevents network flickering)
+    const allBookingsMap = new Map();
+    [...cloudBookings, ...localBookings, ...cachedBookings].forEach(b => {
+      if (b && typeof b === 'object' && (b.id || b.vehicle_number)) {
+        const key = String(b.id || `${b.vehicle_number}_${b.preferred_date}`);
+        if (!deletedIds.includes(key) && !deletedIds.includes(String(b.id))) {
+          if (!allBookingsMap.has(key)) {
+            allBookingsMap.set(key, b);
+          }
+        }
+      }
+    });
+
+    const persistentBookings = Array.from(allBookingsMap.values());
+    localStorage.setItem('workshop_online_bookings', JSON.stringify(persistentBookings));
+
+    persistentBookings.forEach(b => {
       if (b && typeof b === 'object' && (b.id || b.vehicle_number)) {
         const bookingJobId = `job_booking_${b.id || b.vehicle_number}`;
         const bookingKey = String(b.id || `${b.vehicle_number}_${b.preferred_date}`);

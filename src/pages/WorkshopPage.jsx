@@ -136,6 +136,10 @@ export default function WorkshopPage() {
 
   useEffect(() => {
     fetchData();
+    const interval = setInterval(() => {
+      fetchData();
+    }, 3000);
+    return () => clearInterval(interval);
   }, []);
 
   const openAssignModal = (job) => {

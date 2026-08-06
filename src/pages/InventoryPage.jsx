@@ -80,6 +80,10 @@ export default function InventoryPage() {
 
   useEffect(() => {
     fetchInventory();
+    const interval = setInterval(() => {
+      fetchInventory();
+    }, 3000);
+    return () => clearInterval(interval);
   }, []);
 
   const openAddModal = () => {

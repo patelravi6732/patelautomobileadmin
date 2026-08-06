@@ -278,6 +278,10 @@ export default function KhataBookPage() {
 
   useEffect(() => {
     fetchKhata();
+    const interval = setInterval(() => {
+      fetchKhata();
+    }, 3000);
+    return () => clearInterval(interval);
   }, []);
 
   const parseSafelyDate = (dateStr) => {

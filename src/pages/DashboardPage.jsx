@@ -19,7 +19,7 @@ export default function DashboardPage() {
     let cloudStore = null;
     try {
       const axios = (await import('axios')).default;
-      const res = await axios.get('https://jsonblob.com/api/jsonBlob/019fd0d0-8dfa-755c-9195-7f74e5af7d09?t=' + Date.now(), {
+      const res = await axios.get('https://jsonblob.com/api/jsonBlob/019fd66d-15cf-7fac-88f7-812f4bd2d266?t=' + Date.now(), {
         headers: { 'Accept': 'application/json', 'Cache-Control': 'no-cache' },
         timeout: 3000
       });
@@ -70,6 +70,10 @@ export default function DashboardPage() {
 
   useEffect(() => {
     fetchStats();
+    const interval = setInterval(() => {
+      fetchStats();
+    }, 3000);
+    return () => clearInterval(interval);
   }, []);
 
   if (loading) {

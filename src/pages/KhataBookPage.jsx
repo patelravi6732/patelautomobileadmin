@@ -850,7 +850,7 @@ export default function KhataBookPage() {
                   <div className="flex justify-between items-start border-b-2 border-amber-500 pb-4">
                     <div className="flex items-center gap-3">
                       <img
-                        src={garageInfo?.logo && garageInfo.logo !== '/logo.png' ? garageInfo.logo : LOGO_BASE64}
+                        src={garageInfo?.logo || '/logo.png'}
                         alt="Logo"
                         className="w-12 h-12 rounded-xl object-cover border-2 border-amber-400 shadow-md shrink-0"
                       />

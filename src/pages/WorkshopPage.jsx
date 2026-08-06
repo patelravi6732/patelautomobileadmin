@@ -4,7 +4,7 @@ import {
   IndianRupee, Package, Bike, User, Phone, Check, Receipt, UserCheck, Users, Lock, Search, ChevronDown, Edit2, Tag
 } from 'lucide-react';
 import API from '../services/api';
-import { fetchCloudJobs, updateCloudJobStatus, deleteCloudJob, fetchCloudInventory, pushCloudJob, pushCloudRecycleBinItem, pushCloudKhataEntry, pushCloudInvoice, updateCloudBookingStatus, fetchCloudDeletedIds } from '../utils/cloudSync';
+import { fetchCloudJobs, updateCloudJobStatus, deleteCloudJob, fetchCloudInventory, pushCloudJob, pushCloudRecycleBinItem, pushCloudKhataEntry, pushCloudInvoice, updateCloudBookingStatus, fetchCloudDeletedIds, fetchCloudBookings } from '../utils/cloudSync';
 import { useAuth } from '../context/AuthContext';
 import AdminPasswordModal from '../components/AdminPasswordModal';
 
@@ -85,16 +85,20 @@ export default function WorkshopPage() {
       invData = invRes.data || [];
     } catch (err) {}
 
+    let cloudBookings = [];
     try {
-      [cloudJobs, cloudInv, deletedIds] = await Promise.all([
+      [cloudJobs, cloudInv, deletedIds, cloudBookings] = await Promise.all([
         fetchCloudJobs().catch(() => []),
         fetchCloudInventory().catch(() => []),
-        fetchCloudDeletedIds().catch(() => [])
+        fetchCloudDeletedIds().catch(() => []),
+        fetchCloudBookings().catch(() => [])
       ]);
     } catch (e) {}
 
     const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
+    const localBookings = JSON.parse(localStorage.getItem('local_bookings') || '[]');
     const allMap = new Map();
+
     [...cloudJobs, ...localJobs, ...backendJobs].forEach(j => {
       if (j && typeof j === 'object' && j.id) {
         const uniqueKey = String(j.id);
@@ -110,6 +114,34 @@ export default function WorkshopPage() {
           };
           if (!existing || (sanitizedJob.status === 'FINISHED' && existing.status !== 'FINISHED')) {
             allMap.set(uniqueKey, sanitizedJob);
+          }
+        }
+      }
+    });
+
+    [...cloudBookings, ...localBookings].forEach(b => {
+      if (b && typeof b === 'object' && (b.id || b.vehicle_number)) {
+        const bookingJobId = `job_booking_${b.id || b.vehicle_number}`;
+        const bookingKey = String(b.id || `${b.vehicle_number}_${b.preferred_date}`);
+        if (!deletedIds.includes(bookingKey) && !deletedIds.includes(String(b.id)) && !deletedIds.includes(bookingJobId)) {
+          if (!allMap.has(bookingJobId) && b.status !== 'REJECTED') {
+            allMap.set(bookingJobId, {
+              id: bookingJobId,
+              booking_id: b.id,
+              customer_name: b.customer_name || 'Online Customer',
+              mobile_number: b.mobile_number || b.phone || 'N/A',
+              vehicle_number: b.vehicle_number || 'GJ-15',
+              bike_model: b.bike_model || 'Two Wheeler',
+              complaint: b.complaint ? `[Online Booking] ${b.complaint}` : `Online Service Booking (${b.preferred_date || 'Today'} ${b.preferred_time || ''})`,
+              assigned_mechanic: 'Unassigned',
+              parts: [],
+              parts_total: 0,
+              labour_charge: garageInfo?.default_labour_charge || 100,
+              live_total: garageInfo?.default_labour_charge || 100,
+              status: b.status === 'ACCEPTED' ? 'IN_PROGRESS' : 'PENDING_BOOKING',
+              is_online_booking: true,
+              created_at: b.created_at || new Date().toISOString()
+            });
           }
         }
       }

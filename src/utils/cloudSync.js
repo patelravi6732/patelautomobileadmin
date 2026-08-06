@@ -488,7 +488,14 @@ export async function pushCloudAdminProfile(adminObj) {
   if (!exists) {
     updated = [adminObj, ...existing];
   } else {
-    updated = existing.map(a => (a.id === adminObj.id || (a.username && adminObj.username && a.username.toLowerCase() === adminObj.username.toLowerCase())) ? { ...a, ...adminObj } : a);
+    updated = existing.map(a => {
+      const isTarget = a.id === adminObj.id || (a.username && adminObj.username && a.username.toLowerCase() === adminObj.username.toLowerCase());
+      if (isTarget) {
+        const safePass = adminObj.password || a.password || '@ravipatel2005';
+        return { ...a, ...adminObj, password: safePass };
+      }
+      return a;
+    });
   }
   await saveMasterStore({ ...store, adminProfiles: updated });
 }

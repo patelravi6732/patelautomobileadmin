@@ -40,9 +40,16 @@ export default function ContactPage() {
       date: nowTime,
       is_read: false
     };
-    pushCloudMessage(newMsgObj).catch(console.warn);
-    const existing = JSON.parse(localStorage.getItem('local_messages') || '[]');
-    localStorage.setItem('local_messages', JSON.stringify([newMsgObj, ...existing]));
+    const existing = JSON.parse(localStorage.getItem('local_messages') || localStorage.getItem('contact_messages') || '[]');
+    const updatedMessages = [newMsgObj, ...existing];
+    localStorage.setItem('local_messages', JSON.stringify(updatedMessages));
+    localStorage.setItem('contact_messages', JSON.stringify(updatedMessages));
+
+    try {
+      await pushCloudMessage(newMsgObj);
+    } catch (err) {
+      console.warn('Cloud sync contact message notice:', err);
+    }
 
     try {
       await API.post('/public/contact/', formData);

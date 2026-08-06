@@ -1,8 +1,13 @@
-import axios from 'axios';
-
-// Primary & Backup Master Cloud Storage Endpoints (100% CORS-enabled real-time multi-origin bin)
-const PRIMARY_BIN_URL = 'https://jsonblob.com/api/jsonBlob/019fd0d0-8dfa-755c-9195-7f74e5af7d09';
-const BACKUP_BIN_URL = 'https://jsonblob.com/api/jsonBlob/019fd0d0-8dfa-755c-9195-7f74e5af7d09';
+export const DEFAULT_PRIMARY_ADMIN = {
+  id: 'admin_patel_primary',
+  username: 'patel',
+  user_name: 'Ravi Patel',
+  password: '@ravipatel2005',
+  phone: '+91 81403 71414',
+  email: 'patelautomobile01@gmail.com',
+  role: 'ADMIN',
+  created_at: new Date().toISOString()
+};
 
 async function fetchMasterStore() {
   const getLocalCache = () => {
@@ -17,7 +22,7 @@ async function fetchMasterStore() {
           inventory: Array.isArray(parsed.inventory) ? parsed.inventory : [],
           recycleBin: Array.isArray(parsed.recycleBin) ? parsed.recycleBin : [],
           garageInfo: parsed.garageInfo || null,
-          adminProfiles: Array.isArray(parsed.adminProfiles) ? parsed.adminProfiles : [],
+          adminProfiles: Array.isArray(parsed.adminProfiles) && parsed.adminProfiles.length > 0 ? parsed.adminProfiles : [DEFAULT_PRIMARY_ADMIN],
           khataEntries: Array.isArray(parsed.khataEntries) ? parsed.khataEntries : [],
           customers: Array.isArray(parsed.customers) ? parsed.customers : [],
           invoices: Array.isArray(parsed.invoices) ? parsed.invoices : [],
@@ -29,7 +34,7 @@ async function fetchMasterStore() {
     } catch (e) {
       console.warn('Error reading local master_cloud_cache:', e);
     }
-    return { bookings: [], messages: [], jobs: [], inventory: [], recycleBin: [], garageInfo: null, adminProfiles: [], khataEntries: [], customers: [], invoices: [], attendance: [], salaryPayments: [], deletedIds: [] };
+    return { bookings: [], messages: [], jobs: [], inventory: [], recycleBin: [], garageInfo: null, adminProfiles: [DEFAULT_PRIMARY_ADMIN], khataEntries: [], customers: [], invoices: [], attendance: [], salaryPayments: [], deletedIds: [] };
   };
 
   const localCache = getLocalCache();
@@ -48,7 +53,7 @@ async function fetchMasterStore() {
         inventory: Array.isArray(res.data.inventory) ? res.data.inventory : [],
         recycleBin: Array.isArray(res.data.recycleBin) ? res.data.recycleBin : [],
         garageInfo: res.data.garageInfo || null,
-        adminProfiles: Array.isArray(res.data.adminProfiles) ? res.data.adminProfiles : [],
+        adminProfiles: Array.isArray(res.data.adminProfiles) && res.data.adminProfiles.length > 0 ? res.data.adminProfiles : [DEFAULT_PRIMARY_ADMIN],
         khataEntries: Array.isArray(res.data.khataEntries) ? res.data.khataEntries : [],
         customers: Array.isArray(res.data.customers) ? res.data.customers : [],
         invoices: Array.isArray(res.data.invoices) ? res.data.invoices : [],
@@ -69,7 +74,7 @@ async function fetchMasterStore() {
       inventory: freshStore.inventory,
       recycleBin: freshStore.recycleBin,
       garageInfo: freshStore.garageInfo || localCache.garageInfo,
-      adminProfiles: freshStore.adminProfiles,
+      adminProfiles: freshStore.adminProfiles.length > 0 ? freshStore.adminProfiles : [DEFAULT_PRIMARY_ADMIN],
       khataEntries: freshStore.khataEntries,
       customers: freshStore.customers,
       invoices: freshStore.invoices,
@@ -88,6 +93,11 @@ async function fetchMasterStore() {
       }
       if (Array.isArray(mergedStore.khataEntries)) localStorage.setItem('khata_entries', JSON.stringify(mergedStore.khataEntries));
       if (Array.isArray(mergedStore.bookings)) localStorage.setItem('local_bookings', JSON.stringify(mergedStore.bookings));
+      if (Array.isArray(mergedStore.messages)) {
+        localStorage.setItem('local_messages', JSON.stringify(mergedStore.messages));
+        localStorage.setItem('contact_messages', JSON.stringify(mergedStore.messages));
+      }
+      if (Array.isArray(mergedStore.adminProfiles)) localStorage.setItem('admin_profiles', JSON.stringify(mergedStore.adminProfiles));
       if (Array.isArray(mergedStore.customers)) localStorage.setItem('local_customers', JSON.stringify(mergedStore.customers));
     } catch (e) {
       console.warn('Failed to update local master_cloud_cache:', e);
@@ -113,6 +123,11 @@ async function saveMasterStore(storeData) {
       localStorage.setItem('spare_parts', JSON.stringify(storeData.inventory));
     }
     if (Array.isArray(storeData.bookings)) localStorage.setItem('local_bookings', JSON.stringify(storeData.bookings));
+    if (Array.isArray(storeData.messages)) {
+      localStorage.setItem('local_messages', JSON.stringify(storeData.messages));
+      localStorage.setItem('contact_messages', JSON.stringify(storeData.messages));
+    }
+    if (Array.isArray(storeData.adminProfiles)) localStorage.setItem('admin_profiles', JSON.stringify(storeData.adminProfiles));
   } catch (e) {
     console.warn('Error writing local master_cloud_cache:', e);
   }
@@ -446,6 +461,10 @@ export async function fetchCloudAdminProfiles() {
   }
 
   const allAdminsMap = new Map();
+
+  // Always seed DEFAULT_PRIMARY_ADMIN first
+  allAdminsMap.set('patel', DEFAULT_PRIMARY_ADMIN);
+
   cloudList.forEach(a => { 
     const key = (a.username || a.user_name || a.phone || a.id || '').toLowerCase();
     if (key) allAdminsMap.set(key, a); 
@@ -456,12 +475,6 @@ export async function fetchCloudAdminProfiles() {
   });
 
   const finalAdmins = Array.from(allAdminsMap.values());
-
-  if (cloudList.length === 0 && finalAdmins.length > 0) {
-    const store = await fetchMasterStore();
-    saveMasterStore({ ...store, adminProfiles: finalAdmins }).catch(console.warn);
-  }
-
   return finalAdmins;
 }
 

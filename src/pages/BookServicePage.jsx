@@ -84,16 +84,24 @@ export default function BookServicePage() {
       status: 'PENDING'
     };
 
+    // Save locally immediately
+    const existing = JSON.parse(localStorage.getItem('local_bookings') || '[]');
+    const isDup = existing.some(b => b.id === newBookingObj.id || (b.vehicle_number === newBookingObj.vehicle_number && b.preferred_date === newBookingObj.preferred_date));
+    if (!isDup) {
+      localStorage.setItem('local_bookings', JSON.stringify([newBookingObj, ...existing]));
+    }
+
     // Push to global cloud sync buffer so Admin receives booking from ANY device
-    pushCloudBooking(newBookingObj).catch(console.warn);
+    try {
+      await pushCloudBooking(newBookingObj);
+    } catch (err) {
+      console.warn('Cloud sync booking notice:', err);
+    }
 
     try {
       await API.post('/public/bookings/', formData);
     } catch (err) {
-      console.warn('Backend API offline/unreachable on static host, saving booking locally:', err);
-      const existing = JSON.parse(localStorage.getItem('local_bookings') || '[]');
-      existing.push(newBookingObj);
-      localStorage.setItem('local_bookings', JSON.stringify(existing));
+      console.warn('Backend API offline/unreachable on static host, saved booking locally & cloud:', err);
     }
 
     const ownerPhone = '918140371414';

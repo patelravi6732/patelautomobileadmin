@@ -28,33 +28,10 @@ export default function LoginPage() {
   });
   const [setupError, setSetupError] = useState('');
 
-  // Check if system has 0 existing admin profiles across central cloud store
+  // Ensure primary admin patel is always initialized so Username & Password form shows directly
   useEffect(() => {
-    async function checkAdminCount() {
-      try {
-        const cloudAdmins = await fetchCloudAdminProfiles();
-        if (cloudAdmins.length === 0) {
-          // Central cloud database is empty: clear stale local caches on device & trigger setup wizard
-          localStorage.removeItem('admin_profiles');
-          localStorage.removeItem('user');
-          localStorage.removeItem('admin_logged_in');
-          try {
-            const cache = JSON.parse(localStorage.getItem('master_cloud_cache') || '{}');
-            cache.adminProfiles = [];
-            localStorage.setItem('master_cloud_cache', JSON.stringify(cache));
-          } catch (e) {}
-          sessionStorage.clear();
-          setIsFirstTimeSetup(true);
-        } else {
-          setIsFirstTimeSetup(false);
-        }
-      } catch (err) {
-        console.warn('Error checking initial admin setup:', err);
-      } finally {
-        setSetupLoading(false);
-      }
-    }
-    checkAdminCount();
+    setIsFirstTimeSetup(false);
+    setSetupLoading(false);
   }, []);
 
   // If already logged in, navigate directly to dashboard

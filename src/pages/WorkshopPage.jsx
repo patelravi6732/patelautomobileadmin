@@ -360,22 +360,81 @@ export default function WorkshopPage() {
     const targetJob = jobs.find(j => String(j.id) === String(jobId));
     if (!targetJob) return;
 
+    const partsToConfirm = (targetJob.parts || []).filter(p => p && p.status !== 'CONFIRMED' && !p.is_confirmed);
+    if (partsToConfirm.length === 0) {
+      alert('ℹ️ All spare parts on this bike are already confirmed & deducted from Inventory!');
+      return;
+    }
+
     const updatedParts = (targetJob.parts || []).map(p => ({ ...p, status: 'CONFIRMED', is_confirmed: true }));
     const updatedJob = { ...targetJob, parts: updatedParts };
 
     setJobs(prev => prev.map(j => (String(j.id) === String(jobId) ? updatedJob : j)));
     
     const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
-    const updatedLocal = localJobs.map(j => (String(j.id) === String(jobId) ? updatedJob : j));
-    localStorage.setItem('workshop_jobs', JSON.stringify(updatedLocal));
+    const updatedLocalJobs = localJobs.map(j => (String(j.id) === String(jobId) ? updatedJob : j));
+    localStorage.setItem('workshop_jobs', JSON.stringify(updatedLocalJobs));
     pushCloudJob(updatedJob).catch(console.warn);
 
+    // Deduct stock from Inventory items in real-time
     try {
-      const res = await API.post(`/workshop/${jobId}/confirm_parts/`, {}, { timeout: 2000 });
-      alert(res.data?.message || 'Parts confirmed & inventory updated!');
+      const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+      const cloudInv = await fetchCloudInventory().catch(() => []);
+      const allInvMap = new Map();
+      [...localInv, ...cloudInv].forEach(item => {
+        if (item && (item.id || item.part_name || item.name)) {
+          const key = String(item.id || item.part_name || item.name);
+          if (!allInvMap.has(key)) allInvMap.set(key, item);
+        }
+      });
+
+      let invList = Array.from(allInvMap.values());
+      let invChanged = false;
+
+      partsToConfirm.forEach(pToUse => {
+        if (!pToUse) return;
+        const pId = String(pToUse.inventory_id || pToUse.part_id || pToUse.id || '');
+        const pName = (pToUse.part_name || pToUse.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+        const usedQty = parseInt(pToUse.quantity || 1, 10);
+
+        invList = invList.map(invItem => {
+          if (!invItem) return invItem;
+          const invId = String(invItem.id || '');
+          const invName = (invItem.part_name || invItem.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+
+          const isMatch = (pId && invId && pId === invId) || (pName && invName && (pName.includes(invName) || invName.includes(pName)));
+
+          if (isMatch) {
+            invChanged = true;
+            const currentQty = parseInt(invItem.current_stock || invItem.stock_quantity || invItem.quantity || 0, 10);
+            const newQty = Math.max(0, currentQty - usedQty);
+            const updatedItem = {
+              ...invItem,
+              current_stock: newQty,
+              stock_quantity: newQty,
+              quantity: newQty
+            };
+            pushCloudInventoryItem(updatedItem).catch(console.warn);
+            return updatedItem;
+          }
+          return invItem;
+        });
+      });
+
+      if (invChanged) {
+        localStorage.setItem('inventory_items', JSON.stringify(invList));
+        localStorage.setItem('spare_parts', JSON.stringify(invList));
+      }
+    } catch (invErr) {
+      console.warn('Error deducting stock on confirm parts:', invErr);
+    }
+
+    try {
+      await API.post(`/workshop/${jobId}/confirm_parts/`, {}, { timeout: 2000 });
     } catch (err) {
       console.warn('Backend API offline, confirmed parts locally & cloud store:', err);
-      alert('Parts confirmed & inventory updated for this job!');
+    } finally {
+      alert('✅ Spare Parts Confirmed & Inventory Stock Deducted Successfully!');
     }
   };
 

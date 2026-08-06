@@ -839,15 +839,9 @@ export default function KhataBookPage() {
               </div>
             </div>
 
-            {/* SINGLE GENERATED HD STATEMENT PHOTO CARD IMAGE DISPLAY */}
-            <div className="bg-slate-950 p-4 sm:p-6 rounded-3xl border border-slate-800 flex flex-col items-center justify-center min-h-[350px]">
-              {statementPreviewUrl ? (
-                <img
-                  src={statementPreviewUrl}
-                  alt="HD Khata Statement Photo Card"
-                  className="max-w-full h-auto rounded-2xl shadow-2xl border border-amber-500/30 object-contain"
-                />
-              ) : statementCustomer ? (
+            {/* SINGLE GENERATED HD STATEMENT PHOTO CARD DISPLAY */}
+            <div className="bg-slate-950 p-2 sm:p-4 rounded-3xl border border-slate-800 flex flex-col items-center justify-center">
+              {statementCustomer && (
                 <div className="w-full bg-white text-slate-900 p-6 sm:p-8 rounded-2xl space-y-5 shadow-xl border border-slate-200 text-xs font-sans">
                   {/* HEADER */}
                   <div className="flex justify-between items-start border-b-2 border-amber-500 pb-4">
@@ -976,11 +970,6 @@ export default function KhataBookPage() {
                       — {garageInfo?.garage_name || 'Patel Automobiles'}
                     </p>
                   </div>
-                </div>
-              ) : (
-                <div className="py-16 text-center text-slate-400 font-medium animate-pulse space-y-3">
-                  <Sparkles className="w-10 h-10 text-amber-400 mx-auto animate-spin" />
-                  <p className="text-sm font-bold text-slate-200">⚡ Generating HD Statement Photo Card...</p>
                 </div>
               )}
             </div>

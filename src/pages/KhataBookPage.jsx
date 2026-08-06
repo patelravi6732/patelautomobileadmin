@@ -783,9 +783,8 @@ export default function KhataBookPage() {
                   Cancel
                 </button>
                 <button
-                  type="button"
-                  onClick={(e) => handleRecordPayment(e)}
-                  className="flex-1 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5"
+                  type="submit"
+                  className="flex-1 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
                 >
                   <CheckCircle2 className="w-4 h-4" /> Save Payment
                 </button>
@@ -888,14 +887,17 @@ export default function KhataBookPage() {
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {statementCustomer.parts && statementCustomer.parts.length > 0 ? (
-                        statementCustomer.parts.map((part, idx) => (
-                          <tr key={idx}>
-                            <td className="p-2.5 font-bold text-slate-800">{cleanPartName(part.part_name || part.name)}</td>
-                            <td className="p-2.5 text-center font-mono">{part.quantity || 1}</td>
-                            <td className="p-2.5 text-right font-mono">₹{parseFloat(part.unit_price || part.price || 0).toFixed(2)}</td>
-                            <td className="p-2.5 text-right font-mono font-bold">₹{parseFloat(part.subtotal || (part.price * (part.quantity || 1)) || 0).toFixed(2)}</td>
-                          </tr>
-                        ))
+                        statementCustomer.parts.map((part, idx) => {
+                          if (!part) return null;
+                          return (
+                            <tr key={idx}>
+                              <td className="p-2.5 font-bold text-slate-800">{cleanPartName(part.part_name || part.name || 'Spare Part')}</td>
+                              <td className="p-2.5 text-center font-mono">{part.quantity || 1}</td>
+                              <td className="p-2.5 text-right font-mono">₹{parseFloat(part.unit_price || part.price || 0).toFixed(2)}</td>
+                              <td className="p-2.5 text-right font-mono font-bold">₹{parseFloat(part.subtotal || ((part.price || 0) * (part.quantity || 1)) || 0).toFixed(2)}</td>
+                            </tr>
+                          );
+                        })
                       ) : null}
 
                       {parseFloat(statementCustomer.labour_charge || 0) > 0 && (

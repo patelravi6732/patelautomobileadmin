@@ -52,6 +52,16 @@ const ProtectedRoute = ({ children }) => {
 };
 
 export default function App() {
+  React.useEffect(() => {
+    const CURRENT_VERSION = 'patel_v2.5.0_fresh_sync';
+    const lastVersion = localStorage.getItem('app_build_version');
+    if (lastVersion !== CURRENT_VERSION) {
+      localStorage.setItem('app_build_version', CURRENT_VERSION);
+      localStorage.removeItem('master_cloud_cache');
+      localStorage.removeItem('khata_debtors');
+    }
+  }, []);
+
   return (
     <AuthProvider>
       <ScrollToTop />

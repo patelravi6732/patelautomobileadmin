@@ -433,12 +433,16 @@ export default function WorkshopPage() {
         let invChanged = false;
 
         const updatedInv = localInv.map(invItem => {
-          const usedPart = partsUsed.find(p => 
-            p && (
-              String(p.id) === String(invItem.id) ||
-              (p.part_name && (invItem.part_name || invItem.name) && p.part_name.trim().toLowerCase() === (invItem.part_name || invItem.name).trim().toLowerCase())
-            )
-          );
+          const usedPart = partsUsed.find(p => {
+            if (!p) return false;
+            const pId = String(p.inventory_id || p.part_id || p.id || '');
+            const invId = String(invItem.id || '');
+            if (pId && invId && pId === invId) return true;
+
+            const pName = (p.part_name || p.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+            const invName = (invItem.part_name || invItem.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+            return pName && invName && (pName.includes(invName) || invName.includes(pName));
+          });
           if (usedPart) {
             invChanged = true;
             const currentQty = parseInt(invItem.current_stock || invItem.stock_quantity || invItem.quantity || 0, 10);

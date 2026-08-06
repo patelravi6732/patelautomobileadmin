@@ -13,7 +13,7 @@ export const DEFAULT_PRIMARY_ADMIN = {
   created_at: new Date().toISOString()
 };
 
-async function fetchMasterStore() {
+export async function fetchMasterStore() {
   const getLocalCache = () => {
     try {
       const raw = localStorage.getItem('master_cloud_cache');

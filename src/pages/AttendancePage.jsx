@@ -116,7 +116,8 @@ export default function AttendancePage() {
         }
       }
     });
-    setAttendanceList(Array.from(attMap.values()));
+    const finalAttList = Array.from(attMap.values());
+    setAttendanceList(finalAttList);
 
     const localSal = JSON.parse(localStorage.getItem('local_salary_payments') || '[]');
     const combinedSal = [...apiSal, ...localSal, ...cloudSal];
@@ -129,7 +130,8 @@ export default function AttendancePage() {
         }
       }
     });
-    setSalaryPayments(Array.from(salMap.values()));
+    const finalSalList = Array.from(salMap.values());
+    setSalaryPayments(finalSalList);
 
     const totalDays = new Date(selectedYear, selectedMonth, 0).getDate();
     setTotalDaysInMonth(totalDays);

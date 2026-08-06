@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import API from '../services/api';
-import { fetchCloudGarageInfo, pushCloudGarageInfo, fetchCloudAdminProfiles, DEFAULT_PRIMARY_ADMIN } from '../utils/cloudSync';
+import { fetchCloudGarageInfo, pushCloudGarageInfo, fetchCloudAdminProfiles, fetchMasterStore, DEFAULT_PRIMARY_ADMIN } from '../utils/cloudSync';
 
 export const DEFAULT_GARAGE_INFO = {
   garage_name: 'Patel Automobiles',
@@ -199,6 +199,11 @@ export const AuthProvider = ({ children }) => {
       localStorage.setItem('admin_logged_in', 'true');
       localStorage.setItem('user', JSON.stringify(activeUser));
     } catch (e) {}
+    
+    try {
+      await fetchMasterStore().catch(console.warn);
+    } catch (e) {}
+
     setUser(activeUser);
     return activeUser;
   };

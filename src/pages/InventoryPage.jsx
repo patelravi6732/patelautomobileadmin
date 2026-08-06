@@ -41,8 +41,8 @@ export default function InventoryPage() {
     'Bulbs', 'Battery', 'Tyres', 'General'
   ];
 
-  const fetchInventory = async () => {
-    setLoading(true);
+  const fetchInventory = async (isInitial = false) => {
+    if (isInitial) setLoading(true);
     let backendItems = [];
     try {
       const res = await API.get('/inventory/', { timeout: 1500 });
@@ -79,9 +79,9 @@ export default function InventoryPage() {
   };
 
   useEffect(() => {
-    fetchInventory();
+    fetchInventory(true);
     const interval = setInterval(() => {
-      fetchInventory();
+      fetchInventory(false);
     }, 3000);
     return () => clearInterval(interval);
   }, []);

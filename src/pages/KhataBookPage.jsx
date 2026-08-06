@@ -99,8 +99,8 @@ export default function KhataBookPage() {
     return name.split(' Genuine Part')[0].split(' - ')[0].trim();
   };
 
-  const fetchKhata = async () => {
-    setLoading(true);
+  const fetchKhata = async (isInitial = false) => {
+    if (isInitial) setLoading(true);
     try {
       let backendData = null;
       try {
@@ -277,9 +277,9 @@ export default function KhataBookPage() {
   };
 
   useEffect(() => {
-    fetchKhata();
+    fetchKhata(true);
     const interval = setInterval(() => {
-      fetchKhata();
+      fetchKhata(false);
     }, 3000);
     return () => clearInterval(interval);
   }, []);

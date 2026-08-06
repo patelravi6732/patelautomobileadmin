@@ -68,8 +68,8 @@ export default function WorkshopPage() {
     }
   }, [garageInfo]);
 
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchData = async (isInitial = false) => {
+    if (isInitial) setLoading(true);
     let backendJobs = [];
     let invData = [];
     let cloudJobs = [];
@@ -185,9 +185,9 @@ export default function WorkshopPage() {
   };
 
   useEffect(() => {
-    fetchData();
+    fetchData(true);
     const interval = setInterval(() => {
-      fetchData();
+      fetchData(false);
     }, 3000);
     return () => clearInterval(interval);
   }, []);

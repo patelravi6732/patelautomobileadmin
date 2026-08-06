@@ -56,18 +56,20 @@ export default function InventoryPage() {
     const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
 
     const allMap = new Map();
-    [...cloudInv, ...localInv, ...backendItems].forEach(item => {
+    [...localInv, ...cloudInv, ...backendItems].forEach(item => {
       if (item && typeof item === 'object' && (item.part_name || item.name)) {
-        const key = String(item.id || item.part_name || item.name);
+        const key = String(item.id || item.part_name || item.name).toLowerCase().trim();
         if (!deletedIds.includes(key) && !deletedIds.includes(String(item.id)) && !deletedIds.includes(String(item.part_name))) {
           if (!allMap.has(key)) {
+            const parsedStock = parseInt(item.current_stock !== undefined ? item.current_stock : (item.stock_quantity !== undefined ? item.stock_quantity : (item.quantity !== undefined ? item.quantity : 0)), 10);
+            const parsedMin = item.min_stock_alert !== undefined && item.min_stock_alert !== '' ? parseInt(item.min_stock_alert, 10) : 2;
             allMap.set(key, {
               id: item.id || key,
               part_name: item.part_name || item.name,
               category: item.category || 'General',
               price: parseFloat(item.price || 0),
-              current_stock: parseInt(item.current_stock || 0, 10),
-              min_stock_alert: item.min_stock_alert !== undefined && item.min_stock_alert !== '' ? parseInt(item.min_stock_alert, 10) : 2
+              current_stock: parsedStock,
+              min_stock_alert: parsedMin
             });
           }
         }
@@ -239,7 +241,7 @@ export default function InventoryPage() {
 
   const totalParts = items.length;
   const totalStockUnits = items.reduce((sum, i) => sum + (parseInt(i.current_stock) || 0), 0);
-  const lowStockCount = items.filter(i => i.current_stock <= i.min_stock_alert).length;
+  const lowStockCount = items.filter(i => i && (parseInt(i.current_stock || 0, 10) <= (i.min_stock_alert !== undefined ? parseInt(i.min_stock_alert, 10) : 2))).length;
 
   return (
     <div className="space-y-6 w-full max-w-full overflow-x-hidden">

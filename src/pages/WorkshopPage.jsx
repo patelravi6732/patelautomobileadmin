@@ -343,13 +343,17 @@ export default function WorkshopPage() {
     const targetJob = jobs.find(j => String(j.id) === String(jobId));
     if (!targetJob) return;
 
-    const partsToConfirm = (targetJob.parts || []).filter(p => p && p.status !== 'CONFIRMED' && !p.is_confirmed);
-    if (partsToConfirm.length === 0) {
-      alert('ℹ️ All spare parts on this bike are already confirmed & deducted from Inventory!');
+    // Deduct stock for all parts on this bike that have not been deducted yet
+    const partsToConfirm = (targetJob.parts || []).filter(p => p && (!p.is_deducted || p.status !== 'CONFIRMED'));
+    const allParts = targetJob.parts || [];
+    const effectivePartsToDeduct = partsToConfirm.length > 0 ? partsToConfirm : allParts;
+
+    if (allParts.length === 0) {
+      alert('ℹ️ No spare parts added to this bike yet!');
       return;
     }
 
-    const updatedParts = (targetJob.parts || []).map(p => ({ ...p, status: 'CONFIRMED', is_confirmed: true }));
+    const updatedParts = allParts.map(p => ({ ...p, status: 'CONFIRMED', is_confirmed: true, is_deducted: true }));
     const updatedJob = { ...targetJob, parts: updatedParts };
 
     setJobs(prev => prev.map(j => (String(j.id) === String(jobId) ? updatedJob : j)));
@@ -366,7 +370,7 @@ export default function WorkshopPage() {
       const allInvMap = new Map();
       [...localInv, ...cloudInv].forEach(item => {
         if (item && (item.id || item.part_name || item.name)) {
-          const key = String(item.id || item.part_name || item.name);
+          const key = String(item.id || item.part_name || item.name).toLowerCase().trim();
           if (!allInvMap.has(key)) allInvMap.set(key, item);
         }
       });
@@ -374,7 +378,7 @@ export default function WorkshopPage() {
       let invList = Array.from(allInvMap.values());
       let invChanged = false;
 
-      partsToConfirm.forEach(pToUse => {
+      effectivePartsToDeduct.forEach(pToUse => {
         if (!pToUse) return;
         const pId = String(pToUse.inventory_id || pToUse.part_id || pToUse.id || '');
         const pName = (pToUse.part_name || pToUse.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
@@ -389,7 +393,7 @@ export default function WorkshopPage() {
 
           if (isMatch) {
             invChanged = true;
-            const currentQty = parseInt(invItem.current_stock || invItem.stock_quantity || invItem.quantity || 0, 10);
+            const currentQty = parseInt(invItem.current_stock !== undefined ? invItem.current_stock : (invItem.stock_quantity !== undefined ? invItem.stock_quantity : (invItem.quantity !== undefined ? invItem.quantity : 0)), 10);
             const newQty = Math.max(0, currentQty - usedQty);
             const updatedItem = {
               ...invItem,

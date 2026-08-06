@@ -57,16 +57,6 @@ export default function ContactPage() {
       console.warn('Backend API offline for contact submission:', apiErr);
     }
 
-    const ownerPhone = '918140371414';
-    const waText = encodeURIComponent(
-      `💬 *NEW WEBSITE CONTACT INQUIRY (Patel Automobiles)*\n\n` +
-      `👤 *Name:* ${formData.name}\n` +
-      `📱 *Phone:* ${formData.phone}\n` +
-      `📧 *Email:* ${formData.email || 'N/A'}\n` +
-      `📝 *Message:* ${formData.message}`
-    );
-    window.open(`https://wa.me/${ownerPhone}?text=${waText}`, '_blank');
-
     setLoading(false);
     setSubmitted(true);
   };

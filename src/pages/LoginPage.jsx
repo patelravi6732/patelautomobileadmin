@@ -28,10 +28,27 @@ export default function LoginPage() {
   });
   const [setupError, setSetupError] = useState('');
 
-  // Ensure primary admin patel is always initialized so Username & Password form shows directly
+  // Check if system has 0 existing admin profiles across central cloud store
   useEffect(() => {
-    setIsFirstTimeSetup(false);
-    setSetupLoading(false);
+    async function checkAdminCount() {
+      try {
+        const cloudAdmins = await fetchCloudAdminProfiles();
+        if (!cloudAdmins || cloudAdmins.length === 0) {
+          localStorage.removeItem('admin_profiles');
+          localStorage.removeItem('user');
+          localStorage.removeItem('admin_logged_in');
+          sessionStorage.clear();
+          setIsFirstTimeSetup(true);
+        } else {
+          setIsFirstTimeSetup(false);
+        }
+      } catch (err) {
+        console.warn('Error checking initial admin setup:', err);
+      } finally {
+        setSetupLoading(false);
+      }
+    }
+    checkAdminCount();
   }, []);
 
   // If already logged in, navigate directly to dashboard

@@ -784,12 +784,6 @@ export default function SettingsPage() {
               </p>
             </div>
 
-            <button
-              onClick={handleOpenAddAdmin}
-              className="inline-flex items-center gap-2 bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 hover:opacity-95 text-white font-extrabold text-xs px-5 py-3 rounded-xl shadow-md shadow-rose-500/20 transition-all hover:scale-105 active:scale-95 shrink-0"
-            >
-              <Sparkles className="w-4 h-4" /> Add New Admin
-            </button>
           </div>
 
           {/* ADMIN CARDS GRID */}

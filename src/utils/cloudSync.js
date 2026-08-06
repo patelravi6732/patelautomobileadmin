@@ -1,3 +1,7 @@
+import axios from 'axios';
+
+const PRIMARY_BIN_URL = 'https://jsonblob.com/api/jsonBlob/019fd66d-15cf-7fac-88f7-812f4bd2d266';
+
 export const DEFAULT_PRIMARY_ADMIN = {
   id: 'admin_patel_primary',
   username: 'patel',
@@ -22,7 +26,7 @@ async function fetchMasterStore() {
           inventory: Array.isArray(parsed.inventory) ? parsed.inventory : [],
           recycleBin: Array.isArray(parsed.recycleBin) ? parsed.recycleBin : [],
           garageInfo: parsed.garageInfo || null,
-          adminProfiles: Array.isArray(parsed.adminProfiles) && parsed.adminProfiles.length > 0 ? parsed.adminProfiles : [DEFAULT_PRIMARY_ADMIN],
+          adminProfiles: Array.isArray(parsed.adminProfiles) ? parsed.adminProfiles : [],
           khataEntries: Array.isArray(parsed.khataEntries) ? parsed.khataEntries : [],
           customers: Array.isArray(parsed.customers) ? parsed.customers : [],
           invoices: Array.isArray(parsed.invoices) ? parsed.invoices : [],
@@ -34,7 +38,7 @@ async function fetchMasterStore() {
     } catch (e) {
       console.warn('Error reading local master_cloud_cache:', e);
     }
-    return { bookings: [], messages: [], jobs: [], inventory: [], recycleBin: [], garageInfo: null, adminProfiles: [DEFAULT_PRIMARY_ADMIN], khataEntries: [], customers: [], invoices: [], attendance: [], salaryPayments: [], deletedIds: [] };
+    return { bookings: [], messages: [], jobs: [], inventory: [], recycleBin: [], garageInfo: null, adminProfiles: [], khataEntries: [], customers: [], invoices: [], attendance: [], salaryPayments: [], deletedIds: [] };
   };
 
   const localCache = getLocalCache();
@@ -53,7 +57,7 @@ async function fetchMasterStore() {
         inventory: Array.isArray(res.data.inventory) ? res.data.inventory : [],
         recycleBin: Array.isArray(res.data.recycleBin) ? res.data.recycleBin : [],
         garageInfo: res.data.garageInfo || null,
-        adminProfiles: Array.isArray(res.data.adminProfiles) && res.data.adminProfiles.length > 0 ? res.data.adminProfiles : [DEFAULT_PRIMARY_ADMIN],
+        adminProfiles: Array.isArray(res.data.adminProfiles) ? res.data.adminProfiles : [],
         khataEntries: Array.isArray(res.data.khataEntries) ? res.data.khataEntries : [],
         customers: Array.isArray(res.data.customers) ? res.data.customers : [],
         invoices: Array.isArray(res.data.invoices) ? res.data.invoices : [],
@@ -74,7 +78,7 @@ async function fetchMasterStore() {
       inventory: freshStore.inventory,
       recycleBin: freshStore.recycleBin,
       garageInfo: freshStore.garageInfo || localCache.garageInfo,
-      adminProfiles: freshStore.adminProfiles.length > 0 ? freshStore.adminProfiles : [DEFAULT_PRIMARY_ADMIN],
+      adminProfiles: freshStore.adminProfiles,
       khataEntries: freshStore.khataEntries,
       customers: freshStore.customers,
       invoices: freshStore.invoices,
@@ -461,9 +465,6 @@ export async function fetchCloudAdminProfiles() {
   }
 
   const allAdminsMap = new Map();
-
-  // Always seed DEFAULT_PRIMARY_ADMIN first
-  allAdminsMap.set('patel', DEFAULT_PRIMARY_ADMIN);
 
   cloudList.forEach(a => { 
     const key = (a.username || a.user_name || a.phone || a.id || '').toLowerCase();

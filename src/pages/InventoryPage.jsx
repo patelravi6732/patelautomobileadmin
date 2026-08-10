@@ -223,22 +223,35 @@ export default function InventoryPage() {
       localStorage.setItem('recycle_bin_items', JSON.stringify(updatedTrash));
       pushCloudRecycleBinItem(trashObj).catch(console.warn);
 
-      // 2. Remove from active inventory (local & cloud)
-      deleteCloudInventoryItem(targetItem.id).catch(console.warn);
-      const existing = JSON.parse(localStorage.getItem('inventory_items') || JSON.stringify(DEFAULT_SPARE_PARTS));
-      const updatedLocal = existing.filter(i => String(i.id) !== String(targetItem.id));
-      localStorage.setItem('inventory_items', JSON.stringify(updatedLocal));
+      // 2. Remove from active inventory & add to deletedIds (local & cloud)
+      deleteCloudInventoryItem(targetItem).catch(console.warn);
+      
+      const targetNorm = String(targetItem.part_name || targetItem.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const targetId = String(targetItem.id || '');
+      const isMatch = (i) => {
+        if (!i) return false;
+        const curId = String(i.id || '');
+        const curNorm = String(i.part_name || i.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        return (targetId && curId && targetId === curId) || (targetNorm && curNorm && targetNorm === curNorm);
+      };
 
-      setItems(prev => prev.filter(i => String(i.id) !== String(targetItem.id)));
+      const existing = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+      const updatedLocal = existing.filter(i => !isMatch(i));
+      localStorage.setItem('inventory_items', JSON.stringify(updatedLocal));
+      localStorage.setItem('spare_parts', JSON.stringify(updatedLocal));
+
+      setItems(prev => prev.filter(i => !isMatch(i)));
+      setPasswordModal({ isOpen: false, item: null, actionType: null, pendingData: null });
+      try { window.dispatchEvent(new Event('storage')); } catch (e) {}
 
       try {
         await API.post(`/inventory/${targetItem.id}/delete_with_password/`, {
           admin_password: adminPassword
         }, { timeout: 2000 });
       } catch (err) {
-        console.warn('Backend API offline, moved spare part to Recycle Bin locally & cloud store:', err);
+        console.warn('Backend API notice:', err);
       } finally {
-        alert('Spare part moved to Recycle Bin!');
+        alert(`🗑️ Spare part '${targetItem.part_name || targetItem.name}' moved to Recycle Bin!`);
       }
     }
   };

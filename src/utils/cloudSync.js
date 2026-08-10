@@ -471,12 +471,40 @@ export async function pushCloudInventoryItem(newItem) {
   await saveMasterStore({ ...store, inventory: updated });
 }
 
-export async function deleteCloudInventoryItem(itemId) {
-  if (!itemId) return;
+export async function deleteCloudInventoryItem(target) {
+  if (!target) return;
+  const targetId = typeof target === 'object' ? String(target.id || '') : String(target);
+  const targetName = typeof target === 'object' ? String(target.part_name || target.name || '').toLowerCase().trim() : targetId.toLowerCase().trim();
+  const targetNorm = targetName.replace(/[^a-z0-9]/g, '');
+
+  // 1. Add to deletedIds (local & cloud)
+  if (targetId) pushCloudDeletedId(targetId).catch(console.warn);
+  if (targetNorm) pushCloudDeletedId(targetNorm).catch(console.warn);
+  if (targetName) pushCloudDeletedId(targetName).catch(console.warn);
+
+  const localDeleted = JSON.parse(localStorage.getItem('deleted_ids') || '[]');
+  const updatedDeleted = Array.from(new Set([...localDeleted, targetId, targetNorm, targetName].filter(Boolean)));
+  localStorage.setItem('deleted_ids', JSON.stringify(updatedDeleted));
+
+  // 2. Remove from local inventory_items & spare_parts
+  const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+  const isMatchItem = (i) => {
+    if (!i) return false;
+    const curId = String(i.id || '');
+    const curRaw = String(i.part_name || i.name || '').trim();
+    const curName = curRaw.toLowerCase();
+    const curNorm = curName.replace(/[^a-z0-9]/g, '');
+    return (targetId && curId && targetId === curId) || (targetNorm && curNorm && targetNorm === curNorm) || (targetName && curName && targetName === curName);
+  };
+  const updatedLocal = localInv.filter(i => !isMatchItem(i));
+  localStorage.setItem('inventory_items', JSON.stringify(updatedLocal));
+  localStorage.setItem('spare_parts', JSON.stringify(updatedLocal));
+
+  // 3. Remove from master_cloud_cache
   const store = await fetchMasterStore();
   const existing = (store.inventory || []).filter(i => i && typeof i === 'object');
-  const updated = existing.filter(i => i.id !== itemId && String(i.id) !== String(itemId));
-  await saveMasterStore({ ...store, inventory: updated });
+  const updated = existing.filter(i => !isMatchItem(i));
+  await saveMasterStore({ ...store, inventory: updated, deletedIds: Array.from(new Set([...(store.deletedIds || []), ...updatedDeleted])) });
 }
 
 // ---------------- RECYCLE BIN ----------------

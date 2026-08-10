@@ -197,14 +197,10 @@ export default function WorkshopPage() {
           if (!existing) {
             allInvMap.set(normKey, cleanItem);
           } else {
-            const itemTime = item.updated_at ? new Date(item.updated_at).getTime() : 0;
-            const existingTime = existing.updated_at ? new Date(existing.updated_at).getTime() : 0;
-            if (itemTime > existingTime) {
-              allInvMap.set(normKey, { ...existing, ...cleanItem });
-            } else if (existingTime > itemTime) {
-              // Existing is newer, keep existing
-            } else if (parsedStock < existing.current_stock) {
+            if (parsedStock < existing.current_stock) {
               allInvMap.set(normKey, { ...existing, ...cleanItem, current_stock: parsedStock });
+            } else if (cleanItem.price !== existing.price || cleanItem.min_stock_alert !== existing.min_stock_alert) {
+              allInvMap.set(normKey, { ...existing, ...cleanItem });
             }
           }
         }

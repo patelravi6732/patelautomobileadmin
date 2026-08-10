@@ -151,14 +151,10 @@ export async function fetchMasterStore() {
             if (!existing) {
               recMap.set(key, cleanObj);
             } else {
-              const itemTime = item.updated_at ? new Date(item.updated_at).getTime() : 0;
-              const existingTime = existing.updated_at ? new Date(existing.updated_at).getTime() : 0;
-              if (itemTime > existingTime) {
-                recMap.set(key, { ...existing, ...cleanObj });
-              } else if (existingTime > itemTime) {
-                // Existing is newer, keep existing
-              } else if (parsedStock < existing.current_stock) {
+              if (parsedStock < existing.current_stock) {
                 recMap.set(key, { ...existing, ...cleanObj, current_stock: parsedStock });
+              } else if (cleanObj.price !== existing.price || cleanObj.min_stock_alert !== existing.min_stock_alert) {
+                recMap.set(key, { ...existing, ...cleanObj });
               }
             }
           }

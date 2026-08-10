@@ -80,16 +80,10 @@ export default function InventoryPage() {
           if (!existing) {
             allMap.set(key, newItemObj);
           } else {
-            const itemTime = item.updated_at ? new Date(item.updated_at).getTime() : 0;
-            const existingTime = existing.updated_at ? new Date(existing.updated_at).getTime() : 0;
-            
-            if (itemTime > existingTime) {
-              allMap.set(key, { ...existing, ...newItemObj });
-            } else if (existingTime > itemTime) {
-              // Existing is newer, keep existing
-            } else if (parsedStock < existing.current_stock) {
-              // Same or no timestamp: prioritize deducted stock!
+            if (parsedStock < existing.current_stock) {
               allMap.set(key, { ...existing, ...newItemObj, current_stock: parsedStock });
+            } else if (newItemObj.price !== existing.price || newItemObj.min_stock_alert !== existing.min_stock_alert) {
+              allMap.set(key, { ...existing, ...newItemObj });
             }
           }
         }

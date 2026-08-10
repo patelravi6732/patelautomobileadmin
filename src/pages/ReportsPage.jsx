@@ -61,32 +61,64 @@ const computeInstantReports = () => {
     const currentYear = now.getFullYear();
 
     const isToday = (dateVal) => {
-      if (!dateVal) return false;
+      if (!dateVal) return true;
       const dStr = String(dateVal).trim();
-      if (dStr.startsWith(todayISO)) return true;
+      const now = new Date();
+      const todayISO = now.toISOString().split('T')[0];
+      const todayLoc = now.toLocaleDateString('en-CA');
+      const d = now.getDate();
+      const m = new Date().getMonth() + 1;
+      const y = new Date().getFullYear();
+      const dPad = String(d).padStart(2, '0');
+      const mPad = String(m).padStart(2, '0');
+      const todayDMY = `${dPad}/${mPad}/${y}`;
+      const todayDMYDash = `${dPad}-${mPad}-${y}`;
+
+      if (dStr.startsWith(todayISO) || dStr.startsWith(todayLoc) || dStr.includes(todayDMY) || dStr.includes(todayDMYDash)) return true;
+
+      const parts = dStr.split(/[\/\-T\s]/);
+      if (parts.length >= 3) {
+        if (parts[0].length === 2 && parts[1].length === 2 && parts[2].length === 4) {
+          return parseInt(parts[0], 10) === d && parseInt(parts[1], 10) === m && parseInt(parts[2], 10) === y;
+        }
+        if (parts[0].length === 4 && parts[1].length <= 2 && parts[2].length <= 2) {
+          return parseInt(parts[0], 10) === y && parseInt(parts[1], 10) === m && parseInt(parts[2], 10) === d;
+        }
+      }
+
       const parsed = new Date(dateVal);
       if (!isNaN(parsed.getTime())) {
-        return parsed.getDate() === now.getDate() && parsed.getMonth() === currentMonth && parsed.getFullYear() === currentYear;
+        return parsed.getDate() === d && (parsed.getMonth() + 1) === m && parsed.getFullYear() === y;
       }
-      return false;
+      return true;
     };
 
     const isThisMonth = (dateVal) => {
-      if (!dateVal) return false;
+      if (!dateVal) return true;
       const parsed = new Date(dateVal);
       if (!isNaN(parsed.getTime())) {
         return parsed.getMonth() === currentMonth && parsed.getFullYear() === currentYear;
       }
-      return false;
+      return true;
     };
 
     const dailyRevenue = allInvoices
-      .filter(inv => isToday(inv.created_at))
-      .reduce((acc, inv) => acc + (parseFloat(inv.paid_amount) || 0), 0);
+      .filter(inv => isToday(inv.created_at || inv.visit_date || inv.date))
+      .reduce((acc, inv) => {
+        const grandVal = parseFloat(inv.grand_total || inv.total_amount || 0);
+        const rawPaid = parseFloat(inv.paid_amount !== undefined && inv.paid_amount !== null ? inv.paid_amount : (inv.received_amount || (inv.payment_status === 'PAID' ? grandVal : 0)));
+        const paidVal = Math.min(grandVal, Math.max(0, rawPaid));
+        return acc + paidVal;
+      }, 0);
 
     const monthlyRevenue = allInvoices
-      .filter(inv => isThisMonth(inv.created_at))
-      .reduce((acc, inv) => acc + (parseFloat(inv.paid_amount) || 0), 0);
+      .filter(inv => isThisMonth(inv.created_at || inv.visit_date || inv.date))
+      .reduce((acc, inv) => {
+        const grandVal = parseFloat(inv.grand_total || inv.total_amount || 0);
+        const rawPaid = parseFloat(inv.paid_amount !== undefined && inv.paid_amount !== null ? inv.paid_amount : (inv.received_amount || (inv.payment_status === 'PAID' ? grandVal : 0)));
+        const paidVal = Math.min(grandVal, Math.max(0, rawPaid));
+        return acc + paidVal;
+      }, 0);
 
     const cleanInv = localInventory.filter(i => i && !isDeleted(i.id) && !isDeleted(i.part_name));
     const inventoryValue = cleanInv.reduce((acc, item) => {
@@ -95,7 +127,12 @@ const computeInstantReports = () => {
       return acc + (price * stock);
     }, 0);
 
-    const totalPendingDues = allInvoices.reduce((acc, inv) => acc + (parseFloat(inv.pending_amount) || 0), 0);
+    const totalPendingDues = allInvoices.reduce((acc, inv) => {
+      const grandVal = parseFloat(inv.grand_total || inv.total_amount || 0);
+      const rawPaid = parseFloat(inv.paid_amount !== undefined && inv.paid_amount !== null ? inv.paid_amount : (inv.received_amount || (inv.payment_status === 'PAID' ? grandVal : 0)));
+      const paidVal = Math.min(grandVal, Math.max(0, rawPaid));
+      return acc + Math.max(0, grandVal - paidVal);
+    }, 0);
 
     return {
       daily_revenue: dailyRevenue,

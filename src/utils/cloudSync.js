@@ -318,12 +318,16 @@ async function saveMasterStore(storeData) {
     });
   } catch (err) {
     if (err?.response?.status === 404) {
-      console.warn('Cloud bin expired (404) on save, auto-creating new bin...');
+      console.warn('Cloud bin 404, creating fresh recovery bin...');
       await createFreshCloudBin(storeData);
     } else {
-      console.warn('Master cloud store save notice:', err);
+      console.warn('Cloud store update warning:', err);
     }
   }
+
+  try {
+    axios.post('/api/sync', storeData, { timeout: 4000 }).catch(() => {});
+  } catch (e) {}
 }
 
 export async function fetchCloudBookings() {

@@ -746,21 +746,12 @@ export default function KhataBookPage() {
                       <div className="flex flex-wrap items-center justify-end gap-1.5 max-w-[280px] ml-auto">
                         <button
                           type="button"
-                          onClick={() => openStatementModal(d)}
-                          className="h-8 px-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-[11px] rounded-lg flex items-center justify-center gap-1 shadow-sm transition-all hover:scale-105"
-                          title="View Statement Card Modal"
-                        >
-                          <Eye className="w-3 h-3" /> View
-                        </button>
-
-                        <button
-                          type="button"
                           onClick={() => handleDownloadStatementPhoto(d)}
                           disabled={sharingPhoto}
-                          className="h-8 px-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[11px] rounded-lg flex items-center justify-center gap-1 shadow-sm transition-all hover:scale-105"
+                          className="h-8 px-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[11px] rounded-lg flex items-center justify-center gap-1 shadow-sm transition-all hover:scale-105 cursor-pointer"
                           title="Download Statement Photo Card"
                         >
-                          <Download className="w-3 h-3" /> Download
+                          <Download className="w-3.5 h-3.5" /> Download
                         </button>
 
                         <button

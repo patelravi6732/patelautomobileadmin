@@ -499,18 +499,9 @@ export default function BillingPage() {
                       <div className="flex items-center justify-end gap-2">
                         <button
                           type="button"
-                          onClick={() => openInvoiceModal(inv)}
-                          className="h-9 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition-all hover:-translate-y-0.5 whitespace-nowrap"
-                          title="View bill details"
-                        >
-                          <Eye className="w-3.5 h-3.5" /> Details
-                        </button>
-
-                        <button
-                          type="button"
                           onClick={() => handleDownloadInvoicePhoto(inv)}
                           disabled={sharingPhoto}
-                          className="h-9 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition-all hover:scale-105 whitespace-nowrap"
+                          className="h-9 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition-all hover:scale-105 whitespace-nowrap cursor-pointer"
                           title="Download bill photo"
                         >
                           <Download className="w-3.5 h-3.5" /> Download

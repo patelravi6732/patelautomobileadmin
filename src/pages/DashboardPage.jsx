@@ -5,7 +5,7 @@ import {
   ArrowUpRight, Package, Calendar, Activity, ChevronRight 
 } from 'lucide-react';
 import API from '../services/api';
-import { fetchCloudAdminProfiles, getCleanDeletedIds } from '../utils/cloudSync';
+import { fetchMasterStore, fetchCloudAdminProfiles, getCleanDeletedIds } from '../utils/cloudSync';
 
 export default function DashboardPage() {
   const [stats, setStats] = useState(null);
@@ -16,15 +16,7 @@ export default function DashboardPage() {
     let backendStats = null;
 
     // First fetch fresh master store so any new device gets latest jobs, invoices & inventory
-    let cloudStore = null;
-    try {
-      const axios = (await import('axios')).default;
-      const res = await axios.get('https://jsonblob.com/api/jsonBlob/019fd66d-15cf-7fac-88f7-812f4bd2d266?t=' + Date.now(), {
-        headers: { 'Accept': 'application/json', 'Cache-Control': 'no-cache' },
-        timeout: 3000
-      });
-      if (res.data) cloudStore = res.data;
-    } catch (e) {}
+    const cloudStore = await fetchMasterStore().catch(() => null);
 
     const deletedIds = await getCleanDeletedIds().catch(() => []);
     const isDeleted = (id) => id && deletedIds.includes(String(id));

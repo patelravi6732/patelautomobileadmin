@@ -152,19 +152,6 @@ export const AuthProvider = ({ children }) => {
       return apiUserData;
     }
 
-    // Always fetch fresh cloud admin profiles directly from PRIMARY_BIN_URL for login verification
-    let freshCloudAdmins = [];
-    try {
-      const PRIMARY_BIN_URL = 'https://jsonblob.com/api/jsonBlob/019fd66d-15cf-7fac-88f7-812f4bd2d266';
-      const freshRes = await API.get(PRIMARY_BIN_URL + '?t=' + Date.now(), {
-        headers: { 'Accept': 'application/json', 'Cache-Control': 'no-cache' },
-        timeout: 3000
-      });
-      if (freshRes.data && Array.isArray(freshRes.data.adminProfiles)) {
-        freshCloudAdmins = freshRes.data.adminProfiles.filter(a => a && typeof a === 'object');
-      }
-    } catch (e) {}
-
     const cloudAdmins = await fetchCloudAdminProfiles().catch(() => []);
     const localAdmins = JSON.parse(localStorage.getItem('admin_profiles') || '[]');
     const allAdmins = [...freshCloudAdmins, ...cloudAdmins, ...localAdmins, DEFAULT_PRIMARY_ADMIN];

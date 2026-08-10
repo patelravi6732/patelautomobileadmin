@@ -1,6 +1,33 @@
 import axios from 'axios';
 
-const PRIMARY_BIN_URL = 'https://jsonblob.com/api/jsonBlob/019fd66d-15cf-7fac-88f7-812f4bd2d266';
+const DEFAULT_PRIMARY_BIN_URL = 'https://jsonblob.com/api/jsonBlob/019fea29-8149-759d-ad03-0c9b267e07b2';
+
+function getActiveBinUrl() {
+  try {
+    return localStorage.getItem('primary_cloud_bin_url') || DEFAULT_PRIMARY_BIN_URL;
+  } catch (e) {
+    return DEFAULT_PRIMARY_BIN_URL;
+  }
+}
+
+async function createFreshCloudBin(initialData) {
+  try {
+    const res = await axios.post('https://jsonblob.com/api/jsonBlob', initialData, {
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      timeout: 4000
+    });
+    const location = res.headers['location'] || res.headers['Location'];
+    if (location) {
+      const fullUrl = location.startsWith('http') ? location : `https://jsonblob.com${location}`;
+      localStorage.setItem('primary_cloud_bin_url', fullUrl);
+      console.log('✨ Auto-healed & created fresh cloud bin:', fullUrl);
+      return fullUrl;
+    }
+  } catch (err) {
+    console.warn('Failed to auto-create fresh cloud bin:', err);
+  }
+  return null;
+}
 
 export const DEFAULT_PRIMARY_ADMIN = {
   id: 'admin_patel_primary',
@@ -43,9 +70,10 @@ export async function fetchMasterStore() {
 
   const localCache = getLocalCache();
   let freshStore = null;
+  let activeUrl = getActiveBinUrl();
 
   try {
-    const res = await axios.get(PRIMARY_BIN_URL + '?t=' + Date.now(), {
+    const res = await axios.get(activeUrl + '?t=' + Date.now(), {
       headers: { 'Accept': 'application/json', 'Cache-Control': 'no-cache' },
       timeout: 3000
     });
@@ -67,7 +95,16 @@ export async function fetchMasterStore() {
       };
     }
   } catch (e1) {
-    console.warn('Primary cloud store fetch notice:', e1);
+    if (e1?.response?.status === 404) {
+      console.warn('Cloud bin expired (404), triggering auto-recovery...');
+      const newUrl = await createFreshCloudBin(localCache);
+      if (newUrl) {
+        activeUrl = newUrl;
+        freshStore = localCache;
+      }
+    } else {
+      console.warn('Primary cloud store fetch notice:', e1);
+    }
   }
 
   if (freshStore) {
@@ -136,13 +173,19 @@ async function saveMasterStore(storeData) {
     console.warn('Error writing local master_cloud_cache:', e);
   }
 
+  let activeUrl = getActiveBinUrl();
   try {
-    await axios.put(PRIMARY_BIN_URL, storeData, {
+    await axios.put(activeUrl, storeData, {
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
       timeout: 3000
     });
   } catch (err) {
-    console.warn('Master cloud store save notice:', err);
+    if (err?.response?.status === 404) {
+      console.warn('Cloud bin expired (404) on save, auto-creating new bin...');
+      await createFreshCloudBin(storeData);
+    } else {
+      console.warn('Master cloud store save notice:', err);
+    }
   }
 }
 

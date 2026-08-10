@@ -79,7 +79,7 @@ export default function BillingPage() {
     });
 
     const allMap = new Map();
-    [...backendInvs, ...localInvs, ...cloudInvs, ...derivedInvs].forEach(inv => {
+    [...localInvs, ...cloudInvs, ...derivedInvs, ...backendInvs].forEach(inv => {
       if (inv && typeof inv === 'object') {
         const strId = String(inv.id || '');
         const rawId = strId.replace(/^inv_/, '').replace(/^job_/, '');
@@ -124,6 +124,15 @@ export default function BillingPage() {
 
   useEffect(() => {
     fetchInvoices();
+    const interval = setInterval(() => {
+      fetchInvoices();
+    }, 3000);
+    const handleStorage = () => fetchInvoices();
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('storage', handleStorage);
+    };
   }, []);
 
   const availableYears = useMemo(() => {

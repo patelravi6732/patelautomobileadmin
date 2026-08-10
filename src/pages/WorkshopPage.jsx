@@ -842,7 +842,9 @@ export default function WorkshopPage() {
     }
 
     setShowFinishModal(false);
-    alert(`🎉 Service finished successfully! Invoice ${newInvoiceObj.invoice_number} generated.`);
+    setSelectedJob(null);
+    try { window.dispatchEvent(new Event('storage')); } catch (e) {}
+    alert(`🎉 Service finished successfully! Invoice ${newInvoiceObj.invoice_number} generated and sent to Billing.`);
   };
 
   const handleCancelService = async (jobId) => {

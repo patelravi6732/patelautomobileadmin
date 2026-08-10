@@ -11,8 +11,8 @@ export default function DashboardPage() {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchStats = async () => {
-    setLoading(true);
+  const fetchStats = async (isInitial = false) => {
+    if (isInitial && !stats) setLoading(true);
     let backendStats = null;
 
     // First fetch fresh master store so any new device gets latest jobs, invoices & inventory
@@ -69,14 +69,14 @@ export default function DashboardPage() {
   };
 
   useEffect(() => {
-    fetchStats();
+    fetchStats(true);
     const interval = setInterval(() => {
-      fetchStats();
-    }, 3000);
+      fetchStats(false);
+    }, 5000);
     return () => clearInterval(interval);
   }, []);
 
-  if (loading) {
+  if (loading && !stats) {
     return (
       <div className="p-8 text-center text-slate-500 font-medium">
         Loading Garage Metrics...

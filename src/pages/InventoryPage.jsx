@@ -43,17 +43,10 @@ export default function InventoryPage() {
 
   const fetchInventory = async (isInitial = false) => {
     if (isInitial) setLoading(true);
-    let backendItems = [];
-    try {
-      const res = await API.get('/inventory/', { timeout: 1500 });
-      backendItems = res.data || [];
-    } catch (err) {
-      console.warn('Backend API offline for inventory, using fast local+cloud store:', err);
-    }
 
+    const deletedIds = await fetchCloudDeletedIds().catch(() => []);
     const localDeleted = JSON.parse(localStorage.getItem('deleted_ids') || '[]');
-    const cloudDeleted = await fetchCloudDeletedIds().catch(() => []);
-    const deletedIds = Array.from(new Set([...localDeleted, ...cloudDeleted]));
+    const allDeletedIds = Array.from(new Set([...localDeleted, ...deletedIds]));
 
     const isItemDeleted = (item) => {
       if (!item) return true;
@@ -61,26 +54,32 @@ export default function InventoryPage() {
       const itName = String(item.part_name || item.name || '').toLowerCase().trim();
       const itNorm = itName.replace(/[^a-z0-9]/g, '');
 
-      return deletedIds.some(d => {
+      return allDeletedIds.some(d => {
         if (!d) return false;
         const dStr = String(d).toLowerCase().trim();
         const dNorm = dStr.replace(/[^a-z0-9]/g, '');
-        return (itId && dStr && (itId === dStr || itId.replace(/[^a-z0-9]/g, '') === dNorm)) ||
-               (itName && dStr && (itName === dStr || itName.includes(dStr) || dStr.includes(itName))) ||
-               (itNorm && dNorm && (itNorm === dNorm || itNorm.includes(dNorm) || dNorm.includes(itNorm)));
+        return (itId && dStr && (itId === dStr || itId === dNorm)) ||
+               (itName && dStr && (itName === dStr || itNorm === dNorm || itNorm === dStr));
       });
     };
 
     const cloudInv = await fetchCloudInventory().catch(() => []);
-    const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+    const rawLocalInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+    
+    // Clean local storage of any deleted item
+    const cleanLocalInv = rawLocalInv.filter(i => !isItemDeleted(i));
+    if (cleanLocalInv.length !== rawLocalInv.length) {
+      localStorage.setItem('inventory_items', JSON.stringify(cleanLocalInv));
+      localStorage.setItem('spare_parts', JSON.stringify(cleanLocalInv));
+    }
 
     const allMap = new Map();
-    [...localInv, ...cloudInv, ...backendItems].forEach(item => {
+    [...cleanLocalInv, ...cloudInv].forEach(item => {
       if (item && typeof item === 'object' && (item.id || item.part_name || item.name)) {
         if (!isItemDeleted(item)) {
           const rawId = String(item.id || `inv_${String(item.part_name || item.name).toLowerCase().replace(/[^a-z0-9]/g, '')}`);
           const rawName = String(item.part_name || item.name || '').trim();
-          const parsedStock = parseInt(item.current_stock !== undefined ? item.current_stock : (item.stock_quantity !== undefined ? item.stock_quantity : (item.quantity !== undefined ? item.quantity : 0)), 10);
+          const parsedStock = parseInt(item.current_stock !== undefined ? item.current_stock : 0, 10);
           const parsedMin = item.min_stock_alert !== undefined && item.min_stock_alert !== '' ? parseInt(item.min_stock_alert, 10) : 2;
           
           const newItemObj = {
@@ -97,10 +96,8 @@ export default function InventoryPage() {
           if (!existing) {
             allMap.set(rawId, newItemObj);
           } else {
-            if (parsedStock < existing.current_stock) {
-              allMap.set(rawId, { ...existing, ...newItemObj, current_stock: parsedStock });
-            } else if (newItemObj.price !== existing.price || newItemObj.min_stock_alert !== existing.min_stock_alert) {
-              allMap.set(rawId, { ...existing, ...newItemObj });
+            if (item.updated_at && (!existing.updated_at || new Date(item.updated_at) > new Date(existing.updated_at))) {
+              allMap.set(rawId, newItemObj);
             }
           }
         }

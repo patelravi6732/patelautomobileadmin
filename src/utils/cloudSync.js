@@ -325,8 +325,7 @@ export async function pushCloudJob(newJob) {
     updated = existing.map(j => isMatch(j) ? { ...j, ...newJob } : j);
   }
   
-  const curLocalInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
-  await saveMasterStore({ ...store, jobs: updated, inventory: curLocalInv.length > 0 ? curLocalInv : store.inventory });
+  await saveMasterStore({ ...store, jobs: updated });
 }
 
 export async function updateCloudJobStatus(jobId, newStatus) {

@@ -281,7 +281,7 @@ export default function WorkshopPage() {
     setShowPartModal(true);
   };
 
-  const handleAddStagedPart = async (e) => {
+  const handleAddPart = async (e) => {
     e.preventDefault();
     if (!selectedPartId || !selectedJob) return;
 
@@ -301,12 +301,12 @@ export default function WorkshopPage() {
       unit_price: unitPrice,
       quantity: qty,
       staged_total: stagedTotal,
-      status: 'STAGED',
-      is_confirmed: false,
-      is_deducted: false
+      status: 'CONFIRMED',
+      is_confirmed: true,
+      is_deducted: true
     };
 
-    // 1. Update Job parts with STAGED status (Stock is NOT deducted until "Confirm Parts" is clicked)
+    // 1. Update Job parts
     const existingParts = Array.isArray(selectedJob.parts) ? selectedJob.parts : [];
     const updatedParts = [...existingParts, newPartEntry];
     const newPartsTotal = updatedParts.reduce((acc, p) => acc + parseFloat(p.staged_total || (parseFloat(p.price || p.unit_price || 0) * parseInt(p.quantity || 1, 10))), 0);
@@ -329,6 +329,42 @@ export default function WorkshopPage() {
     localStorage.setItem('workshop_jobs', JSON.stringify(updatedLocal));
     pushCloudJob(updatedJob).catch(console.warn);
 
+    // 2. Deduct Inventory stock IMMEDIATELY in 1 step
+    try {
+      const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+      const targetId = String(partObj.id || '').replace(/[^a-z0-9]/g, '');
+      const targetName = String(partObj.part_name || partObj.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase().trim();
+
+      const updatedInv = localInv.map(invItem => {
+        if (!invItem) return invItem;
+        const curId = String(invItem.id || '').replace(/[^a-z0-9]/g, '');
+        const curName = String(invItem.part_name || invItem.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase().trim();
+        const isMatch = (targetId && curId && targetId === curId) || (targetName && curName && (targetName === curName || targetName.includes(curName) || curName.includes(targetName)));
+
+        if (isMatch) {
+          const currentQty = parseInt(invItem.current_stock !== undefined ? invItem.current_stock : (invItem.stock_quantity !== undefined ? invItem.stock_quantity : (invItem.quantity !== undefined ? invItem.quantity : 0)), 10);
+          const newQty = Math.max(0, currentQty - qty);
+          const updatedItem = {
+            ...invItem,
+            current_stock: newQty,
+            stock_quantity: newQty,
+            quantity: newQty,
+            updated_at: new Date().toISOString()
+          };
+          pushCloudInventoryItem(updatedItem).catch(console.warn);
+          return updatedItem;
+        }
+        return invItem;
+      });
+
+      localStorage.setItem('inventory_items', JSON.stringify(updatedInv));
+      localStorage.setItem('spare_parts', JSON.stringify(updatedInv));
+      setInventory(updatedInv);
+      try { window.dispatchEvent(new Event('storage')); } catch (e) {}
+    } catch (err) {
+      console.warn('Real-time stock deduction notice:', err);
+    }
+
     setShowPartModal(false);
 
     try {
@@ -337,9 +373,9 @@ export default function WorkshopPage() {
         quantity: partQty
       }, { timeout: 2000 });
     } catch (err) {
-      console.warn('Backend API offline, added staged part locally & cloud store:', err);
+      console.warn('Backend API offline, added part locally & cloud store:', err);
     } finally {
-      alert(`📝 Part '${partObj.part_name || partObj.name}' (Qty: ${qty}) added as STAGED!\n\nClick '✔ Confirm Parts' on the bike card when you want to deduct stock from Inventory.`);
+      alert(`✅ Part '${partObj.part_name || partObj.name}' (Qty: ${qty}) Added to Bike & Stock Deducted from Inventory!`);
     }
   };
 
@@ -1057,45 +1093,33 @@ export default function WorkshopPage() {
 
                   {/* ACTION BUTTONS */}
                   <div className="pt-4 border-t border-slate-100 space-y-2">
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-2 gap-2">
                       <button
                         onClick={() => openAssignModal(job)}
-                        className="inline-flex items-center justify-center gap-1 bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-bold py-2.5 rounded-xl transition-colors border border-purple-200"
+                        className="inline-flex items-center justify-center gap-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-bold py-2.5 rounded-xl transition-colors border border-purple-200"
                       >
                         <UserCheck className="w-4 h-4" /> Mechanics
                       </button>
 
                       <button
                         onClick={() => openAddPartModal(job)}
-                        className="inline-flex items-center justify-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold py-2.5 rounded-xl transition-colors"
+                        className="inline-flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2.5 rounded-xl transition-all shadow-md shadow-blue-500/20"
                       >
-                        <Plus className="w-4 h-4 text-blue-600" /> Add Part
-                      </button>
-
-                      <button
-                        onClick={() => handleConfirmParts(job.id)}
-                        disabled={partsList.length === 0}
-                        className={`inline-flex items-center justify-center gap-1 text-xs font-bold py-2.5 rounded-xl transition-all shadow-md ${
-                          hasStagedParts
-                            ? 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-extrabold ring-2 ring-amber-400/60 shadow-amber-500/20'
-                            : 'bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-40'
-                        }`}
-                      >
-                        <Check className="w-4 h-4" /> {hasStagedParts ? '✔ Confirm & Deduct Stock' : 'Confirm Parts'}
+                        <Plus className="w-4 h-4" /> Add Spare Part
                       </button>
                     </div>
 
                     <div className="grid grid-cols-2 gap-2">
                       <button
                         onClick={() => openFinishModal(job)}
-                        className="inline-flex items-center justify-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2.5 rounded-xl shadow-md transition-colors"
+                        className="inline-flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2.5 rounded-xl shadow-md shadow-emerald-500/20 transition-colors"
                       >
                         <Receipt className="w-4 h-4" /> Finish Bill
                       </button>
 
                       <button
                         onClick={() => handleCancelService(job.id)}
-                        className="inline-flex items-center justify-center gap-1 bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold py-2.5 rounded-xl transition-colors"
+                        className="inline-flex items-center justify-center gap-1.5 bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold py-2.5 rounded-xl transition-colors"
                       >
                         <XCircle className="w-4 h-4" /> Cancel Service
                       </button>
@@ -1264,8 +1288,10 @@ export default function WorkshopPage() {
           <div className="bg-white rounded-3xl p-6 sm:p-7 max-w-lg w-full space-y-4 shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <div>
-                <h2 className="text-lg font-bold text-slate-900 font-poppins">Add Spare Part (Staged)</h2>
-                <p className="text-xs text-slate-500">Inventory stock decreases only when confirmed</p>
+                <h2 className="text-lg font-bold text-slate-900 font-poppins flex items-center gap-2">
+                  <Package className="w-5 h-5 text-blue-600" /> Add Spare Part
+                </h2>
+                <p className="text-xs text-slate-500">Adds part to job card and deducts stock from Inventory</p>
               </div>
               <button
                 onClick={() => setShowPartModal(false)}
@@ -1275,7 +1301,7 @@ export default function WorkshopPage() {
               </button>
             </div>
 
-            <form onSubmit={handleAddStagedPart} className="space-y-4 flex-1 flex flex-col min-h-0">
+            <form onSubmit={handleAddPart} className="space-y-4 flex-1 flex flex-col min-h-0">
               {/* SEARCH BAR */}
               <div className="relative shrink-0">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -1377,9 +1403,9 @@ export default function WorkshopPage() {
                 <button
                   type="submit"
                   disabled={!selectedPartId}
-                  className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md transition-all disabled:opacity-50"
+                  className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs rounded-xl shadow-md shadow-blue-500/20 transition-all disabled:opacity-50"
                 >
-                  Add To Staged Bill
+                  ✔ Confirm & Add Part
                 </button>
               </div>
             </form>

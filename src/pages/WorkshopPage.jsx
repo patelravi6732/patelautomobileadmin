@@ -100,13 +100,12 @@ export default function WorkshopPage() {
     const localBookings = JSON.parse(localStorage.getItem('local_bookings') || '[]');
     const cachedBookings = JSON.parse(localStorage.getItem('workshop_online_bookings') || '[]');
     
-    // 1. Process Workshop Jobs first
+    // 1. Process Workshop Jobs (localJobs first so deleted parts or edited jobs never revert)
     const allMap = new Map();
-    [...cloudJobs, ...localJobs, ...backendJobs].forEach(j => {
+    [...localJobs, ...cloudJobs, ...backendJobs].forEach(j => {
       if (j && typeof j === 'object' && j.id) {
         const uniqueKey = String(j.id);
         if (!deletedIds.includes(uniqueKey) && !deletedIds.includes(String(j.id))) {
-          const existing = allMap.get(uniqueKey);
           const sanitizedJob = {
             ...j,
             parts: Array.isArray(j.parts) ? j.parts : [],
@@ -115,7 +114,7 @@ export default function WorkshopPage() {
             live_total: parseFloat(j.live_total || j.grand_total || (parseFloat(j.parts_total || 0) + parseFloat(j.labour_charge || 0))),
             status: (j.status === 'FINISHED' || j.status === 'COMPLETED') ? 'FINISHED' : (j.status || 'IN_PROGRESS')
           };
-          if (!existing || (sanitizedJob.status === 'FINISHED' && existing.status !== 'FINISHED')) {
+          if (!allMap.has(uniqueKey)) {
             allMap.set(uniqueKey, sanitizedJob);
           }
         }

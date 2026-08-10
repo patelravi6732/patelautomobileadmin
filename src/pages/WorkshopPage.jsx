@@ -141,27 +141,46 @@ export default function WorkshopPage() {
       if (b && typeof b === 'object' && (b.id || b.vehicle_number)) {
         const bookingJobId = `job_booking_${b.id || b.vehicle_number}`;
         const bookingKey = String(b.id || `${b.vehicle_number}_${b.preferred_date}`);
-        if (!deletedIds.includes(bookingKey) && !deletedIds.includes(String(b.id)) && !deletedIds.includes(bookingJobId)) {
-          if (!allMap.has(bookingJobId) && b.status !== 'REJECTED' && b.status !== 'COMPLETED' && b.status !== 'FINISHED') {
-            allMap.set(bookingJobId, {
-              id: bookingJobId,
-              booking_id: b.id,
-              customer_name: b.customer_name || 'Online Customer',
-              mobile_number: b.mobile_number || b.phone || 'N/A',
-              vehicle_number: b.vehicle_number || 'GJ-15',
-              bike_model: b.bike_model || 'Two Wheeler',
-              complaint: b.complaint ? `[Online Booking] ${b.complaint}` : `Online Service Booking (${b.preferred_date || 'Today'} ${b.preferred_time || ''})`,
-              assigned_mechanic: 'Unassigned',
-              parts: [],
-              parts_total: 0,
-              labour_charge: garageInfo?.default_labour_charge || 100,
-              live_total: garageInfo?.default_labour_charge || 100,
-              status: b.status === 'ACCEPTED' ? 'IN_PROGRESS' : 'PENDING_BOOKING',
-              is_online_booking: true,
-              created_at: b.created_at || new Date().toISOString()
-            });
-          }
+        const normVeh = String(b.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+
+        // 1. Skip if booking was converted, completed, finished, cancelled, or rejected
+        if (['CONVERTED', 'COMPLETED', 'FINISHED', 'REJECTED', 'CANCELLED'].includes(String(b.status || '').toUpperCase())) {
+          return;
         }
+
+        // 2. Skip if deleted
+        if (deletedIds.includes(bookingKey) || deletedIds.includes(String(b.id)) || deletedIds.includes(bookingJobId)) {
+          return;
+        }
+
+        // 3. Skip if an active job for this exact vehicle already exists on workshop floor (No duplicates!)
+        const alreadyHasActiveJob = Array.from(allMap.values()).some(j => {
+          if (!j || j.status === 'FINISHED' || j.status === 'COMPLETED' || j.status === 'CANCELLED') return false;
+          const jVeh = String(j.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+          return normVeh && jVeh && normVeh === jVeh;
+        });
+
+        if (alreadyHasActiveJob || allMap.has(bookingJobId)) {
+          return;
+        }
+
+        allMap.set(bookingJobId, {
+          id: bookingJobId,
+          booking_id: b.id,
+          customer_name: b.customer_name || 'Online Customer',
+          mobile_number: b.mobile_number || b.phone || 'N/A',
+          vehicle_number: b.vehicle_number || 'GJ-15',
+          bike_model: b.bike_model || 'Two Wheeler',
+          complaint: b.complaint ? `[Online Booking] ${b.complaint}` : `Online Service Booking (${b.preferred_date || 'Today'} ${b.preferred_time || ''})`,
+          assigned_mechanic: 'Unassigned',
+          parts: [],
+          parts_total: 0,
+          labour_charge: garageInfo?.default_labour_charge || 100,
+          live_total: garageInfo?.default_labour_charge || 100,
+          status: b.status === 'ACCEPTED' ? 'IN_PROGRESS' : 'PENDING_BOOKING',
+          is_online_booking: true,
+          created_at: b.created_at || new Date().toISOString()
+        });
       }
     });
 

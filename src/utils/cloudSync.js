@@ -133,8 +133,39 @@ export async function fetchMasterStore() {
       if (Array.isArray(mergedStore.jobs)) localStorage.setItem('workshop_jobs', JSON.stringify(mergedStore.jobs));
       if (Array.isArray(mergedStore.invoices)) localStorage.setItem('local_invoices', JSON.stringify(mergedStore.invoices));
       if (Array.isArray(mergedStore.inventory)) {
-        localStorage.setItem('inventory_items', JSON.stringify(mergedStore.inventory));
-        localStorage.setItem('spare_parts', JSON.stringify(mergedStore.inventory));
+        const curLocal = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+        const recMap = new Map();
+        [...mergedStore.inventory, ...curLocal].forEach(item => {
+          if (item && (item.part_name || item.name)) {
+            const rawName = String(item.part_name || item.name).trim();
+            const key = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
+            const parsedStock = parseInt(item.current_stock !== undefined ? item.current_stock : 0, 10);
+            const cleanObj = {
+              ...item,
+              id: item.id || `inv_${key}`,
+              part_name: rawName,
+              current_stock: parsedStock,
+              updated_at: item.updated_at || null
+            };
+            const existing = recMap.get(key);
+            if (!existing) {
+              recMap.set(key, cleanObj);
+            } else {
+              const itemTime = item.updated_at ? new Date(item.updated_at).getTime() : 0;
+              const existingTime = existing.updated_at ? new Date(existing.updated_at).getTime() : 0;
+              if (itemTime > existingTime) {
+                recMap.set(key, { ...existing, ...cleanObj });
+              } else if (existingTime > itemTime) {
+                // Existing is newer, keep existing
+              } else if (parsedStock < existing.current_stock) {
+                recMap.set(key, { ...existing, ...cleanObj, current_stock: parsedStock });
+              }
+            }
+          }
+        });
+        const finalMerged = Array.from(recMap.values());
+        localStorage.setItem('inventory_items', JSON.stringify(finalMerged));
+        localStorage.setItem('spare_parts', JSON.stringify(finalMerged));
       }
       if (Array.isArray(mergedStore.khataEntries)) localStorage.setItem('khata_entries', JSON.stringify(mergedStore.khataEntries));
       if (Array.isArray(mergedStore.bookings)) localStorage.setItem('local_bookings', JSON.stringify(mergedStore.bookings));

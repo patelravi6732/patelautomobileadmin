@@ -334,10 +334,11 @@ export default function WorkshopPage() {
     // 2. Deduct Inventory stock IMMEDIATELY in 1 step
     try {
       const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+      const baseInv = inventory && inventory.length > 0 ? inventory : (localInv.length > 0 ? localInv : [partObj]);
       const targetId = String(partObj.id || '').replace(/[^a-z0-9]/g, '');
       const targetName = String(partObj.part_name || partObj.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase().trim();
 
-      const updatedInv = localInv.map(invItem => {
+      const updatedInv = baseInv.map(invItem => {
         if (!invItem) return invItem;
         const curId = String(invItem.id || '').replace(/[^a-z0-9]/g, '');
         const curName = String(invItem.part_name || invItem.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase().trim();

@@ -173,15 +173,29 @@ export default function WorkshopPage() {
     const localDeleted = JSON.parse(localStorage.getItem('deleted_ids') || '[]');
     const allDeletedIds = Array.from(new Set([...localDeleted, ...deletedIds]));
 
+    const isItemDeleted = (item) => {
+      if (!item) return true;
+      const itId = String(item.id || '').toLowerCase().trim();
+      const itName = String(item.part_name || item.name || '').toLowerCase().trim();
+      const itNorm = itName.replace(/[^a-z0-9]/g, '');
+
+      return allDeletedIds.some(d => {
+        if (!d) return false;
+        const dStr = String(d).toLowerCase().trim();
+        const dNorm = dStr.replace(/[^a-z0-9]/g, '');
+        return (itId && dStr && (itId === dStr || itId.replace(/[^a-z0-9]/g, '') === dNorm)) ||
+               (itName && dStr && (itName === dStr || itName.includes(dStr) || dStr.includes(itName))) ||
+               (itNorm && dNorm && (itNorm === dNorm || itNorm.includes(dNorm) || dNorm.includes(itNorm)));
+      });
+    };
+
     const allInvMap = new Map();
     let localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
-    [...cloudInv, ...localInv, ...invData].forEach(item => {
+    [...localInv, ...cloudInv, ...invData].forEach(item => {
       if (item && typeof item === 'object' && (item.id || item.part_name || item.name)) {
-        const rawId = String(item.id || `inv_${String(item.part_name || item.name).toLowerCase().replace(/[^a-z0-9]/g, '')}`);
-        const rawName = String(item.part_name || item.name || '').trim();
-        const normName = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
-        
-        if (!allDeletedIds.includes(rawId) && !allDeletedIds.includes(rawName) && !allDeletedIds.includes(normName)) {
+        if (!isItemDeleted(item)) {
+          const rawId = String(item.id || `inv_${String(item.part_name || item.name).toLowerCase().replace(/[^a-z0-9]/g, '')}`);
+          const rawName = String(item.part_name || item.name || '').trim();
           const parsedStock = parseInt(item.current_stock !== undefined ? item.current_stock : (item.stock_quantity !== undefined ? item.stock_quantity : (item.quantity !== undefined ? item.quantity : 0)), 10);
           const parsedMin = item.min_stock_alert !== undefined && item.min_stock_alert !== '' ? parseInt(item.min_stock_alert, 10) : 2;
           

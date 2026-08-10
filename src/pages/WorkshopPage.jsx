@@ -190,17 +190,19 @@ export default function WorkshopPage() {
             price: parseFloat(item.price || 0),
             current_stock: parsedStock,
             min_stock_alert: parsedMin,
-            updated_at: item.updated_at || new Date().toISOString()
+            updated_at: item.updated_at || null
           };
 
           const existing = allInvMap.get(normKey);
           if (!existing) {
             allInvMap.set(normKey, cleanItem);
           } else {
-            const itemTime = cleanItem.updated_at ? new Date(cleanItem.updated_at).getTime() : 0;
+            const itemTime = item.updated_at ? new Date(item.updated_at).getTime() : 0;
             const existingTime = existing.updated_at ? new Date(existing.updated_at).getTime() : 0;
             if (itemTime > existingTime) {
               allInvMap.set(normKey, { ...existing, ...cleanItem });
+            } else if (existingTime > itemTime) {
+              // Existing is newer, keep existing
             } else if (parsedStock < existing.current_stock) {
               allInvMap.set(normKey, { ...existing, ...cleanItem, current_stock: parsedStock });
             }

@@ -760,6 +760,135 @@ export async function fetchCloudInvoices() {
   return (store.invoices || []).filter(i => i && typeof i === 'object' && (i.id || i.invoice_number || i.customer_name));
 }
 
+export async function atomicFinishWorkshopJob({ finishedJob, invoice, khataDebit, updatedInventory }) {
+  // 1. Update local storage first (0ms instantaneous)
+  if (finishedJob) {
+    const curJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
+    const upJobs = [finishedJob, ...curJobs.filter(j => String(j.id) !== String(finishedJob.id))];
+    localStorage.setItem('workshop_jobs', JSON.stringify(upJobs));
+  }
+  if (invoice) {
+    const curInvs = JSON.parse(localStorage.getItem('local_invoices') || '[]');
+    const upInvs = [invoice, ...curInvs.filter(i => String(i.id) !== String(invoice.id) && String(i.job_id) !== String(invoice.job_id))];
+    localStorage.setItem('local_invoices', JSON.stringify(upInvs));
+  }
+  if (khataDebit) {
+    const curKhata = JSON.parse(localStorage.getItem('khata_entries') || '[]');
+    const upKhata = [khataDebit, ...curKhata.filter(k => String(k.id) !== String(khataDebit.id) && String(k.job_id) !== String(khataDebit.job_id))];
+    localStorage.setItem('khata_entries', JSON.stringify(upKhata));
+  }
+
+  // 2. ATOMIC SINGLE CLOUD TRANSACTION
+  const store = await fetchMasterStore();
+  
+  let storeJobs = (store.jobs || []).filter(j => j && typeof j === 'object');
+  if (finishedJob) {
+    storeJobs = [finishedJob, ...storeJobs.filter(j => String(j.id) !== String(finishedJob.id) && (j.vehicle_number !== finishedJob.vehicle_number || j.status !== 'IN_PROGRESS'))];
+  }
+
+  let storeInvs = (store.invoices || []).filter(i => i && typeof i === 'object');
+  if (invoice) {
+    storeInvs = [invoice, ...storeInvs.filter(i => String(i.id) !== String(invoice.id) && String(i.job_id) !== String(invoice.job_id))];
+  }
+
+  let storeKhata = (store.khataEntries || []).filter(k => k && typeof k === 'object');
+  if (khataDebit) {
+    storeKhata = [khataDebit, ...storeKhata.filter(k => String(k.id) !== String(khataDebit.id) && String(k.job_id) !== String(khataDebit.job_id))];
+  }
+
+  // Update matching bookings to COMPLETED
+  let storeBookings = (store.bookings || []).filter(b => b && typeof b === 'object');
+  if (finishedJob && finishedJob.vehicle_number) {
+    const fVeh = String(finishedJob.vehicle_number).replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+    storeBookings = storeBookings.map(b => {
+      const bVeh = String(b.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+      if (bVeh === fVeh) return { ...b, status: 'COMPLETED' };
+      return b;
+    });
+  }
+
+  await saveMasterStore({
+    ...store,
+    jobs: storeJobs,
+    invoices: storeInvs,
+    khataEntries: storeKhata,
+    bookings: storeBookings,
+    ...(updatedInventory ? { inventory: updatedInventory } : {})
+  });
+}
+
+export async function atomicRecordPayment({ updatedInvoice, updatedJob, creditKhataEntry, paymentAmount, targetId, vehicleNumber }) {
+  const store = await fetchMasterStore();
+  const vNorm = (vehicleNumber || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+  const numAmt = parseFloat(paymentAmount) || 0;
+
+  // 1. Invoices
+  let storeInvs = (store.invoices || []).map(inv => {
+    if (!inv) return inv;
+    const invId = String(inv.id || '');
+    const invJobId = String(inv.job_id || '');
+    const invVeh = (inv.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+    if (invId === targetId || invJobId === targetId || (vNorm && invVeh === vNorm && parseFloat(inv.pending_amount || 0) > 0)) {
+      if (updatedInvoice) return { ...inv, ...updatedInvoice };
+      const curTotal = parseFloat(inv.grand_total || inv.total_amount || 0);
+      const curPaid = parseFloat(inv.paid_amount || 0) + numAmt;
+      const curPending = Math.max(0, curTotal - curPaid);
+      return {
+        ...inv,
+        paid_amount: curPaid,
+        pending_amount: curPending,
+        payment_status: curPending === 0 ? 'PAID' : 'PARTIAL'
+      };
+    }
+    return inv;
+  });
+
+  // 2. Jobs
+  let storeJobs = (store.jobs || []).map(j => {
+    if (!j) return j;
+    const jId = String(j.id || '');
+    const jVeh = (j.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+    if (jId === targetId || (vNorm && jVeh === vNorm && (j.status === 'FINISHED' || j.status === 'COMPLETED'))) {
+      if (updatedJob) return { ...j, ...updatedJob };
+      const curTotal = parseFloat(j.grand_total || j.live_total || 0);
+      const curPaid = parseFloat(j.paid_amount || 0) + numAmt;
+      const curPending = Math.max(0, curTotal - curPaid);
+      return {
+        ...j,
+        paid_amount: curPaid,
+        pending_amount: curPending,
+        payment_status: curPending === 0 ? 'PAID' : 'PARTIAL'
+      };
+    }
+    return j;
+  });
+
+  // 3. Khata Entries
+  let storeKhata = (store.khataEntries || []).map(k => {
+    if (!k) return k;
+    const kId = String(k.id || '');
+    const kJobId = String(k.job_id || '');
+    const kVeh = (k.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+    if ((kId === targetId || kJobId === targetId || (vNorm && kVeh === vNorm && k.type === 'DEBIT'))) {
+      const curAmt = parseFloat(k.amount || 0);
+      const newAmt = Math.max(0, curAmt - numAmt);
+      return { ...k, amount: newAmt };
+    }
+    return k;
+  });
+
+  if (creditKhataEntry) {
+    storeKhata = [creditKhataEntry, ...storeKhata];
+  }
+
+  await saveMasterStore({
+    ...store,
+    invoices: storeInvs,
+    jobs: storeJobs,
+    khataEntries: storeKhata
+  });
+}
+
 export async function pushCloudInvoice(invObj) {
   if (!invObj || typeof invObj !== 'object') return;
   const store = await fetchMasterStore();

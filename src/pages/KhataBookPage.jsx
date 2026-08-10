@@ -4,7 +4,7 @@ import API from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { generateBillCanvasDataUrl, generateBillCanvasDataUrlAsync, generateBillCanvasBlob } from '../utils/billCardGenerator';
 
-import { fetchCloudKhataEntries, fetchCloudInvoices, fetchCloudJobs, pushCloudKhataEntry, pushCloudRecycleBinItem, markIdAsDeleted, deleteCloudKhataEntry, fetchCloudDeletedIds } from '../utils/cloudSync';
+import { fetchCloudKhataEntries, fetchCloudInvoices, fetchCloudJobs, pushCloudKhataEntry, pushCloudRecycleBinItem, markIdAsDeleted, deleteCloudKhataEntry, fetchCloudDeletedIds, atomicRecordPayment } from '../utils/cloudSync';
 import AdminPasswordModal from '../components/AdminPasswordModal';
 
 const monthNames = [
@@ -397,8 +397,9 @@ export default function KhataBookPage() {
     const vehNum = (selectedCustomer.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
     const invNum = selectedCustomer.invoice_number || '';
 
-    // 1. Update Invoices
+    // 1. Update Local Invoices
     const localInvoices = JSON.parse(localStorage.getItem('local_invoices') || '[]');
+    let targetUpdatedInv = null;
     const updatedInvoices = localInvoices.map(inv => {
       if (!inv) return inv;
       const curInvId = String(inv.id || '');
@@ -417,15 +418,16 @@ export default function KhataBookPage() {
           pending_amount: newPending,
           payment_status: newPending === 0 ? 'PAID' : 'PARTIAL'
         };
-        pushCloudInvoice(updatedInv).catch(console.warn);
+        targetUpdatedInv = updatedInv;
         return updatedInv;
       }
       return inv;
     });
     localStorage.setItem('local_invoices', JSON.stringify(updatedInvoices));
 
-    // 2. Update Workshop Jobs
+    // 2. Update Local Workshop Jobs
     const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
+    let targetUpdatedJob = null;
     const updatedJobs = localJobs.map(j => {
       if (!j) return j;
       const curJobId = String(j.id || '');
@@ -443,14 +445,14 @@ export default function KhataBookPage() {
           pending_amount: newPending,
           payment_status: newPending === 0 ? 'PAID' : 'PARTIAL'
         };
-        pushCloudJob(updatedJob).catch(console.warn);
+        targetUpdatedJob = updatedJob;
         return updatedJob;
       }
       return j;
     });
     localStorage.setItem('workshop_jobs', JSON.stringify(updatedJobs));
 
-    // 3. Update Debit entries & add Credit entry in Khata entries
+    // 3. Update Local Khata entries
     const localKhata = JSON.parse(localStorage.getItem('khata_entries') || '[]');
     const creditKhataEntry = {
       id: `khata_credit_${Date.now()}`,
@@ -464,7 +466,6 @@ export default function KhataBookPage() {
       description: `Payment received of ₹${paymentNum} for ${selectedCustomer.invoice_number || 'Bill'}`,
       date: new Date().toISOString()
     };
-    pushCloudKhataEntry(creditKhataEntry).catch(console.warn);
 
     const updatedKhataList = localKhata.map(k => {
       if (!k) return k;
@@ -477,6 +478,17 @@ export default function KhataBookPage() {
       }
       return k;
     });
+    localStorage.setItem('khata_entries', JSON.stringify([creditKhataEntry, ...updatedKhataList]));
+
+    // 4. ATOMIC SINGLE CLOUD PAYMENT COMMIT (No race conditions!)
+    atomicRecordPayment({
+      updatedInvoice: targetUpdatedInv,
+      updatedJob: targetUpdatedJob,
+      creditKhataEntry: creditKhataEntry,
+      paymentAmount: paymentNum,
+      targetId: targetId,
+      vehicleNumber: selectedCustomer.vehicle_number
+    }).catch(console.warn);
 
     localStorage.setItem('khata_entries', JSON.stringify([creditKhataEntry, ...updatedKhataList]));
 

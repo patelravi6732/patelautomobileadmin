@@ -4,7 +4,7 @@ import {
   IndianRupee, Package, Bike, User, Phone, Check, Receipt, UserCheck, Users, Lock, Search, ChevronDown, Edit2, Tag
 } from 'lucide-react';
 import API from '../services/api';
-import { fetchCloudJobs, updateCloudJobStatus, deleteCloudJob, fetchCloudInventory, pushCloudJob, pushCloudRecycleBinItem, pushCloudKhataEntry, pushCloudInvoice, updateCloudBookingStatus, fetchCloudDeletedIds, fetchCloudBookings } from '../utils/cloudSync';
+import { fetchCloudJobs, updateCloudJobStatus, deleteCloudJob, fetchCloudInventory, pushCloudJob, pushCloudRecycleBinItem, pushCloudKhataEntry, pushCloudInvoice, updateCloudBookingStatus, fetchCloudDeletedIds, fetchCloudBookings, atomicFinishWorkshopJob } from '../utils/cloudSync';
 import { useAuth } from '../context/AuthContext';
 import AdminPasswordModal from '../components/AdminPasswordModal';
 
@@ -677,72 +677,7 @@ export default function WorkshopPage() {
       discount_amount: numericDiscount
     };
 
-    // 1. Update local workshop memory immediately
-    const currentJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
-    const updatedLocal = currentJobs.map(j => (String(j.id) === String(targetId) ? finishedJobData : j));
-    if (!updatedLocal.some(j => String(j.id) === String(targetId))) {
-      updatedLocal.push(finishedJobData);
-    }
-    localStorage.setItem('workshop_jobs', JSON.stringify(updatedLocal));
-    setJobs(prev => prev.map(j => (String(j.id) === String(targetId) ? finishedJobData : j)));
-    pushCloudJob(finishedJobData).catch(console.warn);
-
-    // 2. Mark matching booking as COMPLETED
-    if (selectedJob.vehicle_number) {
-      updateCloudBookingStatus(null, 'COMPLETED', selectedJob.vehicle_number, selectedJob.preferred_date).catch(console.warn);
-      const localBookings = JSON.parse(localStorage.getItem('local_bookings') || '[]');
-      const updatedBookings = localBookings.map(b => (b.vehicle_number === selectedJob.vehicle_number ? { ...b, status: 'COMPLETED' } : b));
-      localStorage.setItem('local_bookings', JSON.stringify(updatedBookings));
-    }
-
-    // 3. Auto-Deduct Inventory Spare Parts Stock
-    const unconfirmedPartsUsed = (Array.isArray(selectedJob.parts) ? selectedJob.parts : []).filter(p => p && (!p.is_deducted || p.status !== 'CONFIRMED'));
-    if (unconfirmedPartsUsed.length > 0) {
-      try {
-        const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
-        let invChanged = false;
-
-        const updatedInv = localInv.map(invItem => {
-          const usedPart = unconfirmedPartsUsed.find(p => {
-            if (!p) return false;
-            const pId = String(p.inventory_id || p.part_id || p.id || '').replace(/[^a-z0-9]/g, '');
-            const invId = String(invItem.id || '').replace(/[^a-z0-9]/g, '');
-            if (pId && invId && pId === invId) return true;
-
-            const pName = (p.part_name || p.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-            const invName = (invItem.part_name || invItem.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-            return pName && invName && (pName === invName || pName.includes(invName) || invName.includes(pName));
-          });
-          if (usedPart) {
-            invChanged = true;
-            const currentQty = parseInt(invItem.current_stock !== undefined ? invItem.current_stock : (invItem.stock_quantity !== undefined ? invItem.stock_quantity : (invItem.quantity !== undefined ? invItem.quantity : 0)), 10);
-            const usedQty = parseInt(usedPart.quantity || 1, 10);
-            const newQty = Math.max(0, currentQty - usedQty);
-            const updatedItem = {
-              ...invItem,
-              current_stock: newQty,
-              stock_quantity: newQty,
-              quantity: newQty,
-              updated_at: new Date().toISOString()
-            };
-            pushCloudInventoryItem(updatedItem).catch(console.warn);
-            return updatedItem;
-          }
-          return invItem;
-        });
-
-        if (invChanged) {
-          localStorage.setItem('inventory_items', JSON.stringify(updatedInv));
-          localStorage.setItem('spare_parts', JSON.stringify(updatedInv));
-          setInventory(updatedInv);
-          try { window.dispatchEvent(new Event('storage')); } catch (e) {}
-        }
-      } catch (invErr) {
-        console.warn('Error auto-deducting inventory stock in finish bill:', invErr);
-      }
-    }
-
-    // 4. Create or Update Billing Invoice Object (Keyed per Job/Visit)
+    // 1. Create or Update Billing Invoice Object (Keyed per Job/Visit)
     const localInvoices = JSON.parse(localStorage.getItem('local_invoices') || '[]');
     const existingInvIndex = localInvoices.findIndex(inv => 
       inv && (
@@ -772,16 +707,7 @@ export default function WorkshopPage() {
       parts: selectedJob.parts || []
     };
 
-    let updatedInvoicesList = localInvoices;
-    if (existingInvIndex >= 0) {
-      updatedInvoicesList[existingInvIndex] = newInvoiceObj;
-    } else {
-      updatedInvoicesList = [newInvoiceObj, ...localInvoices];
-    }
-    localStorage.setItem('local_invoices', JSON.stringify(updatedInvoicesList));
-    pushCloudInvoice(newInvoiceObj).catch(console.warn);
-
-    // 5. Create or Update Khata Book Debit Entry (Keyed per Job/Visit)
+    // 2. Create or Update Khata Book Debit Entry (Keyed per Job/Visit)
     const localKhata = JSON.parse(localStorage.getItem('khata_entries') || '[]');
     const existingKhataIndex = localKhata.findIndex(k => 
       k && (
@@ -790,8 +716,9 @@ export default function WorkshopPage() {
       )
     );
 
+    let khataDebitEntry = null;
     if (unpaidAmount > 0) {
-      const khataDebitEntry = {
+      khataDebitEntry = {
         id: existingKhataIndex >= 0 ? localKhata[existingKhataIndex].id : `khata_${targetId}`,
         job_id: targetId,
         customer_name: selectedJob.customer_name,
@@ -803,20 +730,56 @@ export default function WorkshopPage() {
         description: `Unpaid balance for Visit #${String(targetId).slice(-4)} (Total: ₹${grandTotal.toFixed(2)}, Paid: ₹${paidAmountNum.toFixed(2)})`,
         date: completionTime
       };
-      let updatedKhataList = localKhata;
-      if (existingKhataIndex >= 0) {
-        updatedKhataList[existingKhataIndex] = khataDebitEntry;
-      } else {
-        updatedKhataList = [khataDebitEntry, ...localKhata];
-      }
-      localStorage.setItem('khata_entries', JSON.stringify(updatedKhataList));
-      pushCloudKhataEntry(khataDebitEntry).catch(console.warn);
-    } else if (existingKhataIndex >= 0) {
-      const updatedKhataList = localKhata.filter((_, idx) => idx !== existingKhataIndex);
-      localStorage.setItem('khata_entries', JSON.stringify(updatedKhataList));
     }
 
-    // 6. Save Customer Record to local_customers & cloud
+    // 3. Auto-Deduct Inventory Spare Parts Stock if any unconfirmed
+    const unconfirmedPartsUsed = (Array.isArray(selectedJob.parts) ? selectedJob.parts : []).filter(p => p && (!p.is_deducted || p.status !== 'CONFIRMED'));
+    let updatedInvList = null;
+    if (unconfirmedPartsUsed.length > 0) {
+      try {
+        const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+        updatedInvList = localInv.map(invItem => {
+          const usedPart = unconfirmedPartsUsed.find(p => {
+            if (!p) return false;
+            const pId = String(p.inventory_id || p.part_id || p.id || '').replace(/[^a-z0-9]/g, '');
+            const invId = String(invItem.id || '').replace(/[^a-z0-9]/g, '');
+            if (pId && invId && pId === invId) return true;
+            const pName = (p.part_name || p.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+            const invName = (invItem.part_name || invItem.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+            return pName && invName && (pName === invName || pName.includes(invName) || invName.includes(pName));
+          });
+          if (usedPart) {
+            const currentQty = parseInt(invItem.current_stock !== undefined ? invItem.current_stock : 0, 10);
+            const usedQty = parseInt(usedPart.quantity || 1, 10);
+            const newQty = Math.max(0, currentQty - usedQty);
+            return {
+              ...invItem,
+              current_stock: newQty,
+              stock_quantity: newQty,
+              quantity: newQty,
+              updated_at: new Date().toISOString()
+            };
+          }
+          return invItem;
+        });
+        localStorage.setItem('inventory_items', JSON.stringify(updatedInvList));
+        localStorage.setItem('spare_parts', JSON.stringify(updatedInvList));
+        setInventory(updatedInvList);
+      } catch (invErr) {
+        console.warn('Error auto-deducting inventory stock in finish bill:', invErr);
+      }
+    }
+
+    // 4. ATOMIC SINGLE CLOUD COMMIT (No race conditions!)
+    atomicFinishWorkshopJob({
+      finishedJob: finishedJobData,
+      invoice: newInvoiceObj,
+      khataDebit: khataDebitEntry,
+      updatedInventory: updatedInvList
+    }).catch(console.warn);
+
+    // 5. Update local React state immediately (0ms lag)
+    setJobs(prev => prev.map(j => (String(j.id) === String(targetId) ? finishedJobData : j)));
     try {
       const newCustomerObj = {
         id: `cust_${selectedJob.vehicle_number || Date.now()}`,
@@ -1128,17 +1091,26 @@ export default function WorkshopPage() {
 
                   {/* ACTION BUTTONS */}
                   <div className="pt-4 border-t border-slate-100 space-y-2">
+                    {partsList.length > 0 && hasStagedParts && (
+                      <button
+                        onClick={() => handleConfirmParts(job.id)}
+                        className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-98"
+                      >
+                        <Check className="w-4 h-4" /> Confirm Spare Parts (Deduct Inventory)
+                      </button>
+                    )}
+
                     <div className="grid grid-cols-2 gap-2">
                       <button
                         onClick={() => openAssignModal(job)}
-                        className="inline-flex items-center justify-center gap-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-bold py-2.5 rounded-xl transition-colors border border-purple-200"
+                        className="inline-flex items-center justify-center gap-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-bold py-2.5 rounded-xl transition-colors border border-purple-200 cursor-pointer"
                       >
                         <UserCheck className="w-4 h-4" /> Mechanics
                       </button>
 
                       <button
                         onClick={() => openAddPartModal(job)}
-                        className="inline-flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2.5 rounded-xl transition-all shadow-md shadow-blue-500/20"
+                        className="inline-flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2.5 rounded-xl transition-all shadow-md shadow-blue-500/20 cursor-pointer"
                       >
                         <Plus className="w-4 h-4" /> Add Spare Part
                       </button>

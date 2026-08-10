@@ -28,13 +28,34 @@ export default function DashboardPage() {
       console.warn('Backend API offline for dashboard stats, computing from cloud & local memory:', err);
     }
 
-    const rawJobs = Array.isArray(cloudStore?.jobs) ? cloudStore.jobs : JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
-    const rawInvoices = Array.isArray(cloudStore?.invoices) ? cloudStore.invoices : JSON.parse(localStorage.getItem('local_invoices') || '[]');
-    const rawInventory = Array.isArray(cloudStore?.inventory) ? cloudStore.inventory : JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+    const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
+    const cloudJobs = Array.isArray(cloudStore?.jobs) ? cloudStore.jobs : [];
+    const jobMap = new Map();
+    [...cloudJobs, ...localJobs].forEach(j => {
+      if (j && j.id && !isDeleted(j.id)) jobMap.set(String(j.id), j);
+    });
+    const jobs = Array.from(jobMap.values());
 
-    const jobs = rawJobs.filter(j => j && !isDeleted(j.id));
-    const invoices = rawInvoices.filter(inv => inv && !isDeleted(inv.id) && !isDeleted(inv.invoice_number));
-    const inventory = rawInventory.filter(i => i && !isDeleted(i.id) && !isDeleted(i.part_name));
+    const localInvoices = JSON.parse(localStorage.getItem('local_invoices') || '[]');
+    const cloudInvoices = Array.isArray(cloudStore?.invoices) ? cloudStore.invoices : [];
+    const invMap = new Map();
+    [...cloudInvoices, ...localInvoices].forEach(inv => {
+      if (inv && (inv.id || inv.job_id || inv.invoice_number) && !isDeleted(inv.id) && !isDeleted(inv.invoice_number)) {
+        const key = String(inv.id || inv.job_id || inv.invoice_number);
+        invMap.set(key, inv);
+      }
+    });
+    const invoices = Array.from(invMap.values());
+
+    const localInventory = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+    const cloudInventory = Array.isArray(cloudStore?.inventory) ? cloudStore.inventory : [];
+    const itemMap = new Map();
+    [...cloudInventory, ...localInventory].forEach(item => {
+      if (item && item.id && !isDeleted(item.id) && !isDeleted(item.part_name)) {
+        itemMap.set(String(item.id), item);
+      }
+    });
+    const inventory = Array.from(itemMap.values());
 
     const todayStr = new Date().toISOString().split('T')[0];
 
@@ -50,12 +71,12 @@ export default function DashboardPage() {
     const lowStockCount = inventory.filter(i => (parseInt(i.current_stock || 0, 10)) <= (parseInt(i.min_stock_alert || 2, 10))).length;
 
     setStats({
-      today_services: backendStats?.today_services ?? todayServices,
-      completed_services: backendStats?.completed_services ?? completedServices,
-      pending_services: backendStats?.pending_services ?? pendingServices,
-      pending_payments: backendStats?.pending_payments ?? pendingPayments,
-      today_revenue: backendStats?.today_revenue ?? todayRevenue,
-      low_stock_count: backendStats?.low_stock_count ?? lowStockCount
+      today_services: todayServices,
+      completed_services: completedServices,
+      pending_services: pendingServices,
+      pending_payments: pendingPayments,
+      today_revenue: todayRevenue,
+      low_stock_count: lowStockCount
     });
     setLoading(false);
   };
@@ -64,8 +85,13 @@ export default function DashboardPage() {
     fetchStats(true);
     const interval = setInterval(() => {
       fetchStats(false);
-    }, 5000);
-    return () => clearInterval(interval);
+    }, 3000);
+    const handleStorage = () => fetchStats(false);
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('storage', handleStorage);
+    };
   }, []);
 
   if (loading && !stats) {

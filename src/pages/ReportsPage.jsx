@@ -1,31 +1,32 @@
 import React, { useState, useEffect } from 'react';
 import { BarChart3, IndianRupee, Package, Users, TrendingUp, AlertCircle, Wrench } from 'lucide-react';
 import API from '../services/api';
-import { getCleanDeletedIds, fetchCloudInvoices, fetchCloudInventory } from '../utils/cloudSync';
+import { fetchCloudDeletedIds, fetchCloudInvoices, fetchCloudInventory } from '../utils/cloudSync';
 
 export default function ReportsPage() {
   const [reports, setReports] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchReports = async () => {
-    setLoading(true);
+  const fetchReports = async (isInitial = false) => {
+    if (isInitial) setLoading(true);
     let backendReports = null;
     try {
-      const res = await API.get('/reports/', { timeout: 1500 });
+      const res = await API.get('/reports/metrics/', { timeout: 1500 });
       backendReports = res.data;
     } catch (err) {
-      console.warn('Backend API offline for reports, computing from local memory & cloud store:', err);
+      console.warn('Backend API offline for reports, computing from cloud & local memory:', err);
     }
 
-    const deletedIds = await getCleanDeletedIds().catch(() => []);
+    const deletedIds = await fetchCloudDeletedIds().catch(() => []);
     const isDeleted = (id) => id && deletedIds.includes(String(id));
 
     const localInvoices = JSON.parse(localStorage.getItem('local_invoices') || '[]');
     const cloudInvoices = await fetchCloudInvoices().catch(() => []);
     const invMap = new Map();
     [...cloudInvoices, ...localInvoices].forEach(inv => {
-      if (inv && inv.id && !isDeleted(inv.id) && !isDeleted(inv.invoice_number)) {
-        invMap.set(String(inv.id), inv);
+      if (inv && (inv.id || inv.job_id || inv.invoice_number) && !isDeleted(inv.id) && !isDeleted(inv.invoice_number)) {
+        const key = String(inv.id || inv.job_id || inv.invoice_number);
+        invMap.set(key, inv);
       }
     });
     const invoices = Array.from(invMap.values());
@@ -62,18 +63,27 @@ export default function ReportsPage() {
     const totalPendingDues = invoices.reduce((acc, inv) => acc + (parseFloat(inv.pending_amount) || 0), 0);
 
     setReports({
-      daily_revenue: backendReports?.daily_revenue ?? dailyRevenue,
-      monthly_revenue: backendReports?.monthly_revenue ?? monthlyRevenue,
-      total_invoices: backendReports?.total_invoices ?? invoices.length,
-      inventory_valuation: backendReports?.inventory_valuation ?? inventoryValue,
-      total_inventory_value: backendReports?.inventory_valuation ?? inventoryValue,
+      daily_revenue: dailyRevenue,
+      monthly_revenue: monthlyRevenue,
+      total_invoices: invoices.length,
+      inventory_valuation: inventoryValue,
+      total_inventory_value: inventoryValue,
       total_pending_payments: totalPendingDues
     });
     setLoading(false);
   };
 
   useEffect(() => {
-    fetchReports();
+    fetchReports(true);
+    const interval = setInterval(() => {
+      fetchReports(false);
+    }, 3000);
+    const handleStorage = () => fetchReports(false);
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('storage', handleStorage);
+    };
   }, []);
 
   return (

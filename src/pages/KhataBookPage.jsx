@@ -984,6 +984,7 @@ export default function KhataBookPage() {
                       const rawCustId = String(statementCustomer?.id || statementCustomer?.vehicle_number || 'bill').slice(-8);
                       const fixedUpiUri = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(payeeName)}&am=${encodeURIComponent(pendingAmtStr)}&cu=INR&tn=${encodeURIComponent(`Dues Payment ${rawCustId}`)}`;
                       const dynamicQrImage = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(fixedUpiUri)}`;
+                      const qrSrc = garageInfo?.upi_qr || garageInfo?.upi_qr_code || dynamicQrImage || '/upi_qr.jpg';
 
                       return (
                         <div className="flex flex-col items-center justify-center p-3 bg-white rounded-xl border border-slate-300 shadow-sm text-center">
@@ -995,7 +996,7 @@ export default function KhataBookPage() {
                             className="block p-1 bg-white hover:scale-105 transition-transform"
                           >
                             <img
-                              src={dynamicQrImage}
+                              src={qrSrc}
                               alt={`Fixed Price UPI QR Code ₹${pendingAmtStr}`}
                               onError={(e) => { e.target.onerror = null; e.target.src = '/upi_qr.jpg'; }}
                               className="w-40 h-40 object-contain mx-auto"

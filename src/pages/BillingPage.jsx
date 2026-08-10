@@ -667,14 +667,51 @@ export default function BillingPage() {
                   </tbody>
                 </table>
 
-                {/* SUMMARY */}
+                {/* SUMMARY & QR SCANNER */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center bg-slate-50 p-4 rounded-xl border border-slate-200">
-                  <div className="space-y-1 text-xs">
-                    <p className="text-slate-500">Date: <strong className="text-slate-800">{formatDateDMY(selectedInvoice.created_at || selectedInvoice.visit_date)}</strong></p>
-                    <p className="text-slate-500">Payment: <strong className={parseFloat(selectedInvoice.pending_amount || 0) > 0 ? 'text-rose-600 font-bold' : 'text-emerald-600 font-bold'}>{parseFloat(selectedInvoice.pending_amount || 0) > 0 ? 'Pending' : 'Completed'}</strong></p>
-                  </div>
+                  {parseFloat(selectedInvoice.pending_amount || 0) > 0 ? (() => {
+                    const pendingAmtStr = parseFloat(selectedInvoice.pending_amount || 0).toFixed(2);
+                    const upiId = garageInfo?.upi_id || 'pritpatel9397@oksbi';
+                    const payeeName = garageInfo?.upi_payee_name || garageInfo?.garage_name || 'Patel Automobiles';
+                    const rawInvId = String(selectedInvoice.invoice_number || selectedInvoice.id || 'bill').slice(-8);
+                    const fixedUpiUri = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(payeeName)}&am=${encodeURIComponent(pendingAmtStr)}&cu=INR&tn=${encodeURIComponent(`Invoice ${rawInvId}`)}`;
+                    const dynamicQrImage = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(fixedUpiUri)}`;
+                    const qrSrc = garageInfo?.upi_qr || dynamicQrImage || '/upi_qr.jpg';
+
+                    return (
+                      <div className="flex flex-col items-center justify-center p-3 bg-white rounded-xl border border-slate-300 shadow-sm text-center">
+                        <a
+                          href={fixedUpiUri}
+                          title={`Click to Pay ₹${pendingAmtStr} directly via GPay / UPI`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="block p-1 bg-white hover:scale-105 transition-transform"
+                        >
+                          <img
+                            src={qrSrc}
+                            alt={`UPI QR Scanner ₹${pendingAmtStr}`}
+                            onError={(e) => { e.target.onerror = null; e.target.src = '/upi_qr.jpg'; }}
+                            className="w-36 h-36 object-contain mx-auto"
+                          />
+                        </a>
+                        <span className="text-[10px] font-black text-slate-900 mt-1 uppercase tracking-wide">
+                          Scan & Pay Dues: <strong className="text-rose-600">₹{pendingAmtStr}</strong>
+                        </span>
+                        <span className="text-[10px] font-mono text-emerald-700 font-extrabold">{upiId}</span>
+                      </div>
+                    );
+                  })() : (
+                    <div className="space-y-1 text-xs p-2">
+                      <p className="text-slate-500">Date: <strong className="text-slate-800">{formatDateDMY(selectedInvoice.created_at || selectedInvoice.visit_date)}</strong></p>
+                      <p className="text-slate-500">Payment Status: <strong className="text-emerald-600 font-extrabold">Paid in Full (No Dues)</strong></p>
+                    </div>
+                  )}
 
                   <div className="space-y-2 text-xs font-bold">
+                    <div className="flex justify-between text-slate-700">
+                      <span>Date:</span>
+                      <span className="font-mono text-slate-800">{formatDateDMY(selectedInvoice.created_at || selectedInvoice.visit_date)}</span>
+                    </div>
                     <div className="flex justify-between text-slate-700">
                       <span>Grand Total:</span>
                       <span className="font-mono text-slate-900 text-sm">₹{parseFloat(selectedInvoice.grand_total || selectedInvoice.total_amount || 0).toFixed(2)}</span>
@@ -688,6 +725,19 @@ export default function BillingPage() {
                       <span className="font-mono text-sm font-black">₹{parseFloat(selectedInvoice.pending_amount || 0).toFixed(2)}</span>
                     </div>
                   </div>
+                </div>
+
+                {/* SAFETY FOOTER */}
+                <div className="pt-3 border-t border-dashed border-amber-300 text-center bg-amber-500/10 rounded-xl p-3 space-y-1">
+                  <p className="text-[11px] font-black text-slate-900 font-poppins">
+                    {garageInfo?.safety_message || 'Thank you for choosing us! Wish you a safe & smooth ride. 🛵⛑️'}
+                  </p>
+                  <p className="text-[11px] font-bold text-slate-700 font-mono">
+                    📞 Contact: {garageInfo?.phone || '+91 81403 71414'}
+                  </p>
+                  <p className="text-[11px] font-black text-slate-900 font-poppins">
+                    — {garageInfo?.garage_name || 'Patel Automobiles'}
+                  </p>
                 </div>
               </div>
             </div>

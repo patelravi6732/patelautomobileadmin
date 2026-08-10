@@ -828,10 +828,13 @@ export async function atomicRecordPayment({ updatedInvoice, updatedJob, creditKh
     const invId = String(inv.id || '');
     const invJobId = String(inv.job_id || '');
     const invVeh = (inv.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-    if (invId === targetId || invJobId === targetId || (vNorm && invVeh === vNorm && parseFloat(inv.pending_amount || 0) > 0)) {
-      if (updatedInvoice) return { ...inv, ...updatedInvoice };
+    const isTarget = (invId === targetId || invJobId === targetId);
+    const isMatchingPendingVeh = (vNorm && invVeh === vNorm && parseFloat(inv.pending_amount || 0) > 0);
+
+    if (isTarget || isMatchingPendingVeh) {
+      if (updatedInvoice && isTarget) return { ...inv, ...updatedInvoice };
       const curTotal = parseFloat(inv.grand_total || inv.total_amount || 0);
-      const curPaid = parseFloat(inv.paid_amount || 0) + numAmt;
+      const curPaid = Math.min(curTotal, parseFloat(inv.paid_amount || 0) + numAmt);
       const curPending = Math.max(0, curTotal - curPaid);
       return {
         ...inv,
@@ -848,10 +851,13 @@ export async function atomicRecordPayment({ updatedInvoice, updatedJob, creditKh
     if (!j) return j;
     const jId = String(j.id || '');
     const jVeh = (j.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-    if (jId === targetId || (vNorm && jVeh === vNorm && (j.status === 'FINISHED' || j.status === 'COMPLETED'))) {
-      if (updatedJob) return { ...j, ...updatedJob };
+    const isTarget = (jId === targetId);
+    const isMatchingPendingVeh = (vNorm && jVeh === vNorm && (j.status === 'FINISHED' || j.status === 'COMPLETED') && parseFloat(j.pending_amount || 0) > 0);
+
+    if (isTarget || isMatchingPendingVeh) {
+      if (updatedJob && isTarget) return { ...j, ...updatedJob };
       const curTotal = parseFloat(j.grand_total || j.live_total || 0);
-      const curPaid = parseFloat(j.paid_amount || 0) + numAmt;
+      const curPaid = Math.min(curTotal, parseFloat(j.paid_amount || 0) + numAmt);
       const curPending = Math.max(0, curTotal - curPaid);
       return {
         ...j,

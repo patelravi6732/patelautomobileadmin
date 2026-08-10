@@ -133,28 +133,37 @@ export async function fetchMasterStore() {
       if (Array.isArray(mergedStore.jobs)) localStorage.setItem('workshop_jobs', JSON.stringify(mergedStore.jobs));
       if (Array.isArray(mergedStore.invoices)) localStorage.setItem('local_invoices', JSON.stringify(mergedStore.invoices));
       if (Array.isArray(mergedStore.inventory)) {
+        const localDeleted = JSON.parse(localStorage.getItem('deleted_ids') || '[]');
+        const cloudDeleted = Array.isArray(mergedStore.deletedIds) ? mergedStore.deletedIds : [];
+        const allDeleted = Array.from(new Set([...localDeleted, ...cloudDeleted]));
+
         const curLocal = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
         const recMap = new Map();
         [...mergedStore.inventory, ...curLocal].forEach(item => {
-          if (item && (item.part_name || item.name)) {
-            const rawName = String(item.part_name || item.name).trim();
-            const key = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
-            const parsedStock = parseInt(item.current_stock !== undefined ? item.current_stock : 0, 10);
-            const cleanObj = {
-              ...item,
-              id: item.id || `inv_${key}`,
-              part_name: rawName,
-              current_stock: parsedStock,
-              updated_at: item.updated_at || null
-            };
-            const existing = recMap.get(key);
-            if (!existing) {
-              recMap.set(key, cleanObj);
-            } else {
-              if (parsedStock < existing.current_stock) {
-                recMap.set(key, { ...existing, ...cleanObj, current_stock: parsedStock });
-              } else if (cleanObj.price !== existing.price || cleanObj.min_stock_alert !== existing.min_stock_alert) {
-                recMap.set(key, { ...existing, ...cleanObj });
+          if (item && (item.id || item.part_name || item.name)) {
+            const rawId = String(item.id || `inv_${String(item.part_name || item.name).toLowerCase().replace(/[^a-z0-9]/g, '')}`);
+            const rawName = String(item.part_name || item.name || '').trim();
+            const normName = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+            if (!allDeleted.includes(rawId) && !allDeleted.includes(rawName) && !allDeleted.includes(normName)) {
+              const parsedStock = parseInt(item.current_stock !== undefined ? item.current_stock : 0, 10);
+              const cleanObj = {
+                ...item,
+                id: rawId,
+                part_name: rawName || 'Spare Part',
+                current_stock: parsedStock,
+                min_stock_alert: item.min_stock_alert !== undefined ? parseInt(item.min_stock_alert, 10) : 2,
+                price: parseFloat(item.price || 0)
+              };
+              const existing = recMap.get(rawId);
+              if (!existing) {
+                recMap.set(rawId, cleanObj);
+              } else {
+                if (parsedStock < existing.current_stock) {
+                  recMap.set(rawId, { ...existing, ...cleanObj, current_stock: parsedStock });
+                } else if (cleanObj.price !== existing.price || cleanObj.min_stock_alert !== existing.min_stock_alert) {
+                  recMap.set(rawId, { ...existing, ...cleanObj });
+                }
               }
             }
           }
@@ -186,24 +195,36 @@ async function saveMasterStore(storeData) {
     let resolvedInv = storeData.inventory || curLocalInv;
     
     if (curLocalInv.length > 0) {
+      const localDeleted = JSON.parse(localStorage.getItem('deleted_ids') || '[]');
+      const cloudDeleted = Array.isArray(storeData.deletedIds) ? storeData.deletedIds : [];
+      const allDeleted = Array.from(new Set([...localDeleted, ...cloudDeleted]));
+
       const recMap = new Map();
       [...(storeData.inventory || []), ...curLocalInv].forEach(item => {
-        if (item && (item.part_name || item.name)) {
-          const rawName = String(item.part_name || item.name).trim();
-          const key = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
-          const parsedStock = parseInt(item.current_stock !== undefined ? item.current_stock : 0, 10);
-          const cleanObj = {
-            ...item,
-            id: item.id || `inv_${key}`,
-            part_name: rawName,
-            current_stock: parsedStock
-          };
-          const existing = recMap.get(key);
-          if (!existing) {
-            recMap.set(key, cleanObj);
-          } else {
-            if (parsedStock < existing.current_stock) {
-              recMap.set(key, { ...existing, ...cleanObj, current_stock: parsedStock });
+        if (item && (item.id || item.part_name || item.name)) {
+          const rawId = String(item.id || `inv_${String(item.part_name || item.name).toLowerCase().replace(/[^a-z0-9]/g, '')}`);
+          const rawName = String(item.part_name || item.name || '').trim();
+          const normName = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+          if (!allDeleted.includes(rawId) && !allDeleted.includes(rawName) && !allDeleted.includes(normName)) {
+            const parsedStock = parseInt(item.current_stock !== undefined ? item.current_stock : 0, 10);
+            const cleanObj = {
+              ...item,
+              id: rawId,
+              part_name: rawName || 'Spare Part',
+              current_stock: parsedStock,
+              min_stock_alert: item.min_stock_alert !== undefined ? parseInt(item.min_stock_alert, 10) : 2,
+              price: parseFloat(item.price || 0)
+            };
+            const existing = recMap.get(rawId);
+            if (!existing) {
+              recMap.set(rawId, cleanObj);
+            } else {
+              if (parsedStock < existing.current_stock) {
+                recMap.set(rawId, { ...existing, ...cleanObj, current_stock: parsedStock });
+              } else if (cleanObj.price !== existing.price || cleanObj.min_stock_alert !== existing.min_stock_alert) {
+                recMap.set(rawId, { ...existing, ...cleanObj });
+              }
             }
           }
         }

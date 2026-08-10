@@ -51,24 +51,27 @@ export default function InventoryPage() {
       console.warn('Backend API offline for inventory, using fast local+cloud store:', err);
     }
 
-    const deletedIds = await fetchCloudDeletedIds().catch(() => []);
+    const localDeleted = JSON.parse(localStorage.getItem('deleted_ids') || '[]');
+    const cloudDeleted = await fetchCloudDeletedIds().catch(() => []);
+    const deletedIds = Array.from(new Set([...localDeleted, ...cloudDeleted]));
+
     const cloudInv = await fetchCloudInventory().catch(() => []);
     const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
 
     const allMap = new Map();
     [...cloudInv, ...localInv, ...backendItems].forEach(item => {
-      if (item && typeof item === 'object' && (item.part_name || item.name)) {
-        const rawName = String(item.part_name || item.name).trim();
-        const key = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
-        const idKey = String(item.id || '');
+      if (item && typeof item === 'object' && (item.id || item.part_name || item.name)) {
+        const rawId = String(item.id || `inv_${String(item.part_name || item.name).toLowerCase().replace(/[^a-z0-9]/g, '')}`);
+        const rawName = String(item.part_name || item.name || '').trim();
+        const normName = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
         
-        if (!deletedIds.includes(key) && !deletedIds.includes(idKey) && !deletedIds.includes(rawName)) {
+        if (!deletedIds.includes(rawId) && !deletedIds.includes(rawName) && !deletedIds.includes(normName)) {
           const parsedStock = parseInt(item.current_stock !== undefined ? item.current_stock : (item.stock_quantity !== undefined ? item.stock_quantity : (item.quantity !== undefined ? item.quantity : 0)), 10);
           const parsedMin = item.min_stock_alert !== undefined && item.min_stock_alert !== '' ? parseInt(item.min_stock_alert, 10) : 2;
           
           const newItemObj = {
-            id: item.id || `inv_${key}`,
-            part_name: rawName,
+            id: rawId,
+            part_name: rawName || 'Spare Part',
             category: item.category || 'General',
             price: parseFloat(item.price || 0),
             current_stock: parsedStock,
@@ -76,14 +79,14 @@ export default function InventoryPage() {
             updated_at: item.updated_at || null
           };
 
-          const existing = allMap.get(key);
+          const existing = allMap.get(rawId);
           if (!existing) {
-            allMap.set(key, newItemObj);
+            allMap.set(rawId, newItemObj);
           } else {
             if (parsedStock < existing.current_stock) {
-              allMap.set(key, { ...existing, ...newItemObj, current_stock: parsedStock });
+              allMap.set(rawId, { ...existing, ...newItemObj, current_stock: parsedStock });
             } else if (newItemObj.price !== existing.price || newItemObj.min_stock_alert !== existing.min_stock_alert) {
-              allMap.set(key, { ...existing, ...newItemObj });
+              allMap.set(rawId, { ...existing, ...newItemObj });
             }
           }
         }

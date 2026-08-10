@@ -170,21 +170,24 @@ export default function WorkshopPage() {
     );
     setJobs(mergedJobs);
 
+    const localDeleted = JSON.parse(localStorage.getItem('deleted_ids') || '[]');
+    const allDeletedIds = Array.from(new Set([...localDeleted, ...deletedIds]));
+
     const allInvMap = new Map();
     let localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
     [...cloudInv, ...localInv, ...invData].forEach(item => {
-      if (item && typeof item === 'object' && (item.part_name || item.name)) {
-        const rawName = String(item.part_name || item.name).trim();
-        const normKey = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
-        const idKey = String(item.id || '');
+      if (item && typeof item === 'object' && (item.id || item.part_name || item.name)) {
+        const rawId = String(item.id || `inv_${String(item.part_name || item.name).toLowerCase().replace(/[^a-z0-9]/g, '')}`);
+        const rawName = String(item.part_name || item.name || '').trim();
+        const normName = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
         
-        if (!deletedIds.includes(normKey) && !deletedIds.includes(idKey) && !deletedIds.includes(rawName)) {
+        if (!allDeletedIds.includes(rawId) && !allDeletedIds.includes(rawName) && !allDeletedIds.includes(normName)) {
           const parsedStock = parseInt(item.current_stock !== undefined ? item.current_stock : (item.stock_quantity !== undefined ? item.stock_quantity : (item.quantity !== undefined ? item.quantity : 0)), 10);
           const parsedMin = item.min_stock_alert !== undefined && item.min_stock_alert !== '' ? parseInt(item.min_stock_alert, 10) : 2;
           
           const cleanItem = {
-            id: item.id || `inv_${normKey}`,
-            part_name: rawName,
+            id: rawId,
+            part_name: rawName || 'Spare Part',
             category: item.category || 'General',
             price: parseFloat(item.price || 0),
             current_stock: parsedStock,
@@ -192,14 +195,14 @@ export default function WorkshopPage() {
             updated_at: item.updated_at || null
           };
 
-          const existing = allInvMap.get(normKey);
+          const existing = allInvMap.get(rawId);
           if (!existing) {
-            allInvMap.set(normKey, cleanItem);
+            allInvMap.set(rawId, cleanItem);
           } else {
             if (parsedStock < existing.current_stock) {
-              allInvMap.set(normKey, { ...existing, ...cleanItem, current_stock: parsedStock });
+              allInvMap.set(rawId, { ...existing, ...cleanItem, current_stock: parsedStock });
             } else if (cleanItem.price !== existing.price || cleanItem.min_stock_alert !== existing.min_stock_alert) {
-              allInvMap.set(normKey, { ...existing, ...cleanItem });
+              allInvMap.set(rawId, { ...existing, ...cleanItem });
             }
           }
         }
@@ -1415,16 +1418,16 @@ export default function WorkshopPage() {
                 <button
                   type="button"
                   onClick={() => setShowPartModal(false)}
-                  className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-all"
+                  className="flex-1 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-all cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={!selectedPartId}
-                  className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs rounded-xl shadow-md shadow-blue-500/20 transition-all disabled:opacity-50"
+                  className="flex-1 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-lg shadow-emerald-500/25 transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-98"
                 >
-                  ✔ Confirm & Add Part
+                  <span>✔</span>
+                  <span>Confirm & Add Part</span>
                 </button>
               </div>
             </form>

@@ -72,15 +72,19 @@ export default function InventoryPage() {
             category: item.category || 'General',
             price: parseFloat(item.price || 0),
             current_stock: parsedStock,
-            min_stock_alert: parsedMin
+            min_stock_alert: parsedMin,
+            updated_at: item.updated_at || new Date().toISOString()
           };
 
           const existing = allMap.get(key);
           if (!existing) {
             allMap.set(key, newItemObj);
           } else {
-            // Prioritize deducted (lower) stock so user sees exact stock reduction
-            if (parsedStock < existing.current_stock) {
+            const itemTime = item.updated_at ? new Date(item.updated_at).getTime() : 0;
+            const existingTime = existing.updated_at ? new Date(existing.updated_at).getTime() : 0;
+            if (itemTime > existingTime) {
+              allMap.set(key, { ...existing, ...newItemObj });
+            } else if (itemTime === existingTime && parsedStock < existing.current_stock) {
               allMap.set(key, { ...existing, ...newItemObj, current_stock: parsedStock });
             }
           }

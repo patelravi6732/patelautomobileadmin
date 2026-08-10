@@ -466,7 +466,8 @@ export default function WorkshopPage() {
               ...invItem,
               current_stock: newQty,
               stock_quantity: newQty,
-              quantity: newQty
+              quantity: newQty,
+              updated_at: new Date().toISOString()
             };
             pushCloudInventoryItem(updatedItem).catch(console.warn);
             return updatedItem;

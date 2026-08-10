@@ -370,23 +370,31 @@ export async function pushCloudInventoryItem(newItem) {
   if (!newItem || typeof newItem !== 'object') return;
 
   const newId = String(newItem.id || '');
-  const newName = String(newItem.part_name || newItem.name || '').toLowerCase().trim();
+  const rawName = String(newItem.part_name || newItem.name || '').trim();
+  const newName = rawName.toLowerCase();
+  const newNorm = newName.replace(/[^a-z0-9]/g, '');
+  const stampedItem = {
+    ...newItem,
+    updated_at: newItem.updated_at || new Date().toISOString()
+  };
 
   // 1. Update local inventory_items & spare_parts
   const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
   const isMatchItem = (i) => {
     if (!i) return false;
     const curId = String(i.id || '');
-    const curName = String(i.part_name || i.name || '').toLowerCase().trim();
-    return (newId && curId && newId === curId) || (newName && curName && newName === curName);
+    const curRaw = String(i.part_name || i.name || '').trim();
+    const curName = curRaw.toLowerCase();
+    const curNorm = curName.replace(/[^a-z0-9]/g, '');
+    return (newId && curId && newId === curId) || (newNorm && curNorm && newNorm === curNorm) || (newName && curName && newName === curName);
   };
 
   const existsLocal = localInv.some(isMatchItem);
   let updatedLocal = localInv;
   if (!existsLocal) {
-    updatedLocal = [newItem, ...localInv];
+    updatedLocal = [stampedItem, ...localInv];
   } else {
-    updatedLocal = localInv.map(i => isMatchItem(i) ? { ...i, ...newItem } : i);
+    updatedLocal = localInv.map(i => isMatchItem(i) ? { ...i, ...stampedItem } : i);
   }
   localStorage.setItem('inventory_items', JSON.stringify(updatedLocal));
   localStorage.setItem('spare_parts', JSON.stringify(updatedLocal));
@@ -397,9 +405,9 @@ export async function pushCloudInventoryItem(newItem) {
   const exists = existing.some(isMatchItem);
   let updated = existing;
   if (!exists) {
-    updated = [newItem, ...existing];
+    updated = [stampedItem, ...existing];
   } else {
-    updated = existing.map(i => isMatchItem(i) ? { ...i, ...newItem } : i);
+    updated = existing.map(i => isMatchItem(i) ? { ...i, ...stampedItem } : i);
   }
   await saveMasterStore({ ...store, inventory: updated });
 }

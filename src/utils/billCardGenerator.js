@@ -16,7 +16,17 @@ const loadSingleImage = (src) => {
       resolve(result);
     };
 
-    const timer = setTimeout(() => finish(null), 1200);
+    const timer = setTimeout(() => {
+      if (src !== '/upi_qr.jpg') {
+        const fallback = new Image();
+        fallback.crossOrigin = 'Anonymous';
+        fallback.onload = () => finish(fallback);
+        fallback.onerror = () => finish(null);
+        fallback.src = '/upi_qr.jpg';
+      } else {
+        finish(null);
+      }
+    }, 2500);
 
     const img = new Image();
     img.crossOrigin = 'Anonymous';
@@ -266,13 +276,13 @@ const renderCanvasInternal = (invoice, garageInfo, logoImg, qrImg) => {
 
   currentY += 24;
 
-  // 7. Totals Section with Pure, Clean UPI QR Scanner Image (ONLY for Pending Bills)
-  const pendingVal = parseFloat(inv.pending_amount || 0);
+  // 7. Totals Section with Pure, Clean UPI QR Scanner Image (For Pending Bills)
+  const pendingVal = parseFloat(inv.pending_amount !== undefined ? inv.pending_amount : (inv.balance || 0));
   const isPendingPayment = pendingVal > 0;
   const qrBoxSize = 185;
   const startY = currentY;
 
-  if (isPendingPayment && qrImg && (qrImg.naturalWidth > 0 || qrImg.complete)) {
+  if (isPendingPayment) {
     // Pure White Background for 100% Scanner Reliability
     ctx.fillStyle = '#ffffff';
     ctx.beginPath();
@@ -283,10 +293,21 @@ const renderCanvasInternal = (invoice, garageInfo, logoImg, qrImg) => {
     ctx.lineWidth = 1;
     ctx.strokeRect(pad, startY, qrBoxSize + 20, qrBoxSize + 48);
 
-    try {
-      // Draw QR Image unclipped, crisp, large
-      ctx.drawImage(qrImg, pad + 10, startY + 10, qrBoxSize, qrBoxSize);
-    } catch (e) {}
+    if (qrImg && (qrImg.naturalWidth > 0 || qrImg.complete)) {
+      try {
+        ctx.drawImage(qrImg, pad + 10, startY + 10, qrBoxSize, qrBoxSize);
+      } catch (e) {}
+    } else {
+      // Fallback Visual Scanner Box
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillRect(pad + 10, startY + 10, qrBoxSize, qrBoxSize);
+      ctx.fillStyle = '#0f172a';
+      ctx.font = 'bold 12px "Segoe UI", Roboto, system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('⚡ UPI QR SCANNER', pad + (qrBoxSize / 2) + 10, startY + 80);
+      ctx.fillText(`Pay ₹${pendingVal.toFixed(2)}`, pad + (qrBoxSize / 2) + 10, startY + 105);
+      ctx.textAlign = 'left';
+    }
 
     ctx.fillStyle = '#0f172a';
     ctx.font = 'bold 12px "Segoe UI", Roboto, system-ui, sans-serif';

@@ -34,8 +34,8 @@ export default function BillingPage() {
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedDate, setSelectedDate] = useState('');
 
-  const fetchInvoices = async () => {
-    setLoading(true);
+  const fetchInvoices = async (isInitial = false) => {
+    if (isInitial) setLoading(true);
     let backendInvs = [];
     try {
       const res = await API.get('/billing/', { timeout: 800 });
@@ -44,10 +44,10 @@ export default function BillingPage() {
       console.warn('Backend API offline for billing, deriving from local & cloud invoices:', err);
     }
 
-    const deletedIds = await fetchCloudDeletedIds();
+    const deletedIds = await fetchCloudDeletedIds().catch(() => []);
 
     const localInvs = JSON.parse(localStorage.getItem('local_invoices') || '[]');
-    const cloudInvs = await fetchCloudInvoices();
+    const cloudInvs = await fetchCloudInvoices().catch(() => []);
     const finishedJobs = (JSON.parse(localStorage.getItem('workshop_jobs') || '[]')).filter(j => j && (j.status === 'FINISHED' || j.status === 'COMPLETED'));
 
     const derivedInvs = finishedJobs.map((j, idx) => {
@@ -123,11 +123,11 @@ export default function BillingPage() {
   };
 
   useEffect(() => {
-    fetchInvoices();
+    fetchInvoices(true);
     const interval = setInterval(() => {
-      fetchInvoices();
+      fetchInvoices(false);
     }, 3000);
-    const handleStorage = () => fetchInvoices();
+    const handleStorage = () => fetchInvoices(false);
     window.addEventListener('storage', handleStorage);
     return () => {
       clearInterval(interval);

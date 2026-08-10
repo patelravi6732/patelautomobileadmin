@@ -977,11 +977,12 @@ export default function KhataBookPage() {
 
                   {/* SUMMARY & UPI QR CODE */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center bg-slate-50 p-4 rounded-xl border border-slate-200">
-                    {parseFloat(statementCustomer.pending_amount || 0) > 0 && (() => {
-                      const pendingAmtStr = parseFloat(statementCustomer.pending_amount || 0).toFixed(2);
+                    {parseFloat(statementCustomer?.pending_amount || statementCustomer?.balance || 0) > 0 && (() => {
+                      const pendingAmtStr = (parseFloat(statementCustomer?.pending_amount !== undefined ? statementCustomer.pending_amount : (statementCustomer?.balance || 0)) || 0).toFixed(2);
                       const upiId = garageInfo?.upi_id || 'pritpatel9397@oksbi';
                       const payeeName = garageInfo?.upi_payee_name || garageInfo?.garage_name || 'Patel Automobiles';
-                      const fixedUpiUri = `upi://pay?pa=${upiId}&pn=${encodeURIComponent(payeeName)}&am=${pendingAmtStr}&cu=INR&tn=${encodeURIComponent(`Invoice Payment #${statementCustomer.id || ''}`)}`;
+                      const rawCustId = String(statementCustomer?.id || statementCustomer?.vehicle_number || 'bill').slice(-8);
+                      const fixedUpiUri = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(payeeName)}&am=${encodeURIComponent(pendingAmtStr)}&cu=INR&tn=${encodeURIComponent(`Dues Payment ${rawCustId}`)}`;
                       const dynamicQrImage = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(fixedUpiUri)}`;
 
                       return (

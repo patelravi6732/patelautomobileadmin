@@ -700,7 +700,8 @@ export default function WorkshopPage() {
     const finishLabourNum = parseFloat(finishLabourCharge) || 0;
     const partsTotalNum = parseFloat(selectedJob.parts_total || 0);
     const grandTotal = Math.max(0, (partsTotalNum + finishLabourNum) - numericDiscount);
-    const paidAmountNum = parseFloat(paidAmount) || 0;
+    const enteredPaid = parseFloat(paidAmount) || 0;
+    const paidAmountNum = Math.min(grandTotal, Math.max(0, enteredPaid));
     const unpaidAmount = Math.max(0, grandTotal - paidAmountNum);
     const targetId = selectedJob.id;
     const completionTime = new Date().toISOString();
@@ -1540,13 +1541,20 @@ export default function WorkshopPage() {
                   </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Amount Paid Now (₹)</label>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">Amount Paid Now (₹)</label>
+                  <span className="text-[11px] font-bold text-slate-400">Max: ₹{formatMoney(grandTotal)}</span>
+                </div>
                 <input
                   type="number"
-                  step="10"
+                  step="1"
                   min="0"
+                  max={grandTotal}
                   value={paidAmount}
-                  onChange={(e) => setPaidAmount(parseFloat(e.target.value) || 0)}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value) || 0;
+                    setPaidAmount(Math.min(grandTotal, Math.max(0, val)));
+                  }}
                   className="w-full px-4 py-3 rounded-xl border border-slate-200 text-base font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
                 />
               </div>

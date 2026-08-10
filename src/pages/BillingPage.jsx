@@ -75,8 +75,9 @@ export default function BillingPage() {
       const labourVal = parseFloat(j.labour_charge || 100);
       const discountVal = parseFloat(j.discount_amount || 0);
       const totalVal = parseFloat(j.grand_total || j.total_amount || j.live_total || Math.max(0, partsVal + labourVal - discountVal));
-      const paidVal = j.paid_amount !== undefined ? parseFloat(j.paid_amount) : totalVal;
-      const pendingVal = j.pending_amount !== undefined ? parseFloat(j.pending_amount) : Math.max(0, totalVal - paidVal);
+      const rawPaid = j.paid_amount !== undefined ? parseFloat(j.paid_amount) : totalVal;
+      const paidVal = Math.min(totalVal, Math.max(0, rawPaid));
+      const pendingVal = Math.max(0, totalVal - paidVal);
 
       return {
         id: j.id || `job_${idx}`,
@@ -107,7 +108,9 @@ export default function BillingPage() {
         const vehNum = (inv.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
         const dateMinute = inv.created_at ? new Date(inv.created_at).toISOString().slice(0, 16) : '';
 
-        if (isDeleted(strId) || isDeleted(rawId) || isDeleted(invNum)) return;
+        if (isDeleted(strId) || isDeleted(rawId) || isDeleted(invNum)) {
+          return;
+        }
         
         const key = rawId ? `bill_${rawId}` : (invNum ? `inv_${invNum}_${vehNum}` : `${vehNum}_${dateMinute}`);
 
@@ -115,8 +118,13 @@ export default function BillingPage() {
         const labourVal = parseFloat(inv.labour_charge || 100);
         const discountVal = parseFloat(inv.discount_amount || 0);
         const totalVal = parseFloat(inv.grand_total || inv.total_amount || inv.live_total || Math.max(0, partsVal + labourVal - discountVal));
-        const paidVal = inv.paid_amount !== undefined ? parseFloat(inv.paid_amount) : totalVal;
-        const pendingVal = inv.pending_amount !== undefined ? parseFloat(inv.pending_amount) : Math.max(0, totalVal - paidVal);
+        const rawPaid = inv.paid_amount !== undefined && inv.paid_amount !== null
+          ? parseFloat(inv.paid_amount)
+          : (inv.received_amount !== undefined && inv.received_amount !== null
+            ? parseFloat(inv.received_amount)
+            : (inv.payment_status === 'PAID' ? totalVal : 0));
+        const paidVal = Math.min(totalVal, Math.max(0, rawPaid));
+        const pendingVal = Math.max(0, totalVal - paidVal);
 
         const normalizedInv = {
           ...inv,
@@ -494,7 +502,12 @@ export default function BillingPage() {
                       ₹{parseFloat(inv.grand_total || 0).toFixed(2)}
                     </td>
                     <td className="p-4 sm:p-5 font-black text-emerald-600 font-poppins text-base whitespace-nowrap">
-                      ₹{parseFloat(inv.paid_amount !== undefined && inv.paid_amount !== null ? inv.paid_amount : (inv.received_amount !== undefined && inv.received_amount !== null ? inv.received_amount : (inv.payment_status === 'PAID' ? inv.grand_total : 0))).toFixed(2)}
+                      ₹{(() => {
+                        const grandVal = parseFloat(inv.grand_total || 0);
+                        const rawPaid = parseFloat(inv.paid_amount !== undefined && inv.paid_amount !== null ? inv.paid_amount : (inv.received_amount !== undefined && inv.received_amount !== null ? inv.received_amount : (inv.payment_status === 'PAID' ? grandVal : 0)));
+                        const clampedPaid = Math.min(grandVal, Math.max(0, rawPaid));
+                        return clampedPaid.toFixed(2);
+                      })()}
                     </td>
                     <td className="p-4 sm:p-5">
                       {(() => {

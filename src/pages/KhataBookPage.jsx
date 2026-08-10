@@ -387,8 +387,13 @@ export default function KhataBookPage() {
     if (!selectedCustomer) return;
 
     const paymentNum = parseFloat(payAmount) || 0;
+    const maxPending = parseFloat(selectedCustomer?.pending_amount || selectedCustomer?.balance || 0) || 0;
     if (paymentNum <= 0) {
       alert('⚠️ Please enter a valid payment amount greater than ₹0!');
+      return;
+    }
+    if (paymentNum > maxPending) {
+      alert(`⚠️ Payment amount cannot exceed current pending dues (₹${maxPending.toFixed(2)})!`);
       return;
     }
 
@@ -815,15 +820,27 @@ export default function KhataBookPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Received Payment Amount (₹)</label>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="block text-xs font-bold text-slate-700 uppercase">Received Payment Amount (₹)</label>
+                  <span className="text-[11px] font-bold text-slate-400">Max: ₹{(parseFloat(selectedCustomer?.pending_amount || selectedCustomer?.balance || 0) || 0).toFixed(2)}</span>
+                </div>
                 <input
                   type="number"
                   step="0.01"
                   min="0.01"
+                  max={parseFloat(selectedCustomer?.pending_amount || selectedCustomer?.balance || 0) || 0}
                   required
                   autoFocus
                   value={payAmount}
-                  onChange={(e) => setPayAmount(e.target.value)}
+                  onChange={(e) => {
+                    const maxVal = parseFloat(selectedCustomer?.pending_amount || selectedCustomer?.balance || 0) || 0;
+                    const val = parseFloat(e.target.value) || 0;
+                    if (val > maxVal) {
+                      setPayAmount(maxVal);
+                    } else {
+                      setPayAmount(e.target.value);
+                    }
+                  }}
                   className="w-full px-4 py-3 rounded-xl border border-slate-300 font-mono text-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/20 text-slate-900 bg-white"
                 />
               </div>

@@ -125,10 +125,41 @@ export async function fetchMasterStore(forceFresh = false) {
     }
 
     if (freshStore) {
+      const curLocalJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
+      const localJobMap = new Map();
+      curLocalJobs.forEach(j => {
+        if (j && j.id) localJobMap.set(String(j.id), j);
+      });
+
+      const mergedJobs = (freshStore.jobs || []).map(cloudJob => {
+        if (!cloudJob || !cloudJob.id) return cloudJob;
+        const localJob = localJobMap.get(String(cloudJob.id));
+        if (localJob) {
+          const localParts = Array.isArray(localJob.parts) ? localJob.parts : [];
+          const cloudParts = Array.isArray(cloudJob.parts) ? cloudJob.parts : [];
+          const finalParts = localParts.length >= cloudParts.length ? localParts : cloudParts;
+          const finalPartsTotal = finalParts.reduce((acc, p) => acc + parseFloat(p.staged_total || (parseFloat(p.price || p.unit_price || 0) * parseInt(p.quantity || 1, 10))), 0);
+          return {
+            ...cloudJob,
+            ...localJob,
+            parts: finalParts,
+            parts_total: finalPartsTotal,
+            live_total: finalPartsTotal + parseFloat(localJob.labour_charge || cloudJob.labour_charge || 0)
+          };
+        }
+        return cloudJob;
+      });
+
+      curLocalJobs.forEach(localJob => {
+        if (localJob && localJob.id && !mergedJobs.some(j => String(j.id) === String(localJob.id))) {
+          mergedJobs.push(localJob);
+        }
+      });
+
       const mergedStore = {
         bookings: freshStore.bookings,
         messages: freshStore.messages,
-        jobs: freshStore.jobs,
+        jobs: mergedJobs,
         inventory: freshStore.inventory,
         recycleBin: freshStore.recycleBin,
         garageInfo: freshStore.garageInfo || localCache.garageInfo,
@@ -182,6 +213,39 @@ export async function fetchMasterStore(forceFresh = false) {
 
 async function saveMasterStore(storeData) {
   try {
+    const curLocalJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
+    const localJobMap = new Map();
+    curLocalJobs.forEach(j => {
+      if (j && j.id) localJobMap.set(String(j.id), j);
+    });
+
+    const mergedJobs = (storeData.jobs || []).map(cloudJob => {
+      if (!cloudJob || !cloudJob.id) return cloudJob;
+      const localJob = localJobMap.get(String(cloudJob.id));
+      if (localJob) {
+        const localParts = Array.isArray(localJob.parts) ? localJob.parts : [];
+        const cloudParts = Array.isArray(cloudJob.parts) ? cloudJob.parts : [];
+        const finalParts = localParts.length >= cloudParts.length ? localParts : cloudParts;
+        const finalPartsTotal = finalParts.reduce((acc, p) => acc + parseFloat(p.staged_total || (parseFloat(p.price || p.unit_price || 0) * parseInt(p.quantity || 1, 10))), 0);
+        return {
+          ...cloudJob,
+          ...localJob,
+          parts: finalParts,
+          parts_total: finalPartsTotal,
+          live_total: finalPartsTotal + parseFloat(localJob.labour_charge || cloudJob.labour_charge || 0)
+        };
+      }
+      return cloudJob;
+    });
+
+    curLocalJobs.forEach(localJob => {
+      if (localJob && localJob.id && !mergedJobs.some(j => String(j.id) === String(localJob.id))) {
+        mergedJobs.push(localJob);
+      }
+    });
+
+    storeData.jobs = mergedJobs;
+
     const curLocalInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
     let resolvedInv = storeData.inventory || curLocalInv;
     

@@ -30,14 +30,18 @@ async function createFreshCloudBin(initialData) {
 }
 
 export const DEFAULT_PRIMARY_ADMIN = {
-  id: 'admin_patel_primary',
-  username: 'patel',
+  id: 'admin_patel_master',
+  username: 'patelautomobile',
   user_name: 'Ravi Patel',
-  password: '@ravipatel2005',
+  name: 'Ravi Patel',
+  role: 'Super Admin',
+  email: 'patelautomobile6732@gmail.com',
   phone: '+91 81403 71414',
-  email: 'patelautomobile01@gmail.com',
-  role: 'ADMIN',
-  created_at: new Date().toISOString()
+  mobile_number: '8140371414',
+  garage_name: 'Patel Automobiles',
+  password: '@ravipatel2005',
+  profile_photo: '/logo.png',
+  created_at: '2026-08-01T00:00:00Z'
 };
 
 export async function fetchMasterStore() {

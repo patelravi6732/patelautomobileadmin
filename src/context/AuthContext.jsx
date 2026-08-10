@@ -154,7 +154,7 @@ export const AuthProvider = ({ children }) => {
 
     const cloudAdmins = await fetchCloudAdminProfiles().catch(() => []);
     const localAdmins = JSON.parse(localStorage.getItem('admin_profiles') || '[]');
-    const allAdmins = [...freshCloudAdmins, ...cloudAdmins, ...localAdmins, DEFAULT_PRIMARY_ADMIN];
+    const allAdmins = [...cloudAdmins, ...localAdmins, DEFAULT_PRIMARY_ADMIN];
 
     const matchedAdmin = allAdmins.find(a => 
       a && (

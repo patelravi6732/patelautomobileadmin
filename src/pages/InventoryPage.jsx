@@ -42,9 +42,10 @@ export default function InventoryPage() {
   ];
 
   const fetchInventory = async (isInitial = false) => {
-    if (isInitial) setLoading(true);
+    if (isInitial && (!items || items.length === 0)) setLoading(true);
 
-    const deletedIds = await fetchCloudDeletedIds().catch(() => []);
+    try {
+      const deletedIds = await fetchCloudDeletedIds().catch(() => []);
     const localDeleted = JSON.parse(localStorage.getItem('deleted_ids') || '[]');
     const allDeletedIds = Array.from(new Set([...localDeleted, ...deletedIds]));
 
@@ -104,19 +105,23 @@ export default function InventoryPage() {
       }
     });
 
-    const finalInvList = Array.from(allMap.values());
-    localStorage.setItem('inventory_items', JSON.stringify(finalInvList));
-    localStorage.setItem('spare_parts', JSON.stringify(finalInvList));
+      const finalInvList = Array.from(allMap.values());
+      localStorage.setItem('inventory_items', JSON.stringify(finalInvList));
+      localStorage.setItem('spare_parts', JSON.stringify(finalInvList));
 
-    setItems(finalInvList);
-    setLoading(false);
+      setItems(finalInvList);
+    } catch (err) {
+      console.warn('fetchInventory notice:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
     fetchInventory(true);
     const interval = setInterval(() => {
       fetchInventory(false);
-    }, 3000);
+    }, 5000);
     return () => clearInterval(interval);
   }, []);
 

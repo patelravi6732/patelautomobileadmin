@@ -17,8 +17,14 @@ const monthNames = [
 ];
 
 export default function BillingPage() {
-  const [invoices, setInvoices] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [invoices, setInvoices] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('local_invoices') || '[]');
+    } catch {
+      return [];
+    }
+  });
+  const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
@@ -35,10 +41,11 @@ export default function BillingPage() {
   const [selectedDate, setSelectedDate] = useState('');
 
   const fetchInvoices = async (isInitial = false) => {
-    if (isInitial) setLoading(true);
+    if (isInitial && (!invoices || invoices.length === 0)) setLoading(true);
     let backendInvs = [];
     try {
-      const res = await API.get('/billing/', { timeout: 800 });
+      try {
+        const res = await API.get('/billing/', { timeout: 800 });
       backendInvs = res.data || [];
     } catch (err) {
       console.warn('Backend API offline for billing, deriving from local & cloud invoices:', err);
@@ -100,10 +107,7 @@ export default function BillingPage() {
         const vehNum = (inv.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
         const dateMinute = inv.created_at ? new Date(inv.created_at).toISOString().slice(0, 16) : '';
 
-        // Check if deleted
-        if (isDeleted(strId) || isDeleted(rawId) || isDeleted(invNum)) {
-          return;
-        }
+        if (isDeleted(strId) || isDeleted(rawId) || isDeleted(invNum)) return;
         
         const key = rawId ? `bill_${rawId}` : (invNum ? `inv_${invNum}_${vehNum}` : `${vehNum}_${dateMinute}`);
 
@@ -131,15 +135,21 @@ export default function BillingPage() {
       }
     });
 
-    setInvoices(Array.from(allMap.values()));
+    const finalInvs = Array.from(allMap.values());
+    localStorage.setItem('local_invoices', JSON.stringify(finalInvs));
+    setInvoices(finalInvs);
+  } catch (err) {
+    console.warn('fetchInvoices notice:', err);
+  } finally {
     setLoading(false);
+  }
   };
 
   useEffect(() => {
     fetchInvoices(true);
     const interval = setInterval(() => {
       fetchInvoices(false);
-    }, 3000);
+    }, 5000);
     const handleStorage = () => fetchInvoices(false);
     window.addEventListener('storage', handleStorage);
     return () => {

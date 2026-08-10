@@ -73,7 +73,7 @@ export default function WorkshopPage() {
   }, [garageInfo]);
 
   const fetchData = async (isInitial = false) => {
-    if (isInitial) setLoading(true);
+    if (isInitial && (!jobs || jobs.length === 0)) setLoading(true);
     let backendJobs = [];
     let invData = [];
     let cloudJobs = [];
@@ -81,183 +81,188 @@ export default function WorkshopPage() {
     let deletedIds = [];
 
     try {
-      const [jobsRes, invRes] = await Promise.all([
-        API.get('/workshop/', { timeout: 1500 }).catch(() => ({ data: [] })),
-        API.get('/inventory/', { timeout: 1500 }).catch(() => ({ data: [] }))
-      ]);
-      backendJobs = jobsRes.data || [];
-      invData = invRes.data || [];
-    } catch (err) {}
+      try {
+        const [jobsRes, invRes] = await Promise.all([
+          API.get('/workshop/', { timeout: 1500 }).catch(() => ({ data: [] })),
+          API.get('/inventory/', { timeout: 1500 }).catch(() => ({ data: [] }))
+        ]);
+        backendJobs = jobsRes.data || [];
+        invData = invRes.data || [];
+      } catch (err) {}
 
-    let cloudBookings = [];
-    try {
-      [cloudJobs, cloudInv, deletedIds, cloudBookings] = await Promise.all([
-        fetchCloudJobs().catch(() => []),
-        fetchCloudInventory().catch(() => []),
-        fetchCloudDeletedIds().catch(() => []),
-        fetchCloudBookings().catch(() => [])
-      ]);
-    } catch (e) {}
+      let cloudBookings = [];
+      try {
+        [cloudJobs, cloudInv, deletedIds, cloudBookings] = await Promise.all([
+          fetchCloudJobs().catch(() => []),
+          fetchCloudInventory().catch(() => []),
+          fetchCloudDeletedIds().catch(() => []),
+          fetchCloudBookings().catch(() => [])
+        ]);
+      } catch (e) {}
 
-    const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
-    const localBookings = JSON.parse(localStorage.getItem('local_bookings') || '[]');
-    const cachedBookings = JSON.parse(localStorage.getItem('workshop_online_bookings') || '[]');
-    
-    // 1. Process Workshop Jobs (localJobs first so deleted parts or edited jobs never revert)
-    const allMap = new Map();
-    [...localJobs, ...cloudJobs, ...backendJobs].forEach(j => {
-      if (j && typeof j === 'object' && j.id) {
-        const uniqueKey = String(j.id);
-        if (!deletedIds.includes(uniqueKey) && !deletedIds.includes(String(j.id))) {
-          const sanitizedJob = {
-            ...j,
-            parts: Array.isArray(j.parts) ? j.parts : [],
-            parts_total: parseFloat(j.parts_total || 0),
-            labour_charge: parseFloat(j.labour_charge || 0),
-            live_total: parseFloat(j.live_total || j.grand_total || (parseFloat(j.parts_total || 0) + parseFloat(j.labour_charge || 0))),
-            status: (j.status === 'FINISHED' || j.status === 'COMPLETED') ? 'FINISHED' : (j.status || 'IN_PROGRESS')
-          };
-          if (!allMap.has(uniqueKey)) {
-            allMap.set(uniqueKey, sanitizedJob);
-          }
-        }
-      }
-    });
-
-    // 2. Process Persistent Bookings Memory (Prevents network flickering)
-    const allBookingsMap = new Map();
-    [...cloudBookings, ...localBookings, ...cachedBookings].forEach(b => {
-      if (b && typeof b === 'object' && (b.id || b.vehicle_number)) {
-        const key = String(b.id || `${b.vehicle_number}_${b.preferred_date}`);
-        if (!deletedIds.includes(key) && !deletedIds.includes(String(b.id))) {
-          if (!allBookingsMap.has(key)) {
-            allBookingsMap.set(key, b);
-          }
-        }
-      }
-    });
-
-    const persistentBookings = Array.from(allBookingsMap.values());
-    localStorage.setItem('workshop_online_bookings', JSON.stringify(persistentBookings));
-    setOnlineBookings(persistentBookings);
-
-    persistentBookings.forEach(b => {
-      if (b && typeof b === 'object' && (b.id || b.vehicle_number)) {
-        const bookingJobId = `job_booking_${b.id || b.vehicle_number}`;
-        const bookingKey = String(b.id || `${b.vehicle_number}_${b.preferred_date}`);
-        const normVeh = String(b.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-
-        // 1. Skip if booking was converted, completed, finished, cancelled, or rejected
-        if (['CONVERTED', 'COMPLETED', 'FINISHED', 'REJECTED', 'CANCELLED'].includes(String(b.status || '').toUpperCase())) {
-          return;
-        }
-
-        // 2. Skip if deleted
-        if (deletedIds.includes(bookingKey) || deletedIds.includes(String(b.id)) || deletedIds.includes(bookingJobId)) {
-          return;
-        }
-
-        // 3. Skip if an active job for this exact vehicle already exists on workshop floor (No duplicates!)
-        const alreadyHasActiveJob = Array.from(allMap.values()).some(j => {
-          if (!j || j.status === 'FINISHED' || j.status === 'COMPLETED' || j.status === 'CANCELLED') return false;
-          const jVeh = String(j.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-          return normVeh && jVeh && normVeh === jVeh;
-        });
-
-        if (alreadyHasActiveJob || allMap.has(bookingJobId)) {
-          return;
-        }
-
-        allMap.set(bookingJobId, {
-          id: bookingJobId,
-          booking_id: b.id,
-          customer_name: b.customer_name || 'Online Customer',
-          mobile_number: b.mobile_number || b.phone || 'N/A',
-          vehicle_number: b.vehicle_number || 'GJ-15',
-          bike_model: b.bike_model || 'Two Wheeler',
-          complaint: b.complaint ? `[Online Booking] ${b.complaint}` : `Online Service Booking (${b.preferred_date || 'Today'} ${b.preferred_time || ''})`,
-          assigned_mechanic: 'Unassigned',
-          parts: [],
-          parts_total: 0,
-          labour_charge: garageInfo?.default_labour_charge || 100,
-          live_total: garageInfo?.default_labour_charge || 100,
-          status: b.status === 'ACCEPTED' ? 'IN_PROGRESS' : 'PENDING_BOOKING',
-          is_online_booking: true,
-          created_at: b.created_at || new Date().toISOString()
-        });
-      }
-    });
-
-    const mergedJobs = Array.from(allMap.values()).sort(
-      (a, b) => new Date(b.created_at || Date.now()) - new Date(a.created_at || Date.now())
-    );
-    setJobs(mergedJobs);
-
-    const localDeleted = JSON.parse(localStorage.getItem('deleted_ids') || '[]');
-    const allDeletedIds = Array.from(new Set([...localDeleted, ...deletedIds]));
-
-    const isItemDeleted = (item) => {
-      if (!item) return true;
-      const itId = String(item.id || '').toLowerCase().trim();
-      const itName = String(item.part_name || item.name || '').toLowerCase().trim();
-      const itNorm = itName.replace(/[^a-z0-9]/g, '');
-
-      return allDeletedIds.some(d => {
-        if (!d) return false;
-        const dStr = String(d).toLowerCase().trim();
-        const dNorm = dStr.replace(/[^a-z0-9]/g, '');
-        return (itId && dStr && (itId === dStr || itId.replace(/[^a-z0-9]/g, '') === dNorm)) ||
-               (itName && dStr && (itName === dStr || itName.includes(dStr) || dStr.includes(itName))) ||
-               (itNorm && dNorm && (itNorm === dNorm || itNorm.includes(dNorm) || dNorm.includes(itNorm)));
-      });
-    };
-
-    const allInvMap = new Map();
-    let localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
-    [...localInv, ...cloudInv, ...invData].forEach(item => {
-      if (item && typeof item === 'object' && (item.id || item.part_name || item.name)) {
-        if (!isItemDeleted(item)) {
-          const rawId = String(item.id || `inv_${String(item.part_name || item.name).toLowerCase().replace(/[^a-z0-9]/g, '')}`);
-          const rawName = String(item.part_name || item.name || '').trim();
-          const parsedStock = parseInt(item.current_stock !== undefined ? item.current_stock : (item.stock_quantity !== undefined ? item.stock_quantity : (item.quantity !== undefined ? item.quantity : 0)), 10);
-          const parsedMin = item.min_stock_alert !== undefined && item.min_stock_alert !== '' ? parseInt(item.min_stock_alert, 10) : 2;
-          
-          const cleanItem = {
-            id: rawId,
-            part_name: rawName || 'Spare Part',
-            category: item.category || 'General',
-            price: parseFloat(item.price || 0),
-            current_stock: parsedStock,
-            min_stock_alert: parsedMin,
-            updated_at: item.updated_at || null
-          };
-
-          const existing = allInvMap.get(rawId);
-          if (!existing) {
-            allInvMap.set(rawId, cleanItem);
-          } else {
-            if (parsedStock < existing.current_stock) {
-              allInvMap.set(rawId, { ...existing, ...cleanItem, current_stock: parsedStock });
-            } else if (cleanItem.price !== existing.price || cleanItem.min_stock_alert !== existing.min_stock_alert) {
-              allInvMap.set(rawId, { ...existing, ...cleanItem });
+      const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
+      const localBookings = JSON.parse(localStorage.getItem('local_bookings') || '[]');
+      const cachedBookings = JSON.parse(localStorage.getItem('workshop_online_bookings') || '[]');
+      
+      // 1. Process Workshop Jobs (localJobs first so deleted parts or edited jobs never revert)
+      const allMap = new Map();
+      [...localJobs, ...cloudJobs, ...backendJobs].forEach(j => {
+        if (j && typeof j === 'object' && j.id) {
+          const uniqueKey = String(j.id);
+          if (!deletedIds.includes(uniqueKey) && !deletedIds.includes(String(j.id))) {
+            const sanitizedJob = {
+              ...j,
+              parts: Array.isArray(j.parts) ? j.parts : [],
+              parts_total: parseFloat(j.parts_total || 0),
+              labour_charge: parseFloat(j.labour_charge || 0),
+              live_total: parseFloat(j.live_total || j.grand_total || (parseFloat(j.parts_total || 0) + parseFloat(j.labour_charge || 0))),
+              status: (j.status === 'FINISHED' || j.status === 'COMPLETED') ? 'FINISHED' : (j.status || 'IN_PROGRESS')
+            };
+            if (!allMap.has(uniqueKey)) {
+              allMap.set(uniqueKey, sanitizedJob);
             }
           }
         }
-      }
-    });
+      });
 
-    const unifiedInv = Array.from(allInvMap.values());
-    localStorage.setItem('inventory_items', JSON.stringify(unifiedInv));
-    localStorage.setItem('spare_parts', JSON.stringify(unifiedInv));
-    setInventory(unifiedInv);
-    setLoading(false);
+      // 2. Process Persistent Bookings Memory (Prevents network flickering)
+      const allBookingsMap = new Map();
+      [...cloudBookings, ...localBookings, ...cachedBookings].forEach(b => {
+        if (b && typeof b === 'object' && (b.id || b.vehicle_number)) {
+          const key = String(b.id || `${b.vehicle_number}_${b.preferred_date}`);
+          if (!deletedIds.includes(key) && !deletedIds.includes(String(b.id))) {
+            if (!allBookingsMap.has(key)) {
+              allBookingsMap.set(key, b);
+            }
+          }
+        }
+      });
+
+      const persistentBookings = Array.from(allBookingsMap.values());
+      localStorage.setItem('workshop_online_bookings', JSON.stringify(persistentBookings));
+      setOnlineBookings(persistentBookings);
+
+      persistentBookings.forEach(b => {
+        if (b && typeof b === 'object' && (b.id || b.vehicle_number)) {
+          const bookingJobId = `job_booking_${b.id || b.vehicle_number}`;
+          const bookingKey = String(b.id || `${b.vehicle_number}_${b.preferred_date}`);
+          const normVeh = String(b.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+
+          // 1. Skip if booking was converted, completed, finished, cancelled, or rejected
+          if (['CONVERTED', 'COMPLETED', 'FINISHED', 'REJECTED', 'CANCELLED'].includes(String(b.status || '').toUpperCase())) {
+            return;
+          }
+
+          // 2. Skip if deleted
+          if (deletedIds.includes(bookingKey) || deletedIds.includes(String(b.id)) || deletedIds.includes(bookingJobId)) {
+            return;
+          }
+
+          // 3. Skip if an active job for this exact vehicle already exists on workshop floor (No duplicates!)
+          const alreadyHasActiveJob = Array.from(allMap.values()).some(j => {
+            if (!j || j.status === 'FINISHED' || j.status === 'COMPLETED' || j.status === 'CANCELLED') return false;
+            const jVeh = String(j.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+            return normVeh && jVeh && normVeh === jVeh;
+          });
+
+          if (alreadyHasActiveJob || allMap.has(bookingJobId)) {
+            return;
+          }
+
+          allMap.set(bookingJobId, {
+            id: bookingJobId,
+            booking_id: b.id,
+            customer_name: b.customer_name || 'Online Customer',
+            mobile_number: b.mobile_number || b.phone || 'N/A',
+            vehicle_number: b.vehicle_number || 'GJ-15',
+            bike_model: b.bike_model || 'Two Wheeler',
+            complaint: b.complaint ? `[Online Booking] ${b.complaint}` : `Online Service Booking (${b.preferred_date || 'Today'} ${b.preferred_time || ''})`,
+            assigned_mechanic: 'Unassigned',
+            parts: [],
+            parts_total: 0,
+            labour_charge: garageInfo?.default_labour_charge || 100,
+            live_total: garageInfo?.default_labour_charge || 100,
+            status: b.status === 'ACCEPTED' ? 'IN_PROGRESS' : 'PENDING_BOOKING',
+            is_online_booking: true,
+            created_at: b.created_at || new Date().toISOString()
+          });
+        }
+      });
+
+      const mergedJobs = Array.from(allMap.values()).sort(
+        (a, b) => new Date(b.created_at || Date.now()) - new Date(a.created_at || Date.now())
+      );
+      setJobs(mergedJobs);
+
+      const localDeleted = JSON.parse(localStorage.getItem('deleted_ids') || '[]');
+      const allDeletedIds = Array.from(new Set([...localDeleted, ...deletedIds]));
+
+      const isItemDeleted = (item) => {
+        if (!item) return true;
+        const itId = String(item.id || '').toLowerCase().trim();
+        const itName = String(item.part_name || item.name || '').toLowerCase().trim();
+        const itNorm = itName.replace(/[^a-z0-9]/g, '');
+
+        return allDeletedIds.some(d => {
+          if (!d) return false;
+          const dStr = String(d).toLowerCase().trim();
+          const dNorm = dStr.replace(/[^a-z0-9]/g, '');
+          return (itId && dStr && (itId === dStr || itId.replace(/[^a-z0-9]/g, '') === dNorm)) ||
+                 (itName && dStr && (itName === dStr || itName.includes(dStr) || dStr.includes(itName))) ||
+                 (itNorm && dNorm && (itNorm === dNorm || itNorm.includes(dNorm) || dNorm.includes(itNorm)));
+        });
+      };
+
+      const allInvMap = new Map();
+      const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+      [...localInv, ...cloudInv, ...invData].forEach(item => {
+        if (item && typeof item === 'object' && (item.id || item.part_name || item.name)) {
+          if (!isItemDeleted(item)) {
+            const rawId = String(item.id || `inv_${String(item.part_name || item.name).toLowerCase().replace(/[^a-z0-9]/g, '')}`);
+            const rawName = String(item.part_name || item.name || '').trim();
+            const parsedStock = parseInt(item.current_stock !== undefined ? item.current_stock : (item.stock_quantity !== undefined ? item.stock_quantity : (item.quantity !== undefined ? item.quantity : 0)), 10);
+            const parsedMin = item.min_stock_alert !== undefined && item.min_stock_alert !== '' ? parseInt(item.min_stock_alert, 10) : 2;
+            
+            const cleanItem = {
+              id: rawId,
+              part_name: rawName || 'Spare Part',
+              category: item.category || 'General',
+              price: parseFloat(item.price || 0),
+              current_stock: parsedStock,
+              min_stock_alert: parsedMin,
+              updated_at: item.updated_at || null
+            };
+
+            const existing = allInvMap.get(rawId);
+            if (!existing) {
+              allInvMap.set(rawId, cleanItem);
+            } else {
+              if (parsedStock < existing.current_stock) {
+                allInvMap.set(rawId, { ...existing, ...cleanItem, current_stock: parsedStock });
+              } else if (cleanItem.price !== existing.price || cleanItem.min_stock_alert !== existing.min_stock_alert) {
+                allInvMap.set(rawId, { ...existing, ...cleanItem });
+              }
+            }
+          }
+        }
+      });
+
+      const unifiedInv = Array.from(allInvMap.values());
+      localStorage.setItem('inventory_items', JSON.stringify(unifiedInv));
+      localStorage.setItem('spare_parts', JSON.stringify(unifiedInv));
+      setInventory(unifiedInv);
+    } catch (err) {
+      console.warn('Workshop fetchData error:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
     fetchData(true);
     const interval = setInterval(() => {
       fetchData(false);
-    }, 3000);
+    }, 5000);
     return () => clearInterval(interval);
   }, []);
 

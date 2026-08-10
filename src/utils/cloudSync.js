@@ -44,7 +44,11 @@ export const DEFAULT_PRIMARY_ADMIN = {
   created_at: '2026-08-01T00:00:00Z'
 };
 
-export async function fetchMasterStore() {
+let _lastMasterFetchTime = 0;
+let _cachedMasterStore = null;
+let _masterFetchPromise = null;
+
+export async function fetchMasterStore(forceFresh = false) {
   const getLocalCache = () => {
     try {
       const raw = localStorage.getItem('master_cloud_cache');
@@ -73,89 +77,107 @@ export async function fetchMasterStore() {
   };
 
   const localCache = getLocalCache();
-  let freshStore = null;
-  let activeUrl = getActiveBinUrl();
 
-  try {
-    const res = await axios.get(activeUrl + '?t=' + Date.now(), {
-      headers: { 'Accept': 'application/json', 'Cache-Control': 'no-cache' },
-      timeout: 3000
-    });
-    if (res.data) {
-      freshStore = {
-        bookings: Array.isArray(res.data.bookings) ? res.data.bookings : [],
-        messages: Array.isArray(res.data.messages) ? res.data.messages : [],
-        jobs: Array.isArray(res.data.jobs) ? res.data.jobs : [],
-        inventory: Array.isArray(res.data.inventory) ? res.data.inventory : [],
-        recycleBin: Array.isArray(res.data.recycleBin) ? res.data.recycleBin : [],
-        garageInfo: res.data.garageInfo || null,
-        adminProfiles: Array.isArray(res.data.adminProfiles) ? res.data.adminProfiles : [],
-        khataEntries: Array.isArray(res.data.khataEntries) ? res.data.khataEntries : [],
-        customers: Array.isArray(res.data.customers) ? res.data.customers : [],
-        invoices: Array.isArray(res.data.invoices) ? res.data.invoices : [],
-        attendance: Array.isArray(res.data.attendance) ? res.data.attendance : [],
-        salaryPayments: Array.isArray(res.data.salaryPayments) ? res.data.salaryPayments : [],
-        deletedIds: Array.isArray(res.data.deletedIds) ? res.data.deletedIds : []
-      };
-    }
-  } catch (e1) {
-    if (e1?.response?.status === 404) {
-      console.warn('Cloud bin expired (404), triggering auto-recovery...');
-      const newUrl = await createFreshCloudBin(localCache);
-      if (newUrl) {
-        activeUrl = newUrl;
-        freshStore = localCache;
-      }
-    } else {
-      console.warn('Primary cloud store fetch notice:', e1);
-    }
+  // 1. Return in-memory cache instantly (0ms) if fetched recently
+  if (!forceFresh && _cachedMasterStore && (Date.now() - _lastMasterFetchTime < 3000)) {
+    return _cachedMasterStore;
   }
 
-  if (freshStore) {
-    const mergedStore = {
-      bookings: freshStore.bookings,
-      messages: freshStore.messages,
-      jobs: freshStore.jobs,
-      inventory: freshStore.inventory,
-      recycleBin: freshStore.recycleBin,
-      garageInfo: freshStore.garageInfo || localCache.garageInfo,
-      adminProfiles: freshStore.adminProfiles,
-      khataEntries: freshStore.khataEntries,
-      customers: freshStore.customers,
-      invoices: freshStore.invoices,
-      attendance: freshStore.attendance,
-      salaryPayments: freshStore.salaryPayments,
-      deletedIds: freshStore.deletedIds
-    };
+  // 2. Reuse pending network promise to avoid duplicate concurrent calls
+  if (_masterFetchPromise && !forceFresh) {
+    return _masterFetchPromise;
+  }
+
+  _masterFetchPromise = (async () => {
+    let freshStore = null;
+    let activeUrl = getActiveBinUrl();
+
     try {
-      localStorage.setItem('master_cloud_cache', JSON.stringify(mergedStore));
-
-      if (Array.isArray(mergedStore.jobs)) localStorage.setItem('workshop_jobs', JSON.stringify(mergedStore.jobs));
-      if (Array.isArray(mergedStore.invoices)) localStorage.setItem('local_invoices', JSON.stringify(mergedStore.invoices));
-      if (Array.isArray(mergedStore.recycleBin)) localStorage.setItem('recycle_bin_items', JSON.stringify(mergedStore.recycleBin));
-      if (Array.isArray(mergedStore.deletedIds)) {
-        localStorage.setItem('deleted_item_ids', JSON.stringify(mergedStore.deletedIds));
-        localStorage.setItem('deleted_ids', JSON.stringify(mergedStore.deletedIds));
+      const res = await axios.get(activeUrl + '?t=' + Date.now(), {
+        headers: { 'Accept': 'application/json', 'Cache-Control': 'no-cache' },
+        timeout: 2000
+      });
+      if (res.data) {
+        freshStore = {
+          bookings: Array.isArray(res.data.bookings) ? res.data.bookings : [],
+          messages: Array.isArray(res.data.messages) ? res.data.messages : [],
+          jobs: Array.isArray(res.data.jobs) ? res.data.jobs : [],
+          inventory: Array.isArray(res.data.inventory) ? res.data.inventory : [],
+          recycleBin: Array.isArray(res.data.recycleBin) ? res.data.recycleBin : [],
+          garageInfo: res.data.garageInfo || null,
+          adminProfiles: Array.isArray(res.data.adminProfiles) ? res.data.adminProfiles : [],
+          khataEntries: Array.isArray(res.data.khataEntries) ? res.data.khataEntries : [],
+          customers: Array.isArray(res.data.customers) ? res.data.customers : [],
+          invoices: Array.isArray(res.data.invoices) ? res.data.invoices : [],
+          attendance: Array.isArray(res.data.attendance) ? res.data.attendance : [],
+          salaryPayments: Array.isArray(res.data.salaryPayments) ? res.data.salaryPayments : [],
+          deletedIds: Array.isArray(res.data.deletedIds) ? res.data.deletedIds : []
+        };
       }
-      if (Array.isArray(mergedStore.khataEntries)) localStorage.setItem('khata_entries', JSON.stringify(mergedStore.khataEntries));
-      if (Array.isArray(mergedStore.bookings)) localStorage.setItem('local_bookings', JSON.stringify(mergedStore.bookings));
-      if (Array.isArray(mergedStore.messages)) {
-        localStorage.setItem('local_messages', JSON.stringify(mergedStore.messages));
-        localStorage.setItem('contact_messages', JSON.stringify(mergedStore.messages));
+    } catch (e1) {
+      if (e1?.response?.status === 404) {
+        console.warn('Cloud bin expired (404), triggering auto-recovery...');
+        const newUrl = await createFreshCloudBin(localCache);
+        if (newUrl) {
+          freshStore = localCache;
+        }
       }
-      if (Array.isArray(mergedStore.adminProfiles)) localStorage.setItem('admin_profiles', JSON.stringify(mergedStore.adminProfiles));
-      if (Array.isArray(mergedStore.customers)) localStorage.setItem('local_customers', JSON.stringify(mergedStore.customers));
-      if (Array.isArray(mergedStore.inventory)) {
-        localStorage.setItem('inventory_items', JSON.stringify(mergedStore.inventory));
-        localStorage.setItem('spare_parts', JSON.stringify(mergedStore.inventory));
-      }
-    } catch (e) {
-      console.warn('Failed to update local master_cloud_cache:', e);
     }
-    return mergedStore;
-  }
 
-  return localCache;
+    if (freshStore) {
+      const mergedStore = {
+        bookings: freshStore.bookings,
+        messages: freshStore.messages,
+        jobs: freshStore.jobs,
+        inventory: freshStore.inventory,
+        recycleBin: freshStore.recycleBin,
+        garageInfo: freshStore.garageInfo || localCache.garageInfo,
+        adminProfiles: freshStore.adminProfiles,
+        khataEntries: freshStore.khataEntries,
+        customers: freshStore.customers,
+        invoices: freshStore.invoices,
+        attendance: freshStore.attendance,
+        salaryPayments: freshStore.salaryPayments,
+        deletedIds: freshStore.deletedIds
+      };
+      try {
+        localStorage.setItem('master_cloud_cache', JSON.stringify(mergedStore));
+
+        if (Array.isArray(mergedStore.jobs)) localStorage.setItem('workshop_jobs', JSON.stringify(mergedStore.jobs));
+        if (Array.isArray(mergedStore.invoices)) localStorage.setItem('local_invoices', JSON.stringify(mergedStore.invoices));
+        if (Array.isArray(mergedStore.recycleBin)) localStorage.setItem('recycle_bin_items', JSON.stringify(mergedStore.recycleBin));
+        if (Array.isArray(mergedStore.deletedIds)) {
+          localStorage.setItem('deleted_item_ids', JSON.stringify(mergedStore.deletedIds));
+          localStorage.setItem('deleted_ids', JSON.stringify(mergedStore.deletedIds));
+        }
+        if (Array.isArray(mergedStore.khataEntries)) localStorage.setItem('khata_entries', JSON.stringify(mergedStore.khataEntries));
+        if (Array.isArray(mergedStore.bookings)) localStorage.setItem('local_bookings', JSON.stringify(mergedStore.bookings));
+        if (Array.isArray(mergedStore.messages)) {
+          localStorage.setItem('local_messages', JSON.stringify(mergedStore.messages));
+          localStorage.setItem('contact_messages', JSON.stringify(mergedStore.messages));
+        }
+        if (Array.isArray(mergedStore.adminProfiles)) localStorage.setItem('admin_profiles', JSON.stringify(mergedStore.adminProfiles));
+        if (Array.isArray(mergedStore.customers)) localStorage.setItem('local_customers', JSON.stringify(mergedStore.customers));
+        if (Array.isArray(mergedStore.inventory)) {
+          localStorage.setItem('inventory_items', JSON.stringify(mergedStore.inventory));
+          localStorage.setItem('spare_parts', JSON.stringify(mergedStore.inventory));
+        }
+      } catch (e) {
+        console.warn('Failed to update local master_cloud_cache:', e);
+      }
+      _lastMasterFetchTime = Date.now();
+      _cachedMasterStore = mergedStore;
+      _masterFetchPromise = null;
+      return mergedStore;
+    }
+
+    _lastMasterFetchTime = Date.now();
+    _cachedMasterStore = localCache;
+    _masterFetchPromise = null;
+    return localCache;
+  })();
+
+  return _masterFetchPromise;
 }
 
 async function saveMasterStore(storeData) {

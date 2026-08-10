@@ -1,11 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { Package, Plus, Search, AlertTriangle, Edit2, Trash2, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react';
 import API from '../services/api';
-import { fetchCloudInventory, pushCloudInventoryItem, deleteCloudInventoryItem, pushCloudRecycleBinItem, fetchCloudDeletedIds, moveToRecycleBin } from '../utils/cloudSync';
+import { fetchCloudInventory, pushCloudInventoryItem, deleteCloudInventoryItem, pushCloudRecycleBinItem, fetchCloudDeletedIds, moveToRecycleBin, DEFAULT_SPARE_PARTS } from '../utils/cloudSync';
 import AdminPasswordModal from '../components/AdminPasswordModal';
 
 export default function InventoryPage() {
-  const [items, setItems] = useState([]);
+  const [items, setItems] = useState(() => {
+    try {
+      const local = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+      return (Array.isArray(local) && local.length > 0) ? local : DEFAULT_SPARE_PARTS;
+    } catch {
+      return DEFAULT_SPARE_PARTS;
+    }
+  });
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('ALL');
@@ -104,7 +111,10 @@ export default function InventoryPage() {
       }
     });
 
-    const finalInvList = Array.from(allMap.values());
+    let finalInvList = Array.from(allMap.values());
+    if (finalInvList.length === 0) {
+      finalInvList = DEFAULT_SPARE_PARTS;
+    }
     localStorage.setItem('inventory_items', JSON.stringify(finalInvList));
     localStorage.setItem('spare_parts', JSON.stringify(finalInvList));
 
@@ -116,7 +126,7 @@ export default function InventoryPage() {
     fetchInventory(true);
     const interval = setInterval(() => {
       fetchInventory(false);
-    }, 3000);
+    }, 6000);
     return () => clearInterval(interval);
   }, []);
 

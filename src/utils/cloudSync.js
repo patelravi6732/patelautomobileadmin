@@ -29,6 +29,27 @@ async function createFreshCloudBin(initialData) {
   return null;
 }
 
+export const DEFAULT_SPARE_PARTS = [
+  { id: 'inv_engine_oil_10w30', part_name: 'Engine Oil 4T 10W-30 (1L)', category: 'Engine Oil', price: 450, current_stock: 25, min_stock_alert: 5 },
+  { id: 'inv_synthetic_oil_15w50', part_name: 'Synthetic Engine Oil 15W-50', category: 'Engine Oil', price: 850, current_stock: 10, min_stock_alert: 3 },
+  { id: 'inv_castrol_activ_4t', part_name: 'Castrol Activ 4T 20W-40 (900ml)', category: 'Engine Oil', price: 420, current_stock: 20, min_stock_alert: 4 },
+  { id: 'inv_front_brake_shoe', part_name: 'Front Brake Shoe (Hero/Honda)', category: 'Brake', price: 180, current_stock: 15, min_stock_alert: 4 },
+  { id: 'inv_rear_brake_pad', part_name: 'Rear Brake Pad Set (Activa/Jupiter)', category: 'Brake', price: 220, current_stock: 12, min_stock_alert: 4 },
+  { id: 'inv_disc_brake_pads', part_name: 'Front Disc Brake Pad Set (Pulsar/Apache)', category: 'Brake', price: 280, current_stock: 10, min_stock_alert: 3 },
+  { id: 'inv_clutch_cable', part_name: 'Clutch Cable Assembly', category: 'Cable', price: 120, current_stock: 15, min_stock_alert: 4 },
+  { id: 'inv_throttle_cable', part_name: 'Accelerator / Throttle Cable', category: 'Cable', price: 130, current_stock: 12, min_stock_alert: 3 },
+  { id: 'inv_spark_plug', part_name: 'NGK / Bosch Spark Plug (Resistor)', category: 'Electrical', price: 150, current_stock: 30, min_stock_alert: 8 },
+  { id: 'inv_drive_chain_kit', part_name: 'Drive Chain & Sprocket Set Kit', category: 'Transmission', price: 1450, current_stock: 8, min_stock_alert: 2 },
+  { id: 'inv_air_filter', part_name: 'Air Filter Cartridge Element', category: 'Filter', price: 210, current_stock: 20, min_stock_alert: 5 },
+  { id: 'inv_tyre_90_90_12', part_name: 'Tubeless Tyre 90/90-12 (Rear Scooter)', category: 'Tyre', price: 1650, current_stock: 6, min_stock_alert: 2 },
+  { id: 'inv_tyre_275_18', part_name: 'Motorcycle Tyre 2.75-18 (Splendor/Shine)', category: 'Tyre', price: 1750, current_stock: 6, min_stock_alert: 2 },
+  { id: 'inv_battery_12v_5ah', part_name: '12V 5Ah Maintenance Free Battery', category: 'Battery', price: 1350, current_stock: 5, min_stock_alert: 2 },
+  { id: 'inv_headlight_bulb', part_name: 'Halogen Headlight Bulb 12V 35/35W', category: 'Electrical', price: 140, current_stock: 25, min_stock_alert: 5 },
+  { id: 'inv_fork_oil_seal', part_name: 'Front Fork Oil Seal Pair', category: 'Suspension', price: 180, current_stock: 10, min_stock_alert: 3 },
+  { id: 'inv_brake_oil_dot4', part_name: 'DOT 4 Hydraulic Brake Oil (100ml)', category: 'Lubricant', price: 120, current_stock: 15, min_stock_alert: 4 },
+  { id: 'inv_chain_lube_spray', part_name: 'Chain Lube Spray (150ml)', category: 'Lubricant', price: 190, current_stock: 15, min_stock_alert: 3 }
+];
+
 export const DEFAULT_PRIMARY_ADMIN = {
   id: 'admin_patel_master',
   username: 'patelautomobile',
@@ -43,6 +64,9 @@ export const DEFAULT_PRIMARY_ADMIN = {
   profile_photo: '/logo.png',
   created_at: '2026-08-01T00:00:00Z'
 };
+
+let _lastFetchTime = 0;
+let _cachedStoreResult = null;
 
 export async function fetchMasterStore() {
   const getLocalCache = () => {
@@ -73,6 +97,10 @@ export async function fetchMasterStore() {
   };
 
   const localCache = getLocalCache();
+  if (Date.now() - _lastFetchTime < 2500 && _cachedStoreResult) {
+    return _cachedStoreResult;
+  }
+
   let freshStore = null;
   let activeUrl = getActiveBinUrl();
 
@@ -152,10 +180,18 @@ export async function fetchMasterStore() {
     } catch (e) {
       console.warn('Failed to update local master_cloud_cache:', e);
     }
+    _lastFetchTime = Date.now();
+    _cachedStoreResult = mergedStore;
     return mergedStore;
   }
 
-  return localCache;
+  const fallbackStore = {
+    ...localCache,
+    inventory: (localCache.inventory && localCache.inventory.length > 0) ? localCache.inventory : DEFAULT_SPARE_PARTS
+  };
+  _lastFetchTime = Date.now();
+  _cachedStoreResult = fallbackStore;
+  return fallbackStore;
 }
 
 async function saveMasterStore(storeData) {
@@ -411,7 +447,8 @@ export async function markCloudMessageRead(msgId) {
 // ---------------- INVENTORY ----------------
 export async function fetchCloudInventory() {
   const store = await fetchMasterStore();
-  return (store.inventory || []).filter(i => i && typeof i === 'object' && (i.id || i.part_name || i.name));
+  const inv = (store.inventory || []).filter(i => i && typeof i === 'object' && (i.id || i.part_name || i.name));
+  return inv.length > 0 ? inv : DEFAULT_SPARE_PARTS;
 }
 
 export async function pushCloudInventoryItem(newItem) {

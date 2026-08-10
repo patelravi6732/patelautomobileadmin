@@ -4,7 +4,7 @@ import {
   IndianRupee, Package, Bike, User, Phone, Check, Receipt, UserCheck, Users, Lock, Search, ChevronDown, Edit2, Tag
 } from 'lucide-react';
 import API from '../services/api';
-import { fetchCloudJobs, updateCloudJobStatus, deleteCloudJob, fetchCloudInventory, pushCloudJob, pushCloudRecycleBinItem, pushCloudKhataEntry, pushCloudInvoice, updateCloudBookingStatus, fetchCloudDeletedIds, fetchCloudBookings, atomicFinishWorkshopJob, pushCloudInventoryItem } from '../utils/cloudSync';
+import { fetchCloudJobs, updateCloudJobStatus, deleteCloudJob, fetchCloudInventory, pushCloudJob, pushCloudRecycleBinItem, pushCloudKhataEntry, pushCloudInvoice, updateCloudBookingStatus, fetchCloudDeletedIds, fetchCloudBookings, atomicFinishWorkshopJob, pushCloudInventoryItem, DEFAULT_SPARE_PARTS } from '../utils/cloudSync';
 import { useAuth } from '../context/AuthContext';
 import AdminPasswordModal from '../components/AdminPasswordModal';
 
@@ -16,7 +16,14 @@ export default function WorkshopPage() {
   const [onlineBookings, setOnlineBookings] = useState(() => {
     try { return JSON.parse(localStorage.getItem('workshop_online_bookings') || '[]'); } catch (e) { return []; }
   });
-  const [inventory, setInventory] = useState([]);
+  const [inventory, setInventory] = useState(() => {
+    try {
+      const local = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+      return (Array.isArray(local) && local.length > 0) ? local : DEFAULT_SPARE_PARTS;
+    } catch {
+      return DEFAULT_SPARE_PARTS;
+    }
+  });
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState('ACTIVE'); // ACTIVE or FINISHED
   const [mechanicOptions, setMechanicOptions] = useState(['Unassigned', 'Amitbhai Mechanic', 'Vishalbhai Mechanic', 'Manojbhai Mechanic']);
@@ -26,6 +33,11 @@ export default function WorkshopPage() {
   const [showPartModal, setShowPartModal] = useState(false);
   const [showFinishModal, setShowFinishModal] = useState(false);
   const [showAssignModal, setShowAssignModal] = useState(false);
+
+  // Custom Part Mode in Add Part Modal
+  const [customPartMode, setCustomPartMode] = useState(false);
+  const [customPartName, setCustomPartName] = useState('');
+  const [customPartPrice, setCustomPartPrice] = useState('');
 
   // Admin Password Delete Modals
   const [deleteJobModal, setDeleteJobModal] = useState({ isOpen: false, job: null });
@@ -207,14 +219,18 @@ export default function WorkshopPage() {
         const dStr = String(d).toLowerCase().trim();
         const dNorm = dStr.replace(/[^a-z0-9]/g, '');
         return (itId && dStr && (itId === dStr || itId.replace(/[^a-z0-9]/g, '') === dNorm)) ||
-               (itName && dStr && (itName === dStr || itName.includes(dStr) || dStr.includes(itName))) ||
-               (itNorm && dNorm && (itNorm === dNorm || itNorm.includes(dNorm) || dNorm.includes(itNorm)));
+               (itName && dStr && (itName === dStr || itNorm === dNorm));
       });
     };
 
     const allInvMap = new Map();
     let localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
-    [...localInv, ...cloudInv, ...invData].forEach(item => {
+    if (!Array.isArray(localInv) || localInv.length === 0) {
+      localInv = DEFAULT_SPARE_PARTS;
+    }
+    const resolvedCloudInv = (Array.isArray(cloudInv) && cloudInv.length > 0) ? cloudInv : DEFAULT_SPARE_PARTS;
+
+    [...localInv, ...resolvedCloudInv, ...invData].forEach(item => {
       if (item && typeof item === 'object' && (item.id || item.part_name || item.name)) {
         if (!isItemDeleted(item)) {
           const rawId = String(item.id || `inv_${String(item.part_name || item.name).toLowerCase().replace(/[^a-z0-9]/g, '')}`);
@@ -246,7 +262,10 @@ export default function WorkshopPage() {
       }
     });
 
-    const unifiedInv = Array.from(allInvMap.values());
+    let unifiedInv = Array.from(allInvMap.values());
+    if (unifiedInv.length === 0) {
+      unifiedInv = DEFAULT_SPARE_PARTS;
+    }
     localStorage.setItem('inventory_items', JSON.stringify(unifiedInv));
     localStorage.setItem('spare_parts', JSON.stringify(unifiedInv));
     setInventory(unifiedInv);
@@ -312,7 +331,12 @@ export default function WorkshopPage() {
   const openAddPartModal = (job) => {
     setSelectedJob(job);
     setPartSearchQuery('');
-    const firstItem = inventory && inventory.length > 0 ? inventory[0] : null;
+    setCustomPartMode(false);
+    setCustomPartName('');
+    setCustomPartPrice('');
+    const curInv = (inventory && inventory.length > 0) ? inventory : DEFAULT_SPARE_PARTS;
+    if (!inventory || inventory.length === 0) setInventory(curInv);
+    const firstItem = curInv[0];
     const firstKey = firstItem ? String(firstItem.id || firstItem.part_name || firstItem.name) : '';
     setSelectedPartId(firstKey);
     setPartQty(1);
@@ -326,30 +350,55 @@ export default function WorkshopPage() {
       return;
     }
 
-    const targetKey = String(selectedPartId || '').trim();
-    const targetNorm = targetKey.toLowerCase().replace(/[^a-z0-9]/g, '');
+    let partName = '';
+    let unitPrice = 0;
+    let invId = null;
+    let isCatalogItem = false;
+    let partObj = null;
 
-    const partObj = (inventory || []).find(p => {
-      if (!p) return false;
-      const pKey = String(p.id || p.part_name || p.name || '').trim();
-      const pNorm = String(p.part_name || p.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-      return (targetKey && pKey === targetKey) || (targetNorm && pNorm && targetNorm === pNorm);
-    }) || (inventory && inventory.length > 0 ? inventory[0] : null);
+    if (customPartMode) {
+      partName = customPartName.trim();
+      unitPrice = parseFloat(customPartPrice) || 0;
+      if (!partName) {
+        alert('⚠️ Please enter a spare part name.');
+        return;
+      }
+      if (unitPrice <= 0) {
+        alert('⚠️ Please enter a valid part price (₹) greater than 0.');
+        return;
+      }
+      invId = `inv_custom_${Date.now()}`;
+    } else {
+      const targetKey = String(selectedPartId || '').trim();
+      const targetNorm = targetKey.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const curInv = (inventory && inventory.length > 0) ? inventory : DEFAULT_SPARE_PARTS;
 
-    if (!partObj) {
-      alert('⚠️ Please select a valid spare part from the list.');
-      return;
+      partObj = curInv.find(p => {
+        if (!p) return false;
+        const pKey = String(p.id || p.part_name || p.name || '').trim();
+        const pNorm = String(p.part_name || p.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        return (targetKey && pKey === targetKey) || (targetNorm && pNorm && targetNorm === pNorm);
+      }) || curInv[0];
+
+      if (!partObj) {
+        alert('⚠️ Please select a valid spare part from the list.');
+        return;
+      }
+
+      partName = partObj.part_name || partObj.name || 'Spare Part';
+      unitPrice = parseFloat(partObj.price || 0);
+      invId = partObj.id || `inv_${targetNorm}`;
+      isCatalogItem = true;
     }
 
-    const unitPrice = parseFloat(partObj.price || 0);
     const qty = parseInt(partQty || 1, 10);
     const stagedTotal = unitPrice * qty;
 
     const newPartEntry = {
       id: Date.now(),
-      inventory_id: partObj.id || `inv_${targetNorm}`,
-      part_id: partObj.id || `inv_${targetNorm}`,
-      part_name: partObj.part_name || partObj.name,
+      inventory_id: invId,
+      part_id: invId,
+      part_name: partName,
       price: unitPrice,
       unit_price: unitPrice,
       quantity: qty,
@@ -374,39 +423,41 @@ export default function WorkshopPage() {
 
     setJobs(prev => prev.map(j => (String(j.id) === String(selectedJob.id) ? updatedJob : j)));
     
-    // 1. Deduct Inventory stock IMMEDIATELY (10 -> 9)
-    const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
-    const baseInv = inventory && inventory.length > 0 ? inventory : (localInv.length > 0 ? localInv : [partObj]);
-    const partNormName = String(partObj.part_name || partObj.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-
+    // 2. Deduct Inventory stock IMMEDIATELY if catalog item
     let updatedTargetItem = null;
-    const updatedInv = baseInv.map(invItem => {
-      if (!invItem) return invItem;
-      const curNormName = String(invItem.part_name || invItem.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-      const curId = String(invItem.id || '');
-      const isMatch = (partNormName && curNormName && (partNormName === curNormName || partNormName.includes(curNormName) || curNormName.includes(partNormName))) || (partObj.id && curId && String(partObj.id) === curId);
+    if (isCatalogItem && partObj) {
+      const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+      const baseInv = inventory && inventory.length > 0 ? inventory : (localInv.length > 0 ? localInv : DEFAULT_SPARE_PARTS);
+      const partNormName = String(partName).toLowerCase().replace(/[^a-z0-9]/g, '');
 
-      if (isMatch) {
-        const currentQty = parseInt(invItem.current_stock !== undefined ? invItem.current_stock : 10, 10);
-        const newQty = Math.max(0, currentQty - qty);
-        const updatedObj = {
-          ...invItem,
-          current_stock: newQty,
-          stock_quantity: newQty,
-          quantity: newQty
-        };
-        updatedTargetItem = updatedObj;
-        return updatedObj;
-      }
-      return invItem;
-    });
+      const updatedInv = baseInv.map(invItem => {
+        if (!invItem) return invItem;
+        const curNormName = String(invItem.part_name || invItem.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        const curId = String(invItem.id || '');
+        const isMatch = (partNormName && curNormName && (partNormName === curNormName || partNormName.includes(curNormName) || curNormName.includes(partNormName))) || (partObj.id && curId && String(partObj.id) === curId);
 
-    localStorage.setItem('inventory_items', JSON.stringify(updatedInv));
-    localStorage.setItem('spare_parts', JSON.stringify(updatedInv));
-    setInventory(updatedInv);
-    try { window.dispatchEvent(new Event('storage')); } catch (e) {}
+        if (isMatch) {
+          const currentQty = parseInt(invItem.current_stock !== undefined ? invItem.current_stock : 10, 10);
+          const newQty = Math.max(0, currentQty - qty);
+          const updatedObj = {
+            ...invItem,
+            current_stock: newQty,
+            stock_quantity: newQty,
+            quantity: newQty
+          };
+          updatedTargetItem = updatedObj;
+          return updatedObj;
+        }
+        return invItem;
+      });
 
-    // 2. Update Job parts
+      localStorage.setItem('inventory_items', JSON.stringify(updatedInv));
+      localStorage.setItem('spare_parts', JSON.stringify(updatedInv));
+      setInventory(updatedInv);
+      try { window.dispatchEvent(new Event('storage')); } catch (e) {}
+    }
+
+    // 3. Save to local storage and push to cloud
     const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
     const updatedLocal = localJobs.map(j => (String(j.id) === String(selectedJob.id) ? updatedJob : j));
     if (!updatedLocal.some(j => String(j.id) === String(selectedJob.id))) {
@@ -422,16 +473,16 @@ export default function WorkshopPage() {
     setShowPartModal(false);
 
     try {
-      await API.post(`/workshop/${selectedJob.id}/add_staged_part/`, {
-        inventory_id: partObj.id,
-        quantity: qty
-      }, { timeout: 2000 });
+      if (partObj && partObj.id) {
+        await API.post(`/workshop/${selectedJob.id}/add_staged_part/`, {
+          inventory_id: partObj.id,
+          quantity: qty
+        }, { timeout: 2000 });
+      }
     } catch (err) {
       console.warn('Backend API notice:', err);
     } finally {
-      const prevStock = parseInt(partObj.current_stock !== undefined ? partObj.current_stock : 10, 10);
-      const afterStock = updatedTargetItem ? updatedTargetItem.current_stock : Math.max(0, prevStock - qty);
-      alert(`✅ Part '${partObj.part_name || partObj.name}' Added!\n\nStock Deducted: ${prevStock} ➔ ${afterStock} Units in Inventory.`);
+      alert(`✅ Part '${partName}' Added!\n\n${qty}x @ ₹${unitPrice} = ₹${stagedTotal}\nCurrent Live Bill: ₹${newLiveTotal.toFixed(2)}`);
     }
   };
 
@@ -1326,13 +1377,15 @@ export default function WorkshopPage() {
       {/* ADD SPARE PART MODAL */}
       {showPartModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 sm:p-7 max-w-lg w-full space-y-4 shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+          <div className="bg-white rounded-3xl p-6 sm:p-7 max-w-lg w-full space-y-4 shadow-2xl overflow-hidden flex flex-col max-h-[88vh]">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <div>
                 <h2 className="text-lg font-bold text-slate-900 font-poppins flex items-center gap-2">
                   <Package className="w-5 h-5 text-blue-600" /> Add Spare Part
                 </h2>
-                <p className="text-xs text-slate-500">Adds part to job card and deducts stock from Inventory</p>
+                <p className="text-xs text-slate-500">
+                  {selectedJob?.vehicle_number} • {selectedJob?.customer_name}
+                </p>
               </div>
               <button
                 onClick={() => setShowPartModal(false)}
@@ -1342,76 +1395,142 @@ export default function WorkshopPage() {
               </button>
             </div>
 
+            {/* TAB SELECTOR: FROM CATALOG OR CUSTOM PART */}
+            <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-2xl">
+              <button
+                type="button"
+                onClick={() => setCustomPartMode(false)}
+                className={`py-2 text-xs font-bold rounded-xl transition-all ${
+                  !customPartMode
+                    ? 'bg-white text-blue-700 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                📋 From Catalog ({inventory.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setCustomPartMode(true)}
+                className={`py-2 text-xs font-bold rounded-xl transition-all ${
+                  customPartMode
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                ✏️ Custom Part / Service
+              </button>
+            </div>
+
             <form onSubmit={handleAddPart} className="space-y-4 flex-1 flex flex-col min-h-0">
-              {/* SEARCH BAR */}
-              <div className="relative shrink-0">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input 
-                  type="text"
-                  autoFocus
-                  placeholder="Search spare part by name, brand, or model..."
-                  value={partSearchQuery}
-                  onChange={(e) => setPartSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-xs bg-slate-50 font-medium text-slate-900 placeholder:text-slate-400"
-                />
-              </div>
+              {customPartMode ? (
+                /* CUSTOM PART ENTRY INPUTS */
+                <div className="space-y-4 py-2">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                      Spare Part / Service Name *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      autoFocus
+                      placeholder="e.g. Fork Oil Seal Pair, Carburetor Clean..."
+                      value={customPartName}
+                      onChange={(e) => setCustomPartName(e.target.value)}
+                      className="w-full px-4 py-3 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-xs font-bold text-slate-900 bg-slate-50"
+                    />
+                  </div>
 
-              {/* INVENTORY LIST BOX */}
-              <div className="flex-1 overflow-y-auto space-y-2 pr-1 border border-slate-100 rounded-2xl p-2 bg-slate-50/50 max-h-60 min-h-40">
-                {(() => {
-                  const filtered = inventory.filter(item => {
-                    if (!item) return false;
-                    const name = (item.part_name || item.name || '').toLowerCase();
-                    const query = (partSearchQuery || '').toLowerCase();
-                    return name.includes(query);
-                  });
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                      Unit Price (₹) *
+                    </label>
+                    <input
+                      type="number"
+                      required
+                      min="1"
+                      step="10"
+                      placeholder="e.g. 250"
+                      value={customPartPrice}
+                      onChange={(e) => setCustomPartPrice(e.target.value)}
+                      className="w-full px-4 py-3 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-sm font-extrabold text-slate-900 bg-slate-50"
+                    />
+                  </div>
+                </div>
+              ) : (
+                /* CATALOG SELECTION LIST */
+                <>
+                  {/* SEARCH BAR */}
+                  <div className="relative shrink-0">
+                    <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input 
+                      type="text"
+                      autoFocus
+                      placeholder="Search spare part by name, brand, or model..."
+                      value={partSearchQuery}
+                      onChange={(e) => setPartSearchQuery(e.target.value)}
+                      className="w-full pl-10 pr-4 py-3 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-xs bg-slate-50 font-medium text-slate-900 placeholder:text-slate-400"
+                    />
+                  </div>
 
-                  if (filtered.length === 0) {
-                    return (
-                      <div className="p-8 text-center text-xs text-slate-400 font-medium">
-                        No spare parts found matching "{partSearchQuery}"
-                      </div>
-                    );
-                  }
+                  {/* INVENTORY LIST BOX */}
+                  <div className="flex-1 overflow-y-auto space-y-2 pr-1 border border-slate-100 rounded-2xl p-2 bg-slate-50/50 max-h-56 min-h-36">
+                    {(() => {
+                      const curInv = (inventory && inventory.length > 0) ? inventory : DEFAULT_SPARE_PARTS;
+                      const filtered = curInv.filter(item => {
+                        if (!item) return false;
+                        const name = (item.part_name || item.name || '').toLowerCase();
+                        const query = (partSearchQuery || '').toLowerCase();
+                        return name.includes(query);
+                      });
 
-                  return filtered.map((item) => {
-                    const itemKey = String(item.id || item.part_name || item.name || '');
-                    const itemNorm = String(item.part_name || item.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-                    const selectedNorm = String(selectedPartId || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-                    const isSelected = String(selectedPartId) === itemKey || (selectedNorm && itemNorm && selectedNorm === itemNorm);
-                    const rawName = item.part_name || item.name || 'Spare Part';
-                    const cleanItemName = rawName.split('#')[0].trim();
-                    return (
-                      <div
-                        key={itemKey || Math.random()}
-                        onClick={() => setSelectedPartId(itemKey)}
-                        className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between text-xs ${
-                          isSelected 
-                            ? 'bg-blue-50/90 border-blue-500 shadow-xs text-blue-900 font-bold' 
-                            : 'bg-white border-slate-200/80 hover:border-slate-300 text-slate-700'
-                        }`}
-                      >
-                        <div className="space-y-0.5 pr-2 min-w-0">
-                          <div className="font-bold text-slate-900 truncate text-xs">{cleanItemName}</div>
-                          <div className="text-[11px] text-slate-500 flex items-center gap-2">
-                            <span>Stock: <strong className="text-slate-700">{item.current_stock !== undefined ? item.current_stock : 10}</strong></span>
-                            <span>•</span>
-                            <span className="text-emerald-600 font-bold">₹{formatMoney(item.price)}</span>
+                      if (filtered.length === 0) {
+                        return (
+                          <div className="p-6 text-center text-xs text-slate-400 font-medium">
+                            No parts matching "{partSearchQuery}". You can click <strong>"✏️ Custom Part"</strong> above to add it directly!
                           </div>
-                        </div>
-                        <div className="shrink-0 flex items-center gap-2">
-                          <span className="font-extrabold text-sm text-slate-900">₹{formatMoney(item.price)}</span>
-                          {isSelected && (
-                            <span className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px] font-bold shadow-xs">
-                              ✓
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  });
-                })()}
-              </div>
+                        );
+                      }
+
+                      return filtered.map((item) => {
+                        const itemKey = String(item.id || item.part_name || item.name || '');
+                        const itemNorm = String(item.part_name || item.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                        const selectedNorm = String(selectedPartId || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                        const isSelected = String(selectedPartId) === itemKey || (selectedNorm && itemNorm && selectedNorm === itemNorm);
+                        const rawName = item.part_name || item.name || 'Spare Part';
+                        const cleanItemName = rawName.split('#')[0].trim();
+                        return (
+                          <div
+                            key={itemKey || Math.random()}
+                            onClick={() => setSelectedPartId(itemKey)}
+                            className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between text-xs ${
+                              isSelected 
+                                ? 'bg-blue-50/90 border-blue-500 shadow-xs text-blue-900 font-bold' 
+                                : 'bg-white border-slate-200/80 hover:border-slate-300 text-slate-700'
+                            }`}
+                          >
+                            <div className="space-y-0.5 pr-2 min-w-0">
+                              <div className="font-bold text-slate-900 truncate text-xs">{cleanItemName}</div>
+                              <div className="text-[11px] text-slate-500 flex items-center gap-2">
+                                <span>Stock: <strong className="text-slate-700">{item.current_stock !== undefined ? item.current_stock : 10}</strong></span>
+                                <span>•</span>
+                                <span className="text-emerald-600 font-bold">₹{formatMoney(item.price)}</span>
+                              </div>
+                            </div>
+                            <div className="shrink-0 flex items-center gap-2">
+                              <span className="font-extrabold text-sm text-slate-900">₹{formatMoney(item.price)}</span>
+                              {isSelected && (
+                                <span className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px] font-bold shadow-xs">
+                                  ✓
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+                </>
+              )}
 
               {/* QUANTITY STEPPER */}
               <div className="flex items-center justify-between shrink-0 bg-slate-50 p-3 rounded-2xl border border-slate-100">

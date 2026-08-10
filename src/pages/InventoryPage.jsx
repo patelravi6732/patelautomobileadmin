@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Package, Plus, Search, AlertTriangle, Edit2, Trash2, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react';
 import API from '../services/api';
-import { fetchCloudInventory, pushCloudInventoryItem, deleteCloudInventoryItem, pushCloudRecycleBinItem, fetchCloudDeletedIds } from '../utils/cloudSync';
+import { fetchCloudInventory, pushCloudInventoryItem, deleteCloudInventoryItem, pushCloudRecycleBinItem, fetchCloudDeletedIds, moveToRecycleBin } from '../utils/cloudSync';
 import AdminPasswordModal from '../components/AdminPasswordModal';
 
 export default function InventoryPage() {
@@ -234,15 +234,9 @@ export default function InventoryPage() {
         payload: targetItem
       };
 
-      // 1. Move to Recycle Bin (local & cloud)
-      const existingTrash = JSON.parse(localStorage.getItem('recycle_bin_items') || '[]');
-      const updatedTrash = [trashObj, ...existingTrash];
-      localStorage.setItem('recycle_bin_items', JSON.stringify(updatedTrash));
-      pushCloudRecycleBinItem(trashObj).catch(console.warn);
+      // 1. Atomic Move to Recycle Bin & Purge from Active Inventory (0ms local & cloud)
+      moveToRecycleBin(trashObj, targetItem).catch(console.warn);
 
-      // 2. Remove from active inventory & add to deletedIds (local & cloud)
-      deleteCloudInventoryItem(targetItem).catch(console.warn);
-      
       const targetNorm = String(targetItem.part_name || targetItem.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
       const targetId = String(targetItem.id || '');
       const isMatch = (i) => {
@@ -251,11 +245,6 @@ export default function InventoryPage() {
         const curNorm = String(i.part_name || i.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
         return (targetId && curId && targetId === curId) || (targetNorm && curNorm && targetNorm === curNorm);
       };
-
-      const existing = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
-      const updatedLocal = existing.filter(i => !isMatch(i));
-      localStorage.setItem('inventory_items', JSON.stringify(updatedLocal));
-      localStorage.setItem('spare_parts', JSON.stringify(updatedLocal));
 
       setItems(prev => prev.filter(i => !isMatch(i)));
       setPasswordModal({ isOpen: false, item: null, actionType: null, pendingData: null });

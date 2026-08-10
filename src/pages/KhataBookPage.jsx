@@ -470,7 +470,28 @@ export default function KhataBookPage() {
       amount: paymentNum
     }, { timeout: 1500 }).catch(console.warn);
 
-    // Instant 0ms UI Confirmation & Refresh
+    // Instant 0ms UI State Update
+    setDebtors(prev => {
+      return prev.map(d => {
+        const dId = String(d.invoice_id || d.id || '');
+        const dVeh = (d.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+        if (dId === targetId || (vehNum && dVeh === vehNum)) {
+          const oldPending = parseFloat(d.pending_amount || d.balance || 0);
+          const newPending = Math.max(0, oldPending - paymentNum);
+          const oldPaid = parseFloat(d.total_paid || 0);
+          return {
+            ...d,
+            pending_amount: newPending,
+            balance: newPending,
+            total_paid: oldPaid + paymentNum
+          };
+        }
+        return d;
+      }).filter(d => (parseFloat(d.pending_amount || d.balance || 0) > 0));
+    });
+
+    setTotalPending(prev => Math.max(0, prev - paymentNum));
+
     alert(`🎉 Payment of ₹${paymentNum} Recorded Successfully!`);
     showToast('🎉 Payment Recorded!', `₹${paymentNum} payment successfully credited!`);
     setSelectedCustomer(null);
@@ -750,15 +771,22 @@ export default function KhataBookPage() {
 
       {/* RECORD PAYMENT MODAL */}
       {selectedCustomer && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full space-y-6 shadow-2xl border border-slate-200">
-            <h3 className="text-lg font-bold font-poppins text-slate-900">
-              Record Payment for {selectedCustomer.customer_name}
-            </h3>
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <h3 className="text-lg font-bold font-poppins text-slate-900">
+                Record Payment for {selectedCustomer.customer_name}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setSelectedCustomer(null)}
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-full hover:bg-slate-100"
+              >
+                ✕
+              </button>
+            </div>
 
             <form onSubmit={handleRecordPayment} className="space-y-4">
-
-
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Current Pending Dues</label>
                 <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl font-bold font-mono text-lg">
@@ -771,14 +799,16 @@ export default function KhataBookPage() {
                 <input
                   type="number"
                   step="0.01"
+                  min="0.01"
                   required
+                  autoFocus
                   value={payAmount}
                   onChange={(e) => setPayAmount(e.target.value)}
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 font-mono text-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                  className="w-full px-4 py-3 rounded-xl border border-slate-300 font-mono text-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/20 text-slate-900 bg-white"
                 />
               </div>
 
-              <div className="flex gap-3">
+              <div className="flex gap-3 pt-2">
                 <button
                   type="button"
                   onClick={() => setSelectedCustomer(null)}
@@ -787,7 +817,8 @@ export default function KhataBookPage() {
                   Cancel
                 </button>
                 <button
-                  type="submit"
+                  type="button"
+                  onClick={handleRecordPayment}
                   className="flex-1 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
                 >
                   <CheckCircle2 className="w-4 h-4" /> Save Payment
@@ -800,7 +831,7 @@ export default function KhataBookPage() {
 
       {/* HD OUTSTANDING PAYMENT STATEMENT PHOTO CARD MODAL */}
       {showStatementModal && statementCustomer && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex justify-center items-start p-4 sm:p-6 overflow-y-auto">
+        <div className="fixed inset-0 z-[100] bg-slate-950/80 backdrop-blur-md flex justify-center items-start p-4 sm:p-6 overflow-y-auto">
           <div className="bg-slate-900 text-white rounded-3xl p-6 sm:p-8 max-w-2xl w-full space-y-6 shadow-2xl border border-slate-800 my-4 sm:my-8 relative">
             
             {/* STICKY TOP ACTION BAR */}

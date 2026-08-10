@@ -368,9 +368,10 @@ export default function WorkshopPage() {
       const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
       const cloudInv = await fetchCloudInventory().catch(() => []);
       const allInvMap = new Map();
-      [...localInv, ...cloudInv].forEach(item => {
+      [...cloudInv, ...localInv].forEach(item => {
         if (item && (item.id || item.part_name || item.name)) {
-          const key = String(item.id || item.part_name || item.name).toLowerCase().trim();
+          const rawName = String(item.part_name || item.name || '').trim();
+          const key = (item.id ? String(item.id) : rawName.toLowerCase()).replace(/[^a-z0-9]/g, '');
           if (!allInvMap.has(key)) allInvMap.set(key, item);
         }
       });
@@ -380,16 +381,16 @@ export default function WorkshopPage() {
 
       effectivePartsToDeduct.forEach(pToUse => {
         if (!pToUse) return;
-        const pId = String(pToUse.inventory_id || pToUse.part_id || pToUse.id || '');
-        const pName = (pToUse.part_name || pToUse.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+        const pId = String(pToUse.inventory_id || pToUse.part_id || pToUse.id || '').replace(/[^a-z0-9]/g, '');
+        const pName = String(pToUse.part_name || pToUse.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase().trim();
         const usedQty = parseInt(pToUse.quantity || 1, 10);
 
         invList = invList.map(invItem => {
           if (!invItem) return invItem;
-          const invId = String(invItem.id || '');
-          const invName = (invItem.part_name || invItem.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+          const invId = String(invItem.id || '').replace(/[^a-z0-9]/g, '');
+          const invName = String(invItem.part_name || invItem.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase().trim();
 
-          const isMatch = (pId && invId && pId === invId) || (pName && invName && (pName.includes(invName) || invName.includes(pName)));
+          const isMatch = (pId && invId && pId === invId) || (pName && invName && (pName === invName || pName.includes(invName) || invName.includes(pName)));
 
           if (isMatch) {
             invChanged = true;
@@ -411,6 +412,8 @@ export default function WorkshopPage() {
       if (invChanged) {
         localStorage.setItem('inventory_items', JSON.stringify(invList));
         localStorage.setItem('spare_parts', JSON.stringify(invList));
+        setInventory(invList);
+        try { window.dispatchEvent(new Event('storage')); } catch (e) {}
       }
     } catch (invErr) {
       console.warn('Error deducting stock on confirm parts:', invErr);

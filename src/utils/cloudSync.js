@@ -322,26 +322,37 @@ export async function fetchCloudInventory() {
 export async function pushCloudInventoryItem(newItem) {
   if (!newItem || typeof newItem !== 'object') return;
 
-  // 1. Update local inventory_items
-  const localInv = JSON.parse(localStorage.getItem('inventory_items') || '[]');
-  const existsLocal = localInv.some(i => String(i.id) === String(newItem.id));
+  const newId = String(newItem.id || '');
+  const newName = String(newItem.part_name || newItem.name || '').toLowerCase().trim();
+
+  // 1. Update local inventory_items & spare_parts
+  const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+  const isMatchItem = (i) => {
+    if (!i) return false;
+    const curId = String(i.id || '');
+    const curName = String(i.part_name || i.name || '').toLowerCase().trim();
+    return (newId && curId && newId === curId) || (newName && curName && newName === curName);
+  };
+
+  const existsLocal = localInv.some(isMatchItem);
   let updatedLocal = localInv;
   if (!existsLocal) {
     updatedLocal = [newItem, ...localInv];
   } else {
-    updatedLocal = localInv.map(i => String(i.id) === String(newItem.id) ? { ...i, ...newItem } : i);
+    updatedLocal = localInv.map(i => isMatchItem(i) ? { ...i, ...newItem } : i);
   }
   localStorage.setItem('inventory_items', JSON.stringify(updatedLocal));
+  localStorage.setItem('spare_parts', JSON.stringify(updatedLocal));
 
   // 2. Save to master_cloud_cache
   const store = await fetchMasterStore();
   const existing = (store.inventory || []).filter(i => i && typeof i === 'object');
-  const exists = existing.some(i => i.id === newItem.id || String(i.id) === String(newItem.id));
+  const exists = existing.some(isMatchItem);
   let updated = existing;
   if (!exists) {
     updated = [newItem, ...existing];
   } else {
-    updated = existing.map(i => (i.id === newItem.id || String(i.id) === String(newItem.id)) ? { ...i, ...newItem } : i);
+    updated = existing.map(i => isMatchItem(i) ? { ...i, ...newItem } : i);
   }
   await saveMasterStore({ ...store, inventory: updated });
 }

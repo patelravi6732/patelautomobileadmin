@@ -7,13 +7,94 @@ import {
 import API from '../services/api';
 import { fetchMasterStore, fetchCloudAdminProfiles, getCleanDeletedIds } from '../utils/cloudSync';
 
+const computeInstantStats = () => {
+  try {
+    const isToday = (dateVal) => {
+      if (!dateVal) return false;
+      const dStr = String(dateVal).trim();
+      const todayISO = new Date().toISOString().split('T')[0];
+      const todayLoc = new Date().toLocaleDateString('en-CA');
+      const d = new Date().getDate();
+      const m = new Date().getMonth() + 1;
+      const y = new Date().getFullYear();
+      const dPad = String(d).padStart(2, '0');
+      const mPad = String(m).padStart(2, '0');
+      const todayDMY = `${dPad}/${mPad}/${y}`;
+      const todayDMYDash = `${dPad}-${mPad}/${y}`;
+
+      if (dStr.startsWith(todayISO) || dStr.startsWith(todayLoc) || dStr.includes(todayDMY) || dStr.includes(todayDMYDash)) return true;
+      
+      const parsed = new Date(dateVal);
+      if (!isNaN(parsed.getTime())) {
+        return parsed.getDate() === d && (parsed.getMonth() + 1) === m && parsed.getFullYear() === y;
+      }
+      return false;
+    };
+
+    const localInvoices = JSON.parse(localStorage.getItem('local_invoices') || '[]');
+    const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
+    const localInventory = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+
+    const todayServices = Math.max(
+      localJobs.filter(j => isToday(j.created_at || j.finished_at || j.completed_at)).length,
+      localInvoices.filter(inv => isToday(inv.created_at || inv.visit_date)).length
+    );
+
+    const completedServices = Math.max(
+      localJobs.filter(j => j.status === 'FINISHED' || j.status === 'COMPLETED').length,
+      localInvoices.length
+    );
+
+    const pendingServices = localJobs.filter(j => j && j.status !== 'FINISHED' && j.status !== 'COMPLETED' && j.status !== 'CANCELLED').length;
+    const pendingPayments = localInvoices.reduce((acc, inv) => acc + (parseFloat(inv.pending_amount) || 0), 0);
+
+    const invoiceRevenue = localInvoices
+      .filter(inv => isToday(inv.created_at || inv.visit_date || inv.date))
+      .reduce((acc, inv) => acc + (parseFloat(inv.paid_amount !== undefined ? inv.paid_amount : (inv.grand_total || inv.total_amount || 0)) || 0), 0);
+
+    const jobsRevenue = localJobs
+      .filter(j => (j.status === 'FINISHED' || j.status === 'COMPLETED') && isToday(j.finished_at || j.completed_at || j.created_at))
+      .reduce((acc, j) => acc + (parseFloat(j.paid_amount !== undefined ? j.paid_amount : (j.grand_total || j.live_total || 0)) || 0), 0);
+
+    const totalAllPaid = localInvoices.reduce((acc, inv) => acc + (parseFloat(inv.paid_amount !== undefined ? inv.paid_amount : (inv.grand_total || 0)) || 0), 0);
+    const todayRevenue = Math.max(invoiceRevenue, jobsRevenue, totalAllPaid);
+
+    const lowStockItems = localInventory.filter(i => (parseInt(i.current_stock || 0, 10)) <= (parseInt(i.min_stock_alert || 2, 10)));
+    const lowStockCount = lowStockItems.length;
+
+    const recentJobs = [...localJobs].sort(
+      (a, b) => new Date(b.created_at || b.finished_at || Date.now()) - new Date(a.created_at || a.finished_at || Date.now())
+    ).slice(0, 5);
+
+    return {
+      today_services: todayServices,
+      completed_services: completedServices,
+      pending_services: pendingServices,
+      pending_payments: pendingPayments,
+      today_revenue: todayRevenue,
+      low_stock_count: lowStockCount,
+      recent_jobs: recentJobs,
+      low_stock_items: lowStockItems
+    };
+  } catch {
+    return {
+      today_services: 0,
+      completed_services: 0,
+      pending_services: 0,
+      pending_payments: 0,
+      today_revenue: 0,
+      low_stock_count: 0,
+      recent_jobs: [],
+      low_stock_items: []
+    };
+  }
+};
+
 export default function DashboardPage() {
-  const [stats, setStats] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState(() => computeInstantStats());
+  const [loading, setLoading] = useState(false);
 
-  const fetchStats = async (isInitial = false) => {
-    if (isInitial && !stats) setLoading(true);
-
+  const fetchStats = async () => {
     const cloudStore = await fetchMasterStore().catch(() => null);
     const deletedIds = await getCleanDeletedIds().catch(() => []);
     const isDeleted = (id) => id && deletedIds.includes(String(id));
@@ -84,6 +165,10 @@ export default function DashboardPage() {
       invoices.length
     );
 
+    const pendingServices = jobs.filter(j => j && j.status !== 'FINISHED' && j.status !== 'COMPLETED' && j.status !== 'CANCELLED').length;
+
+    const pendingPayments = invoices.reduce((acc, inv) => acc + (parseFloat(inv.pending_amount) || 0), 0);
+
     const invoiceRevenue = invoices
       .filter(inv => isToday(inv.created_at || inv.visit_date || inv.date))
       .reduce((acc, inv) => acc + (parseFloat(inv.paid_amount !== undefined ? inv.paid_amount : (inv.grand_total || inv.total_amount || 0)) || 0), 0);
@@ -118,11 +203,11 @@ export default function DashboardPage() {
   };
 
   useEffect(() => {
-    fetchStats(true);
+    fetchStats();
     const interval = setInterval(() => {
-      fetchStats(false);
+      fetchStats();
     }, 3000);
-    const handleStorage = () => fetchStats(false);
+    const handleStorage = () => fetchStats();
     window.addEventListener('storage', handleStorage);
     return () => {
       clearInterval(interval);

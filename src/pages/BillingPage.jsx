@@ -578,20 +578,109 @@ export default function BillingPage() {
               </div>
             </div>
 
-            {/* SINGLE GENERATED HD BILL PHOTO CARD IMAGE DISPLAY */}
-            <div className="bg-slate-950 p-4 sm:p-6 rounded-3xl border border-slate-800 flex flex-col items-center justify-center min-h-[350px]">
-              {previewImageUrl ? (
-                <img
-                  src={previewImageUrl}
-                  alt="HD Bill Photo Card"
-                  className="max-w-full h-auto rounded-2xl shadow-2xl border border-amber-500/30 object-contain"
-                />
-              ) : (
-                <div className="py-16 text-center text-slate-400 font-medium animate-pulse space-y-3">
-                  <Sparkles className="w-10 h-10 text-amber-400 mx-auto animate-spin" />
-                  <p className="text-sm font-bold text-slate-200">⚡ Generating HD Bill Photo Card...</p>
+            {/* SINGLE GENERATED HD BILL PHOTO CARD / INTERACTIVE CARD DISPLAY */}
+            <div className="bg-slate-950 p-2 sm:p-4 rounded-3xl border border-slate-800 flex flex-col items-center justify-center">
+              <div className="w-full bg-white text-slate-900 p-6 sm:p-8 rounded-2xl space-y-5 shadow-xl border border-slate-200 text-xs font-sans">
+                {/* HEADER */}
+                <div className="flex justify-between items-start border-b-2 border-amber-500 pb-4">
+                  <div className="flex items-center gap-3">
+                    <img
+                      src={garageInfo?.logo && garageInfo.logo !== '/logo.png' ? garageInfo.logo : LOGO_BASE64}
+                      alt="Logo"
+                      className="w-12 h-12 rounded-xl object-cover border-2 border-amber-400 shadow-md shrink-0"
+                    />
+                    <div>
+                      <h4 className="text-lg font-black text-slate-900 font-poppins">{garageInfo?.garage_name || 'Patel Automobiles'}</h4>
+                      <p className="text-[11px] text-slate-600 font-medium">{garageInfo?.address || 'Near Dandi Pond, Dandi, Valsad, Gujarat - 396385'}</p>
+                      <p className="text-[11px] font-bold text-slate-800 font-mono mt-0.5">📞 {garageInfo?.phone || '+91 81403 71414'}</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className={`px-3 py-1 font-extrabold rounded-full text-[10px] uppercase tracking-wider inline-block ${
+                      parseFloat(selectedInvoice.pending_amount || 0) > 0 ? 'bg-rose-600 text-white' : 'bg-emerald-600 text-white'
+                    }`}>
+                      {parseFloat(selectedInvoice.pending_amount || 0) > 0 ? 'DUES PENDING' : 'PAID IN FULL'}
+                    </span>
+                    <p className="text-[10px] font-mono text-slate-500 mt-1">Invoice: {selectedInvoice.invoice_number || `INV-${String(selectedInvoice.id).slice(-4)}`}</p>
+                  </div>
                 </div>
-              )}
+
+                {/* CUSTOMER & VEHICLE DETAILS */}
+                <div className="grid grid-cols-2 gap-3 p-3.5 rounded-xl bg-amber-500/5 border border-amber-200">
+                  <div>
+                    <span className="text-[10px] font-bold text-amber-700 uppercase tracking-wider block">Customer Details</span>
+                    <strong className="text-slate-900 text-sm block">{selectedInvoice.customer_name}</strong>
+                    <span className="text-slate-700 font-bold font-mono text-[11px]">📞 {selectedInvoice.mobile_number || selectedInvoice.customer_mobile || 'N/A'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-bold text-amber-700 uppercase tracking-wider block">Vehicle Details</span>
+                    <strong className="text-amber-700 text-sm font-mono block">{selectedInvoice.vehicle_number}</strong>
+                    <span className="text-slate-600 font-medium text-[11px]">{selectedInvoice.bike_model || 'Two Wheeler'}</span>
+                  </div>
+                </div>
+
+                {/* PARTS & SERVICES TABLE */}
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-slate-900 text-amber-300 font-bold uppercase tracking-wider text-[10px]">
+                      <th className="p-2.5 rounded-l-lg">Description</th>
+                      <th className="p-2.5 text-center">Qty</th>
+                      <th className="p-2.5 text-right">Price</th>
+                      <th className="p-2.5 text-right rounded-r-lg">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {selectedInvoice.parts && selectedInvoice.parts.length > 0 ? (
+                      selectedInvoice.parts.map((part, idx) => {
+                        if (!part) return null;
+                        const partQty = parseInt(part.quantity || 1, 10);
+                        const partUnitPrice = parseFloat(part.unit_price || part.price || 0);
+                        const partTotal = parseFloat(part.staged_total || (partUnitPrice * partQty));
+                        return (
+                          <tr key={idx}>
+                            <td className="p-2.5 font-bold text-slate-800">{cleanPartName(part.part_name || part.name || 'Spare Part')}</td>
+                            <td className="p-2.5 text-center font-mono">{partQty}</td>
+                            <td className="p-2.5 text-right font-mono">₹{partUnitPrice.toFixed(2)}</td>
+                            <td className="p-2.5 text-right font-mono font-bold">₹{partTotal.toFixed(2)}</td>
+                          </tr>
+                        );
+                      })
+                    ) : null}
+
+                    {parseFloat(selectedInvoice.labour_charge || 0) > 0 && (
+                      <tr>
+                        <td className="p-2.5 font-bold text-slate-900">Labour Service Charge</td>
+                        <td className="p-2.5 text-center font-mono">1</td>
+                        <td className="p-2.5 text-right font-mono">₹{parseFloat(selectedInvoice.labour_charge || 0).toFixed(2)}</td>
+                        <td className="p-2.5 text-right font-mono font-bold">₹{parseFloat(selectedInvoice.labour_charge || 0).toFixed(2)}</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+
+                {/* SUMMARY */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center bg-slate-50 p-4 rounded-xl border border-slate-200">
+                  <div className="space-y-1 text-xs">
+                    <p className="text-slate-500">Date: <strong className="text-slate-800">{formatDateDMY(selectedInvoice.created_at || selectedInvoice.visit_date)}</strong></p>
+                    <p className="text-slate-500">Payment: <strong className={parseFloat(selectedInvoice.pending_amount || 0) > 0 ? 'text-rose-600 font-bold' : 'text-emerald-600 font-bold'}>{parseFloat(selectedInvoice.pending_amount || 0) > 0 ? 'Pending' : 'Completed'}</strong></p>
+                  </div>
+
+                  <div className="space-y-2 text-xs font-bold">
+                    <div className="flex justify-between text-slate-700">
+                      <span>Grand Total:</span>
+                      <span className="font-mono text-slate-900 text-sm">₹{parseFloat(selectedInvoice.grand_total || selectedInvoice.total_amount || 0).toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-emerald-700">
+                      <span>Paid Amount:</span>
+                      <span className="font-mono">₹{parseFloat(selectedInvoice.paid_amount || 0).toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-rose-600 pt-1 border-t border-slate-200">
+                      <span>Pending Due:</span>
+                      <span className="font-mono text-sm font-black">₹{parseFloat(selectedInvoice.pending_amount || 0).toFixed(2)}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
 
           </div>

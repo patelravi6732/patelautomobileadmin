@@ -119,7 +119,24 @@ export default function KhataBookPage() {
 
       const localInvs = JSON.parse(localStorage.getItem('local_invoices') || '[]').filter(i => i && !deletedIds.includes(String(i.id)) && !deletedIds.includes(String(i.invoice_number)));
       const cloudInvs = (await fetchCloudInvoices().catch(() => [])).filter(i => i && !deletedIds.includes(String(i.id)) && !deletedIds.includes(String(i.invoice_number)));
-      const combinedInvs = [...localInvs, ...cloudInvs];
+      
+      const invMap = new Map();
+      [...localInvs, ...cloudInvs].forEach(inv => {
+        if (inv && (inv.id || inv.job_id || inv.invoice_number)) {
+          const key = String(inv.job_id || inv.id || inv.invoice_number);
+          const existing = invMap.get(key);
+          if (!existing) {
+            invMap.set(key, inv);
+          } else {
+            const exPending = parseFloat(existing.pending_amount !== undefined ? existing.pending_amount : (parseFloat(existing.grand_total || existing.total_amount || 0) - parseFloat(existing.paid_amount || 0)));
+            const curPending = parseFloat(inv.pending_amount !== undefined ? inv.pending_amount : (parseFloat(inv.grand_total || inv.total_amount || 0) - parseFloat(inv.paid_amount || 0)));
+            if (curPending < exPending || (inv.paid_amount && !existing.paid_amount)) {
+              invMap.set(key, inv);
+            }
+          }
+        }
+      });
+      const combinedInvs = Array.from(invMap.values());
 
       const allJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]').filter(j => j && !deletedIds.includes(String(j.id)));
       const cloudJobs = (await fetchCloudJobs().catch(() => [])).filter(j => j && !deletedIds.includes(String(j.id)));

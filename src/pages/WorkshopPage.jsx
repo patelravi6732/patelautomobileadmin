@@ -142,7 +142,7 @@ export default function WorkshopPage() {
         const bookingJobId = `job_booking_${b.id || b.vehicle_number}`;
         const bookingKey = String(b.id || `${b.vehicle_number}_${b.preferred_date}`);
         if (!deletedIds.includes(bookingKey) && !deletedIds.includes(String(b.id)) && !deletedIds.includes(bookingJobId)) {
-          if (!allMap.has(bookingJobId) && b.status !== 'REJECTED') {
+          if (!allMap.has(bookingJobId) && b.status !== 'REJECTED' && b.status !== 'COMPLETED' && b.status !== 'FINISHED') {
             allMap.set(bookingJobId, {
               id: bookingJobId,
               booking_id: b.id,
@@ -908,9 +908,9 @@ export default function WorkshopPage() {
   const activeJobs = jobs.filter(j => j && j.status !== 'FINISHED' && j.status !== 'COMPLETED' && j.status !== 'CANCELLED');
   const finishedJobs = jobs.filter(j => j && (j.status === 'FINISHED' || j.status === 'COMPLETED'));
   const cancelledJobs = jobs.filter(j => j && j.status === 'CANCELLED');
-  const onlineBookingJobs = jobs.filter(j => j && (j.is_online_booking || j.booking_id || j.source === 'ONLINE_BOOKING' || String(j.complaint || '').toLowerCase().includes('booking')));
+  const onlineBookingJobs = jobs.filter(j => j && j.status !== 'FINISHED' && j.status !== 'COMPLETED' && j.status !== 'CANCELLED' && (j.is_online_booking || j.booking_id || j.source === 'ONLINE_BOOKING' || String(j.complaint || '').toLowerCase().includes('booking')));
 
-  const displayedJobs = tab === 'ONLINE_BOOKINGS' ? onlineBookingJobs : activeJobs;
+  const displayedJobs = tab === 'ONLINE_BOOKINGS' ? onlineBookingJobs : (tab === 'FINISHED' ? finishedJobs : (tab === 'CANCELLED' ? cancelledJobs : activeJobs));
 
   return (
     <div className="space-y-8">

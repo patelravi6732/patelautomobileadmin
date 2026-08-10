@@ -84,12 +84,17 @@ export default function DashboardPage() {
       invoices.length
     );
 
-    const pendingServices = jobs.filter(j => j && j.status !== 'FINISHED' && j.status !== 'COMPLETED' && j.status !== 'CANCELLED').length;
+    const invoiceRevenue = invoices
+      .filter(inv => isToday(inv.created_at || inv.visit_date || inv.date))
+      .reduce((acc, inv) => acc + (parseFloat(inv.paid_amount !== undefined ? inv.paid_amount : (inv.grand_total || inv.total_amount || 0)) || 0), 0);
 
-    const pendingPayments = invoices.reduce((acc, inv) => acc + (parseFloat(inv.pending_amount) || 0), 0);
+    const jobsRevenue = jobs
+      .filter(j => (j.status === 'FINISHED' || j.status === 'COMPLETED') && isToday(j.finished_at || j.completed_at || j.created_at))
+      .reduce((acc, j) => acc + (parseFloat(j.paid_amount !== undefined ? j.paid_amount : (j.grand_total || j.live_total || 0)) || 0), 0);
 
-    const todayRevenue = invoices.filter(inv => isToday(inv.created_at || inv.visit_date))
-      .reduce((acc, inv) => acc + (parseFloat(inv.paid_amount !== undefined ? inv.paid_amount : inv.grand_total) || 0), 0);
+    const totalAllPaid = invoices.reduce((acc, inv) => acc + (parseFloat(inv.paid_amount !== undefined ? inv.paid_amount : (inv.grand_total || 0)) || 0), 0);
+
+    const todayRevenue = Math.max(invoiceRevenue, jobsRevenue, totalAllPaid);
 
     const lowStockItems = inventory.filter(i => (parseInt(i.current_stock || 0, 10)) <= (parseInt(i.min_stock_alert || 2, 10)));
     const lowStockCount = lowStockItems.length;

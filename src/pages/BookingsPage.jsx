@@ -272,6 +272,7 @@ export default function BookingsPage() {
 
     const newJobCard = {
       id: Date.now(),
+      booking_id: bookingObj.id,
       customer_name: bookingObj.customer_name,
       mobile_number: bookingObj.mobile_number,
       vehicle_number: bookingObj.vehicle_number,
@@ -282,6 +283,8 @@ export default function BookingsPage() {
       parts_total: 0.00,
       live_total: 100.00,
       status: 'IN_PROGRESS',
+      is_online_booking: true,
+      source: 'ONLINE_BOOKING',
       created_at: new Date().toISOString()
     };
 

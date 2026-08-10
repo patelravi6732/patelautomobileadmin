@@ -965,7 +965,18 @@ export default function WorkshopPage() {
             {displayedJobs.map((job) => {
               const partsList = Array.isArray(job.parts) ? job.parts : [];
               const hasStagedParts = partsList.some(p => p && p.status === 'STAGED');
-              const isOnline = Boolean(job.is_online_booking || job.booking_id || job.source === 'ONLINE_BOOKING' || String(job.complaint || '').toLowerCase().includes('booking'));
+              const isOnline = Boolean(
+                job.is_online_booking || 
+                job.booking_id || 
+                job.source === 'ONLINE_BOOKING' || 
+                String(job.complaint || '').toLowerCase().includes('booking') ||
+                persistentBookings.some(b => {
+                  if (!b) return false;
+                  const bVeh = String(b.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+                  const jVeh = String(job.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+                  return bVeh && jVeh && bVeh === jVeh;
+                })
+              );
               const rawLabour = labourInputs[job.id] !== undefined
                 ? labourInputs[job.id]
                 : (job.labour_charge && parseFloat(job.labour_charge) > 0 ? formatMoney(job.labour_charge) : '');

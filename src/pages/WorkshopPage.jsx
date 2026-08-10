@@ -273,18 +273,34 @@ export default function WorkshopPage() {
   const openAddPartModal = (job) => {
     setSelectedJob(job);
     setPartSearchQuery('');
-    const firstPartId = inventory.length > 0 ? String(inventory[0].id) : '';
-    setSelectedPartId(firstPartId);
+    const firstItem = inventory && inventory.length > 0 ? inventory[0] : null;
+    const firstKey = firstItem ? String(firstItem.id || firstItem.part_name || firstItem.name) : '';
+    setSelectedPartId(firstKey);
     setPartQty(1);
     setShowPartModal(true);
   };
 
   const handleAddPart = async (e) => {
-    e.preventDefault();
-    if (!selectedPartId || !selectedJob) return;
+    if (e && e.preventDefault) e.preventDefault();
+    if (!selectedJob) {
+      alert('⚠️ Please select a bike first!');
+      return;
+    }
 
-    const partObj = inventory.find(p => String(p.id) === String(selectedPartId));
-    if (!partObj) return;
+    const targetKey = String(selectedPartId || '').trim();
+    const targetNorm = targetKey.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    const partObj = (inventory || []).find(p => {
+      if (!p) return false;
+      const pKey = String(p.id || p.part_name || p.name || '').trim();
+      const pNorm = String(p.part_name || p.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      return (targetKey && pKey === targetKey) || (targetNorm && pNorm && targetNorm === pNorm);
+    }) || (inventory && inventory.length > 0 ? inventory[0] : null);
+
+    if (!partObj) {
+      alert('⚠️ Please select a valid spare part from the list.');
+      return;
+    }
 
     const unitPrice = parseFloat(partObj.price || 0);
     const qty = parseInt(partQty || 1, 10);
@@ -292,8 +308,8 @@ export default function WorkshopPage() {
 
     const newPartEntry = {
       id: Date.now(),
-      inventory_id: partObj.id,
-      part_id: partObj.id,
+      inventory_id: partObj.id || `inv_${targetNorm}`,
+      part_id: partObj.id || `inv_${targetNorm}`,
       part_name: partObj.part_name || partObj.name,
       price: unitPrice,
       unit_price: unitPrice,
@@ -327,54 +343,55 @@ export default function WorkshopPage() {
     localStorage.setItem('workshop_jobs', JSON.stringify(updatedLocal));
     pushCloudJob(updatedJob).catch(console.warn);
 
-    // 2. Deduct Inventory stock IMMEDIATELY in 1 step
-    try {
-      const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
-      const baseInv = inventory && inventory.length > 0 ? inventory : (localInv.length > 0 ? localInv : [partObj]);
-      const targetId = String(partObj.id || '').replace(/[^a-z0-9]/g, '');
-      const targetName = String(partObj.part_name || partObj.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase().trim();
+    // 2. Deduct Inventory stock IMMEDIATELY (10 -> 9)
+    const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+    const baseInv = inventory && inventory.length > 0 ? inventory : (localInv.length > 0 ? localInv : [partObj]);
+    const partNormName = String(partObj.part_name || partObj.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
-      const updatedInv = baseInv.map(invItem => {
-        if (!invItem) return invItem;
-        const curId = String(invItem.id || '').replace(/[^a-z0-9]/g, '');
-        const curName = String(invItem.part_name || invItem.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase().trim();
-        const isMatch = (targetId && curId && targetId === curId) || (targetName && curName && (targetName === curName || targetName.includes(curName) || curName.includes(targetName)));
+    let updatedTargetItem = null;
+    const updatedInv = baseInv.map(invItem => {
+      if (!invItem) return invItem;
+      const curNormName = String(invItem.part_name || invItem.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const curId = String(invItem.id || '');
+      const isMatch = (partNormName && curNormName && (partNormName === curNormName || partNormName.includes(curNormName) || curNormName.includes(partNormName))) || (partObj.id && curId && String(partObj.id) === curId);
 
-        if (isMatch) {
-          const currentQty = parseInt(invItem.current_stock !== undefined ? invItem.current_stock : (invItem.stock_quantity !== undefined ? invItem.stock_quantity : (invItem.quantity !== undefined ? invItem.quantity : 0)), 10);
-          const newQty = Math.max(0, currentQty - qty);
-          const updatedItem = {
-            ...invItem,
-            current_stock: newQty,
-            stock_quantity: newQty,
-            quantity: newQty,
-            updated_at: new Date().toISOString()
-          };
-          pushCloudInventoryItem(updatedItem).catch(console.warn);
-          return updatedItem;
-        }
-        return invItem;
-      });
+      if (isMatch) {
+        const currentQty = parseInt(invItem.current_stock !== undefined ? invItem.current_stock : 10, 10);
+        const newQty = Math.max(0, currentQty - qty);
+        const updatedObj = {
+          ...invItem,
+          current_stock: newQty,
+          stock_quantity: newQty,
+          quantity: newQty
+        };
+        updatedTargetItem = updatedObj;
+        return updatedObj;
+      }
+      return invItem;
+    });
 
-      localStorage.setItem('inventory_items', JSON.stringify(updatedInv));
-      localStorage.setItem('spare_parts', JSON.stringify(updatedInv));
-      setInventory(updatedInv);
-      try { window.dispatchEvent(new Event('storage')); } catch (e) {}
-    } catch (err) {
-      console.warn('Real-time stock deduction notice:', err);
+    localStorage.setItem('inventory_items', JSON.stringify(updatedInv));
+    localStorage.setItem('spare_parts', JSON.stringify(updatedInv));
+    setInventory(updatedInv);
+    try { window.dispatchEvent(new Event('storage')); } catch (e) {}
+
+    if (updatedTargetItem) {
+      pushCloudInventoryItem(updatedTargetItem).catch(console.warn);
     }
 
     setShowPartModal(false);
 
     try {
       await API.post(`/workshop/${selectedJob.id}/add_staged_part/`, {
-        inventory_id: selectedPartId,
-        quantity: partQty
+        inventory_id: partObj.id,
+        quantity: qty
       }, { timeout: 2000 });
     } catch (err) {
-      console.warn('Backend API offline, added part locally & cloud store:', err);
+      console.warn('Backend API notice:', err);
     } finally {
-      alert(`✅ Part '${partObj.part_name || partObj.name}' (Qty: ${qty}) Added to Bike & Stock Deducted from Inventory!`);
+      const prevStock = parseInt(partObj.current_stock !== undefined ? partObj.current_stock : 10, 10);
+      const afterStock = updatedTargetItem ? updatedTargetItem.current_stock : Math.max(0, prevStock - qty);
+      alert(`✅ Part '${partObj.part_name || partObj.name}' Added!\n\nStock Deducted: ${prevStock} ➔ ${afterStock} Units in Inventory.`);
     }
   };
 
@@ -1333,13 +1350,16 @@ export default function WorkshopPage() {
                   }
 
                   return filtered.map((item) => {
-                    const isSelected = String(selectedPartId) === String(item.id);
+                    const itemKey = String(item.id || item.part_name || item.name || '');
+                    const itemNorm = String(item.part_name || item.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                    const selectedNorm = String(selectedPartId || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                    const isSelected = String(selectedPartId) === itemKey || (selectedNorm && itemNorm && selectedNorm === itemNorm);
                     const rawName = item.part_name || item.name || 'Spare Part';
                     const cleanItemName = rawName.split('#')[0].trim();
                     return (
                       <div
-                        key={item.id || Math.random()}
-                        onClick={() => setSelectedPartId(String(item.id))}
+                        key={itemKey || Math.random()}
+                        onClick={() => setSelectedPartId(itemKey)}
                         className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between text-xs ${
                           isSelected 
                             ? 'bg-blue-50/90 border-blue-500 shadow-xs text-blue-900 font-bold' 

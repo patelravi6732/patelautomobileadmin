@@ -13,29 +13,12 @@ export default function DashboardPage() {
 
   const fetchStats = async (isInitial = false) => {
     if (isInitial && !stats) setLoading(true);
-    let backendStats = null;
 
-    // First fetch fresh master store so any new device gets latest jobs, invoices & inventory
     const cloudStore = await fetchMasterStore().catch(() => null);
-
     const deletedIds = await getCleanDeletedIds().catch(() => []);
     const isDeleted = (id) => id && deletedIds.includes(String(id));
 
-    try {
-      const res = await API.get('/dashboard/stats/', { timeout: 1500 });
-      backendStats = res.data;
-    } catch (err) {
-      console.warn('Backend API offline for dashboard stats, computing from cloud & local memory:', err);
-    }
-
-    const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
-    const cloudJobs = Array.isArray(cloudStore?.jobs) ? cloudStore.jobs : [];
-    const jobMap = new Map();
-    [...cloudJobs, ...localJobs].forEach(j => {
-      if (j && j.id && !isDeleted(j.id)) jobMap.set(String(j.id), j);
-    });
-    const jobs = Array.from(jobMap.values());
-
+    // 1. Invoices
     const localInvoices = JSON.parse(localStorage.getItem('local_invoices') || '[]');
     const cloudInvoices = Array.isArray(cloudStore?.invoices) ? cloudStore.invoices : [];
     const invMap = new Map();
@@ -47,6 +30,16 @@ export default function DashboardPage() {
     });
     const invoices = Array.from(invMap.values());
 
+    // 2. Jobs
+    const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
+    const cloudJobs = Array.isArray(cloudStore?.jobs) ? cloudStore.jobs : [];
+    const jobMap = new Map();
+    [...cloudJobs, ...localJobs].forEach(j => {
+      if (j && j.id && !isDeleted(j.id)) jobMap.set(String(j.id), j);
+    });
+    const jobs = Array.from(jobMap.values());
+
+    // 3. Inventory
     const localInventory = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
     const cloudInventory = Array.isArray(cloudStore?.inventory) ? cloudStore.inventory : [];
     const itemMap = new Map();
@@ -57,18 +50,54 @@ export default function DashboardPage() {
     });
     const inventory = Array.from(itemMap.values());
 
-    const todayStr = new Date().toISOString().split('T')[0];
+    // Unified Date Helper for IST & UTC matching
+    const isToday = (dateVal) => {
+      if (!dateVal) return false;
+      const dStr = String(dateVal).trim();
+      const todayISO = new Date().toISOString().split('T')[0];
+      const todayLoc = new Date().toLocaleDateString('en-CA');
+      const d = new Date().getDate();
+      const m = new Date().getMonth() + 1;
+      const y = new Date().getFullYear();
+      const dPad = String(d).padStart(2, '0');
+      const mPad = String(m).padStart(2, '0');
+      const todayDMY = `${dPad}/${mPad}/${y}`;
+      const todayDMYDash = `${dPad}-${mPad}-${y}`;
 
-    const todayServices = jobs.filter(j => j && (j.created_at || '').startsWith(todayStr)).length;
-    const completedServices = jobs.filter(j => j && (j.status === 'FINISHED' || j.status === 'COMPLETED')).length;
+      if (dStr.startsWith(todayISO) || dStr.startsWith(todayLoc) || dStr.includes(todayDMY) || dStr.includes(todayDMYDash)) return true;
+      
+      const parsed = new Date(dateVal);
+      if (!isNaN(parsed.getTime())) {
+        return parsed.getDate() === d && (parsed.getMonth() + 1) === m && parsed.getFullYear() === y;
+      }
+      return false;
+    };
+
+    // Calculate Exact Metrics
+    const todayServices = Math.max(
+      jobs.filter(j => isToday(j.created_at || j.finished_at || j.completed_at)).length,
+      invoices.filter(inv => isToday(inv.created_at || inv.visit_date)).length
+    );
+
+    const completedServices = Math.max(
+      jobs.filter(j => j.status === 'FINISHED' || j.status === 'COMPLETED').length,
+      invoices.length
+    );
+
     const pendingServices = jobs.filter(j => j && j.status !== 'FINISHED' && j.status !== 'COMPLETED' && j.status !== 'CANCELLED').length;
 
     const pendingPayments = invoices.reduce((acc, inv) => acc + (parseFloat(inv.pending_amount) || 0), 0);
-    
-    const todayRevenue = invoices.filter(inv => inv && (inv.created_at || '').startsWith(todayStr))
-      .reduce((acc, inv) => acc + (parseFloat(inv.paid_amount || inv.grand_total) || 0), 0);
 
-    const lowStockCount = inventory.filter(i => (parseInt(i.current_stock || 0, 10)) <= (parseInt(i.min_stock_alert || 2, 10))).length;
+    const todayRevenue = invoices.filter(inv => isToday(inv.created_at || inv.visit_date))
+      .reduce((acc, inv) => acc + (parseFloat(inv.paid_amount !== undefined ? inv.paid_amount : inv.grand_total) || 0), 0);
+
+    const lowStockItems = inventory.filter(i => (parseInt(i.current_stock || 0, 10)) <= (parseInt(i.min_stock_alert || 2, 10)));
+    const lowStockCount = lowStockItems.length;
+
+    // Recent Jobs List
+    const recentJobs = [...jobs].sort(
+      (a, b) => new Date(b.created_at || b.finished_at || Date.now()) - new Date(a.created_at || a.finished_at || Date.now())
+    ).slice(0, 5);
 
     setStats({
       today_services: todayServices,
@@ -76,7 +105,9 @@ export default function DashboardPage() {
       pending_services: pendingServices,
       pending_payments: pendingPayments,
       today_revenue: todayRevenue,
-      low_stock_count: lowStockCount
+      low_stock_count: lowStockCount,
+      recent_jobs: recentJobs,
+      low_stock_items: lowStockItems
     });
     setLoading(false);
   };
@@ -111,6 +142,8 @@ export default function DashboardPage() {
     { title: "Low Stock Alert", value: `${stats?.low_stock_count || 0} Items`, icon: AlertTriangle, color: "text-red-600", bg: "bg-red-50", border: "border-red-100" },
   ];
 
+  const basePrefix = typeof window !== 'undefined' && window.location.pathname.startsWith('/admin') ? '/admin' : '/app';
+
   return (
     <div className="space-y-8">
       
@@ -121,7 +154,7 @@ export default function DashboardPage() {
           <p className="text-blue-100 text-xs sm:text-sm">Real-time overview of active workshop jobs, stock alerts, and customer billing.</p>
         </div>
         <Link
-          to="/app/new-service"
+          to={`${basePrefix}/new-service`}
           className="inline-flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white font-bold text-sm px-5 py-3 rounded-xl shadow-md transition-all shrink-0"
         >
           + Start New Service
@@ -156,7 +189,7 @@ export default function DashboardPage() {
               <Activity className="w-5 h-5 text-blue-600" />
               <h2 className="text-lg font-bold text-slate-900 font-poppins">Recent Workshop Jobs</h2>
             </div>
-            <Link to="/app/workshop" className="text-xs font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1">
+            <Link to={`${basePrefix}/workshop`} className="text-xs font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1">
               Go To Workshop <ChevronRight className="w-4 h-4" />
             </Link>
           </div>
@@ -184,7 +217,7 @@ export default function DashboardPage() {
                       {job.status}
                     </span>
                     <span className="block text-xs font-bold text-slate-900 font-poppins mt-0.5">
-                      Live Total: ₹{job.live_total}
+                      Live Total: ₹{job.live_total || job.grand_total || 0}
                     </span>
                   </div>
                 </div>
@@ -202,7 +235,7 @@ export default function DashboardPage() {
               <AlertTriangle className="w-5 h-5 text-red-500" />
               <h2 className="text-lg font-bold text-slate-900 font-poppins">Low Stock Alert</h2>
             </div>
-            <Link to="/app/inventory" className="text-xs font-bold text-red-600 hover:text-red-700">
+            <Link to={`${basePrefix}/inventory`} className="text-xs font-bold text-red-600 hover:text-red-700">
               Manage Inventory
             </Link>
           </div>

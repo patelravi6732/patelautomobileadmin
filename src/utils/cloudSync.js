@@ -182,6 +182,36 @@ export async function fetchMasterStore() {
 
 async function saveMasterStore(storeData) {
   try {
+    const curLocalInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+    let resolvedInv = storeData.inventory || curLocalInv;
+    
+    if (curLocalInv.length > 0) {
+      const recMap = new Map();
+      [...(storeData.inventory || []), ...curLocalInv].forEach(item => {
+        if (item && (item.part_name || item.name)) {
+          const rawName = String(item.part_name || item.name).trim();
+          const key = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const parsedStock = parseInt(item.current_stock !== undefined ? item.current_stock : 0, 10);
+          const cleanObj = {
+            ...item,
+            id: item.id || `inv_${key}`,
+            part_name: rawName,
+            current_stock: parsedStock
+          };
+          const existing = recMap.get(key);
+          if (!existing) {
+            recMap.set(key, cleanObj);
+          } else {
+            if (parsedStock < existing.current_stock) {
+              recMap.set(key, { ...existing, ...cleanObj, current_stock: parsedStock });
+            }
+          }
+        }
+      });
+      resolvedInv = Array.from(recMap.values());
+    }
+
+    storeData.inventory = resolvedInv;
     localStorage.setItem('master_cloud_cache', JSON.stringify(storeData));
     if (storeData.garageInfo) {
       localStorage.setItem('garage_info', JSON.stringify(storeData.garageInfo));
@@ -190,9 +220,9 @@ async function saveMasterStore(storeData) {
     if (Array.isArray(storeData.invoices)) localStorage.setItem('local_invoices', JSON.stringify(storeData.invoices));
     if (Array.isArray(storeData.khataEntries)) localStorage.setItem('khata_entries', JSON.stringify(storeData.khataEntries));
     if (Array.isArray(storeData.customers)) localStorage.setItem('local_customers', JSON.stringify(storeData.customers));
-    if (Array.isArray(storeData.inventory)) {
-      localStorage.setItem('inventory_items', JSON.stringify(storeData.inventory));
-      localStorage.setItem('spare_parts', JSON.stringify(storeData.inventory));
+    if (Array.isArray(resolvedInv)) {
+      localStorage.setItem('inventory_items', JSON.stringify(resolvedInv));
+      localStorage.setItem('spare_parts', JSON.stringify(resolvedInv));
     }
     if (Array.isArray(storeData.bookings)) localStorage.setItem('local_bookings', JSON.stringify(storeData.bookings));
     if (Array.isArray(storeData.messages)) {
@@ -304,7 +334,9 @@ export async function pushCloudJob(newJob) {
   } else {
     updated = existing.map(j => isMatch(j) ? { ...j, ...newJob } : j);
   }
-  await saveMasterStore({ ...store, jobs: updated });
+  
+  const curLocalInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+  await saveMasterStore({ ...store, jobs: updated, inventory: curLocalInv.length > 0 ? curLocalInv : store.inventory });
 }
 
 export async function updateCloudJobStatus(jobId, newStatus) {

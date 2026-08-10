@@ -334,15 +334,7 @@ export default function WorkshopPage() {
 
     setJobs(prev => prev.map(j => (String(j.id) === String(selectedJob.id) ? updatedJob : j)));
     
-    const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
-    const updatedLocal = localJobs.map(j => (String(j.id) === String(selectedJob.id) ? updatedJob : j));
-    if (!updatedLocal.some(j => String(j.id) === String(selectedJob.id))) {
-      updatedLocal.push(updatedJob);
-    }
-    localStorage.setItem('workshop_jobs', JSON.stringify(updatedLocal));
-    pushCloudJob(updatedJob).catch(console.warn);
-
-    // 2. Deduct Inventory stock IMMEDIATELY (10 -> 9)
+    // 1. Deduct Inventory stock IMMEDIATELY (10 -> 9)
     const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
     const baseInv = inventory && inventory.length > 0 ? inventory : (localInv.length > 0 ? localInv : [partObj]);
     const partNormName = String(partObj.part_name || partObj.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -373,6 +365,15 @@ export default function WorkshopPage() {
     localStorage.setItem('spare_parts', JSON.stringify(updatedInv));
     setInventory(updatedInv);
     try { window.dispatchEvent(new Event('storage')); } catch (e) {}
+
+    // 2. Update Job parts
+    const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
+    const updatedLocal = localJobs.map(j => (String(j.id) === String(selectedJob.id) ? updatedJob : j));
+    if (!updatedLocal.some(j => String(j.id) === String(selectedJob.id))) {
+      updatedLocal.push(updatedJob);
+    }
+    localStorage.setItem('workshop_jobs', JSON.stringify(updatedLocal));
+    pushCloudJob(updatedJob).catch(console.warn);
 
     if (updatedTargetItem) {
       pushCloudInventoryItem(updatedTargetItem).catch(console.warn);

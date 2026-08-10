@@ -4,7 +4,7 @@ import {
   IndianRupee, Package, Bike, User, Phone, Check, Receipt, UserCheck, Users, Lock, Search, ChevronDown, Edit2, Tag
 } from 'lucide-react';
 import API from '../services/api';
-import { fetchCloudJobs, updateCloudJobStatus, deleteCloudJob, fetchCloudInventory, pushCloudJob, pushCloudRecycleBinItem, pushCloudKhataEntry, pushCloudInvoice, updateCloudBookingStatus, fetchCloudDeletedIds, fetchCloudBookings, atomicFinishWorkshopJob, pushCloudInventoryItem, DEFAULT_SPARE_PARTS } from '../utils/cloudSync';
+import { fetchCloudJobs, updateCloudJobStatus, deleteCloudJob, fetchCloudInventory, pushCloudJob, pushCloudRecycleBinItem, pushCloudKhataEntry, pushCloudInvoice, updateCloudBookingStatus, fetchCloudDeletedIds, fetchCloudBookings, atomicFinishWorkshopJob, pushCloudInventoryItem } from '../utils/cloudSync';
 import { useAuth } from '../context/AuthContext';
 import AdminPasswordModal from '../components/AdminPasswordModal';
 
@@ -18,10 +18,9 @@ export default function WorkshopPage() {
   });
   const [inventory, setInventory] = useState(() => {
     try {
-      const local = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
-      return (Array.isArray(local) && local.length > 0) ? local : DEFAULT_SPARE_PARTS;
+      return JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
     } catch {
-      return DEFAULT_SPARE_PARTS;
+      return [];
     }
   });
   const [loading, setLoading] = useState(false);
@@ -265,13 +264,9 @@ export default function WorkshopPage() {
     };
 
     const allInvMap = new Map();
-    let localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
-    if (!Array.isArray(localInv) || localInv.length === 0) {
-      localInv = DEFAULT_SPARE_PARTS;
-    }
-    const resolvedCloudInv = (Array.isArray(cloudInv) && cloudInv.length > 0) ? cloudInv : DEFAULT_SPARE_PARTS;
+    const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
 
-    [...localInv, ...resolvedCloudInv, ...invData].forEach(item => {
+    [...localInv, ...cloudInv, ...invData].forEach(item => {
       if (item && typeof item === 'object' && (item.id || item.part_name || item.name)) {
         if (!isItemDeleted(item)) {
           const rawId = String(item.id || `inv_${String(item.part_name || item.name).toLowerCase().replace(/[^a-z0-9]/g, '')}`);
@@ -303,10 +298,7 @@ export default function WorkshopPage() {
       }
     });
 
-    let unifiedInv = Array.from(allInvMap.values());
-    if (unifiedInv.length === 0) {
-      unifiedInv = DEFAULT_SPARE_PARTS;
-    }
+    const unifiedInv = Array.from(allInvMap.values());
     localStorage.setItem('inventory_items', JSON.stringify(unifiedInv));
     localStorage.setItem('spare_parts', JSON.stringify(unifiedInv));
     setInventory(unifiedInv);
@@ -372,12 +364,10 @@ export default function WorkshopPage() {
   const openAddPartModal = (job) => {
     setSelectedJob(job);
     setPartSearchQuery('');
-    setCustomPartMode(false);
+    setCustomPartMode(inventory.length === 0);
     setCustomPartName('');
     setCustomPartPrice('');
-    const curInv = (inventory && inventory.length > 0) ? inventory : DEFAULT_SPARE_PARTS;
-    if (!inventory || inventory.length === 0) setInventory(curInv);
-    const firstItem = curInv[0];
+    const firstItem = (inventory && inventory.length > 0) ? inventory[0] : null;
     const firstKey = firstItem ? String(firstItem.id || firstItem.part_name || firstItem.name) : '';
     setSelectedPartId(firstKey);
     setPartQty(1);
@@ -397,7 +387,7 @@ export default function WorkshopPage() {
     let isCatalogItem = false;
     let partObj = null;
 
-    if (customPartMode) {
+    if (customPartMode || !selectedPartId) {
       partName = customPartName.trim();
       unitPrice = parseFloat(customPartPrice) || 0;
       if (!partName) {
@@ -412,17 +402,16 @@ export default function WorkshopPage() {
     } else {
       const targetKey = String(selectedPartId || '').trim();
       const targetNorm = targetKey.toLowerCase().replace(/[^a-z0-9]/g, '');
-      const curInv = (inventory && inventory.length > 0) ? inventory : DEFAULT_SPARE_PARTS;
 
-      partObj = curInv.find(p => {
+      partObj = (inventory || []).find(p => {
         if (!p) return false;
         const pKey = String(p.id || p.part_name || p.name || '').trim();
         const pNorm = String(p.part_name || p.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
         return (targetKey && pKey === targetKey) || (targetNorm && pNorm && targetNorm === pNorm);
-      }) || curInv[0];
+      });
 
       if (!partObj) {
-        alert('⚠️ Please select a valid spare part from the list.');
+        alert('⚠️ Please select a valid spare part from the list or switch to Custom Part.');
         return;
       }
 
@@ -476,7 +465,7 @@ export default function WorkshopPage() {
     let updatedTargetItem = null;
     if (isCatalogItem && partObj) {
       const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
-      const baseInv = inventory && inventory.length > 0 ? inventory : (localInv.length > 0 ? localInv : DEFAULT_SPARE_PARTS);
+      const baseInv = inventory && inventory.length > 0 ? inventory : localInv;
       const partNormName = String(partName).toLowerCase().replace(/[^a-z0-9]/g, '');
 
       const updatedInv = baseInv.map(invItem => {

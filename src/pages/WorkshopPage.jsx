@@ -4,7 +4,7 @@ import {
   IndianRupee, Package, Bike, User, Phone, Check, Receipt, UserCheck, Users, Lock, Search, ChevronDown, Edit2, Tag
 } from 'lucide-react';
 import API from '../services/api';
-import { fetchCloudJobs, updateCloudJobStatus, deleteCloudJob, fetchCloudInventory, pushCloudJob, pushCloudRecycleBinItem, pushCloudKhataEntry, pushCloudInvoice, updateCloudBookingStatus, fetchCloudDeletedIds, fetchCloudBookings, atomicFinishWorkshopJob } from '../utils/cloudSync';
+import { fetchCloudJobs, updateCloudJobStatus, deleteCloudJob, fetchCloudInventory, pushCloudJob, pushCloudRecycleBinItem, pushCloudKhataEntry, pushCloudInvoice, updateCloudBookingStatus, fetchCloudDeletedIds, fetchCloudBookings, atomicFinishWorkshopJob, pushCloudInventoryItem } from '../utils/cloudSync';
 import { useAuth } from '../context/AuthContext';
 import AdminPasswordModal from '../components/AdminPasswordModal';
 
@@ -12,6 +12,9 @@ export default function WorkshopPage() {
   const { garageInfo } = useAuth();
   const [jobs, setJobs] = useState(() => {
     try { return JSON.parse(localStorage.getItem('workshop_jobs') || '[]'); } catch (e) { return []; }
+  });
+  const [onlineBookings, setOnlineBookings] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('workshop_online_bookings') || '[]'); } catch (e) { return []; }
   });
   const [inventory, setInventory] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -136,6 +139,7 @@ export default function WorkshopPage() {
 
     const persistentBookings = Array.from(allBookingsMap.values());
     localStorage.setItem('workshop_online_bookings', JSON.stringify(persistentBookings));
+    setOnlineBookings(persistentBookings);
 
     persistentBookings.forEach(b => {
       if (b && typeof b === 'object' && (b.id || b.vehicle_number)) {
@@ -970,7 +974,7 @@ export default function WorkshopPage() {
                 job.booking_id || 
                 job.source === 'ONLINE_BOOKING' || 
                 String(job.complaint || '').toLowerCase().includes('booking') ||
-                persistentBookings.some(b => {
+                onlineBookings.some(b => {
                   if (!b) return false;
                   const bVeh = String(b.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
                   const jVeh = String(job.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();

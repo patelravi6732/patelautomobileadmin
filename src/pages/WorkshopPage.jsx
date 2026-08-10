@@ -171,17 +171,48 @@ export default function WorkshopPage() {
     );
     setJobs(mergedJobs);
 
-    let localInv = JSON.parse(localStorage.getItem('inventory_items') || '[]');
     const allInvMap = new Map();
-    [...invData, ...localInv, ...cloudInv].forEach(item => {
-      if (item && (item.id || item.part_name || item.name)) {
-        const key = String(item.id || item.part_name || item.name);
-        if (!deletedIds.includes(key) && !deletedIds.includes(String(item.id)) && !deletedIds.includes(String(item.part_name))) {
-          allInvMap.set(key, item);
+    let localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+    [...cloudInv, ...localInv, ...invData].forEach(item => {
+      if (item && typeof item === 'object' && (item.part_name || item.name)) {
+        const rawName = String(item.part_name || item.name).trim();
+        const normKey = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const idKey = String(item.id || '');
+        
+        if (!deletedIds.includes(normKey) && !deletedIds.includes(idKey) && !deletedIds.includes(rawName)) {
+          const parsedStock = parseInt(item.current_stock !== undefined ? item.current_stock : (item.stock_quantity !== undefined ? item.stock_quantity : (item.quantity !== undefined ? item.quantity : 0)), 10);
+          const parsedMin = item.min_stock_alert !== undefined && item.min_stock_alert !== '' ? parseInt(item.min_stock_alert, 10) : 2;
+          
+          const cleanItem = {
+            id: item.id || `inv_${normKey}`,
+            part_name: rawName,
+            category: item.category || 'General',
+            price: parseFloat(item.price || 0),
+            current_stock: parsedStock,
+            min_stock_alert: parsedMin,
+            updated_at: item.updated_at || new Date().toISOString()
+          };
+
+          const existing = allInvMap.get(normKey);
+          if (!existing) {
+            allInvMap.set(normKey, cleanItem);
+          } else {
+            const itemTime = cleanItem.updated_at ? new Date(cleanItem.updated_at).getTime() : 0;
+            const existingTime = existing.updated_at ? new Date(existing.updated_at).getTime() : 0;
+            if (itemTime > existingTime) {
+              allInvMap.set(normKey, { ...existing, ...cleanItem });
+            } else if (parsedStock < existing.current_stock) {
+              allInvMap.set(normKey, { ...existing, ...cleanItem, current_stock: parsedStock });
+            }
+          }
         }
       }
     });
-    setInventory(Array.from(allInvMap.values()));
+
+    const unifiedInv = Array.from(allInvMap.values());
+    localStorage.setItem('inventory_items', JSON.stringify(unifiedInv));
+    localStorage.setItem('spare_parts', JSON.stringify(unifiedInv));
+    setInventory(unifiedInv);
     setLoading(false);
   };
 
@@ -596,33 +627,34 @@ export default function WorkshopPage() {
     }
 
     // 3. Auto-Deduct Inventory Spare Parts Stock
-    const partsUsed = Array.isArray(selectedJob.parts) ? selectedJob.parts : [];
-    if (partsUsed.length > 0) {
+    const unconfirmedPartsUsed = (Array.isArray(selectedJob.parts) ? selectedJob.parts : []).filter(p => p && (!p.is_deducted || p.status !== 'CONFIRMED'));
+    if (unconfirmedPartsUsed.length > 0) {
       try {
         const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
         let invChanged = false;
 
         const updatedInv = localInv.map(invItem => {
-          const usedPart = partsUsed.find(p => {
+          const usedPart = unconfirmedPartsUsed.find(p => {
             if (!p) return false;
-            const pId = String(p.inventory_id || p.part_id || p.id || '');
-            const invId = String(invItem.id || '');
+            const pId = String(p.inventory_id || p.part_id || p.id || '').replace(/[^a-z0-9]/g, '');
+            const invId = String(invItem.id || '').replace(/[^a-z0-9]/g, '');
             if (pId && invId && pId === invId) return true;
 
             const pName = (p.part_name || p.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
             const invName = (invItem.part_name || invItem.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-            return pName && invName && (pName.includes(invName) || invName.includes(pName));
+            return pName && invName && (pName === invName || pName.includes(invName) || invName.includes(pName));
           });
           if (usedPart) {
             invChanged = true;
-            const currentQty = parseInt(invItem.current_stock || invItem.stock_quantity || invItem.quantity || 0, 10);
+            const currentQty = parseInt(invItem.current_stock !== undefined ? invItem.current_stock : (invItem.stock_quantity !== undefined ? invItem.stock_quantity : (invItem.quantity !== undefined ? invItem.quantity : 0)), 10);
             const usedQty = parseInt(usedPart.quantity || 1, 10);
             const newQty = Math.max(0, currentQty - usedQty);
             const updatedItem = {
               ...invItem,
               current_stock: newQty,
               stock_quantity: newQty,
-              quantity: newQty
+              quantity: newQty,
+              updated_at: new Date().toISOString()
             };
             pushCloudInventoryItem(updatedItem).catch(console.warn);
             return updatedItem;
@@ -633,9 +665,11 @@ export default function WorkshopPage() {
         if (invChanged) {
           localStorage.setItem('inventory_items', JSON.stringify(updatedInv));
           localStorage.setItem('spare_parts', JSON.stringify(updatedInv));
+          setInventory(updatedInv);
+          try { window.dispatchEvent(new Event('storage')); } catch (e) {}
         }
       } catch (invErr) {
-        console.warn('Error auto-deducting inventory stock:', invErr);
+        console.warn('Error auto-deducting inventory stock in finish bill:', invErr);
       }
     }
 

@@ -59,14 +59,15 @@ export default function InventoryPage() {
     [...cloudInv, ...localInv, ...backendItems].forEach(item => {
       if (item && typeof item === 'object' && (item.part_name || item.name)) {
         const rawName = String(item.part_name || item.name).trim();
-        const key = (item.id ? String(item.id) : rawName.toLowerCase()).replace(/[^a-z0-9]/g, '');
+        const key = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const idKey = String(item.id || '');
         
-        if (!deletedIds.includes(key) && !deletedIds.includes(String(item.id)) && !deletedIds.includes(rawName)) {
+        if (!deletedIds.includes(key) && !deletedIds.includes(idKey) && !deletedIds.includes(rawName)) {
           const parsedStock = parseInt(item.current_stock !== undefined ? item.current_stock : (item.stock_quantity !== undefined ? item.stock_quantity : (item.quantity !== undefined ? item.quantity : 0)), 10);
           const parsedMin = item.min_stock_alert !== undefined && item.min_stock_alert !== '' ? parseInt(item.min_stock_alert, 10) : 2;
           
           const newItemObj = {
-            id: item.id || key,
+            id: item.id || `inv_${key}`,
             part_name: rawName,
             category: item.category || 'General',
             price: parseFloat(item.price || 0),
@@ -80,7 +81,7 @@ export default function InventoryPage() {
           } else {
             // Prioritize deducted (lower) stock so user sees exact stock reduction
             if (parsedStock < existing.current_stock) {
-              allMap.set(key, newItemObj);
+              allMap.set(key, { ...existing, ...newItemObj, current_stock: parsedStock });
             }
           }
         }

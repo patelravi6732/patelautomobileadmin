@@ -24,8 +24,9 @@ export default function WorkshopPage() {
   const [showFinishModal, setShowFinishModal] = useState(false);
   const [showAssignModal, setShowAssignModal] = useState(false);
 
-  // Admin Password Delete Modal
+  // Admin Password Delete Modals
   const [deleteJobModal, setDeleteJobModal] = useState({ isOpen: false, job: null });
+  const [deletePartModal, setDeletePartModal] = useState({ isOpen: false, jobId: null, part: null });
   
   // Form states
   const [assignedMechanic, setAssignedMechanic] = useState('');
@@ -269,12 +270,12 @@ export default function WorkshopPage() {
       unit_price: unitPrice,
       quantity: qty,
       staged_total: stagedTotal,
-      status: 'CONFIRMED',
-      is_confirmed: true,
-      is_deducted: true
+      status: 'STAGED',
+      is_confirmed: false,
+      is_deducted: false
     };
 
-    // 1. Update Job parts
+    // 1. Update Job parts with STAGED status (Stock is NOT deducted until "Confirm Parts" is clicked)
     const existingParts = Array.isArray(selectedJob.parts) ? selectedJob.parts : [];
     const updatedParts = [...existingParts, newPartEntry];
     const newPartsTotal = updatedParts.reduce((acc, p) => acc + parseFloat(p.staged_total || (parseFloat(p.price || p.unit_price || 0) * parseInt(p.quantity || 1, 10))), 0);
@@ -297,41 +298,6 @@ export default function WorkshopPage() {
     localStorage.setItem('workshop_jobs', JSON.stringify(updatedLocal));
     pushCloudJob(updatedJob).catch(console.warn);
 
-    // 2. Deduct Inventory stock IMMEDIATELY in real-time
-    try {
-      const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
-      const targetId = String(partObj.id || '');
-      const targetName = String(partObj.part_name || partObj.name || '').toLowerCase().trim();
-
-      const updatedInv = localInv.map(invItem => {
-        if (!invItem) return invItem;
-        const curId = String(invItem.id || '');
-        const curName = String(invItem.part_name || invItem.name || '').toLowerCase().trim();
-        const isMatch = (targetId && curId && targetId === curId) || (targetName && curName && targetName === curName);
-
-        if (isMatch) {
-          const currentQty = parseInt(invItem.current_stock !== undefined ? invItem.current_stock : (invItem.stock_quantity !== undefined ? invItem.stock_quantity : (invItem.quantity !== undefined ? invItem.quantity : 0)), 10);
-          const newQty = Math.max(0, currentQty - qty);
-          const updatedItem = {
-            ...invItem,
-            current_stock: newQty,
-            stock_quantity: newQty,
-            quantity: newQty
-          };
-          pushCloudInventoryItem(updatedItem).catch(console.warn);
-          return updatedItem;
-        }
-        return invItem;
-      });
-
-      localStorage.setItem('inventory_items', JSON.stringify(updatedInv));
-      localStorage.setItem('spare_parts', JSON.stringify(updatedInv));
-      setInventory(updatedInv);
-      try { window.dispatchEvent(new Event('storage')); } catch (e) {}
-    } catch (err) {
-      console.warn('Real-time stock deduction notice:', err);
-    }
-
     setShowPartModal(false);
 
     try {
@@ -340,18 +306,24 @@ export default function WorkshopPage() {
         quantity: partQty
       }, { timeout: 2000 });
     } catch (err) {
-      console.warn('Backend API offline, added part locally & cloud store:', err);
+      console.warn('Backend API offline, added staged part locally & cloud store:', err);
     } finally {
-      alert(`✅ Part '${partObj.part_name || partObj.name}' added to Bike & ${qty} Unit(s) stock deducted from Inventory!`);
+      alert(`📝 Part '${partObj.part_name || partObj.name}' (Qty: ${qty}) added as STAGED!\n\nClick '✔ Confirm Parts' on the bike card when you want to deduct stock from Inventory.`);
     }
   };
 
-  const handleRemovePart = async (jobId, partId) => {
+  const openDeletePartModal = (jobId, part) => {
+    setDeletePartModal({ isOpen: true, jobId, part });
+  };
+
+  const handleDeletePartWithPassword = async (adminPassword) => {
+    if (!deletePartModal.part || !deletePartModal.jobId) return;
+    const { jobId, part } = deletePartModal;
+
     const targetJob = jobs.find(j => String(j.id) === String(jobId));
     if (!targetJob) return;
 
-    const removedPart = (targetJob.parts || []).find(p => String(p.id) === String(partId));
-    const updatedParts = (targetJob.parts || []).filter(p => String(p.id) !== String(partId));
+    const updatedParts = (targetJob.parts || []).filter(p => String(p.id) !== String(part.id));
     const newPartsTotal = updatedParts.reduce((acc, p) => acc + parseFloat(p.staged_total || (parseFloat(p.price || p.unit_price || 0) * parseInt(p.quantity || 1, 10))), 0);
     const newLiveTotal = newPartsTotal + parseFloat(targetJob.labour_charge || 0);
 
@@ -369,19 +341,30 @@ export default function WorkshopPage() {
     localStorage.setItem('workshop_jobs', JSON.stringify(updatedLocal));
     pushCloudJob(updatedJob).catch(console.warn);
 
-    // If removed part was deducted, RESTORE stock back to inventory in real-time
-    if (removedPart) {
+    // If the removed part was already CONFIRMED & DEDUCTED, restore stock back to Inventory
+    if (part.is_deducted || part.status === 'CONFIRMED') {
       try {
-        const qtyToRestore = parseInt(removedPart.quantity || 1, 10);
-        const pId = String(removedPart.inventory_id || removedPart.part_id || removedPart.id || '');
-        const pName = String(removedPart.part_name || removedPart.name || '').toLowerCase().trim();
+        const qtyToRestore = parseInt(part.quantity || 1, 10);
+        const pId = String(part.inventory_id || part.part_id || part.id || '').replace(/[^a-z0-9]/g, '');
+        const pName = String(part.part_name || part.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase().trim();
 
         const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
-        const restoredInv = localInv.map(invItem => {
+        const cloudInv = await fetchCloudInventory().catch(() => []);
+        const allInvMap = new Map();
+        [...cloudInv, ...localInv].forEach(item => {
+          if (item && (item.id || item.part_name || item.name)) {
+            const rawName = String(item.part_name || item.name || '').trim();
+            const key = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (!allInvMap.has(key)) allInvMap.set(key, item);
+          }
+        });
+
+        let invList = Array.from(allInvMap.values());
+        invList = invList.map(invItem => {
           if (!invItem) return invItem;
-          const curId = String(invItem.id || '');
-          const curName = String(invItem.part_name || invItem.name || '').toLowerCase().trim();
-          const isMatch = (pId && curId && pId === curId) || (pName && curName && pName === curName);
+          const invId = String(invItem.id || '').replace(/[^a-z0-9]/g, '');
+          const invName = String(invItem.part_name || invItem.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase().trim();
+          const isMatch = (pId && invId && pId === invId) || (pName && invName && (pName === invName || pName.includes(invName) || invName.includes(pName)));
 
           if (isMatch) {
             const currentQty = parseInt(invItem.current_stock !== undefined ? invItem.current_stock : (invItem.stock_quantity !== undefined ? invItem.stock_quantity : (invItem.quantity !== undefined ? invItem.quantity : 0)), 10);
@@ -398,19 +381,23 @@ export default function WorkshopPage() {
           return invItem;
         });
 
-        localStorage.setItem('inventory_items', JSON.stringify(restoredInv));
-        localStorage.setItem('spare_parts', JSON.stringify(restoredInv));
-        setInventory(restoredInv);
+        localStorage.setItem('inventory_items', JSON.stringify(invList));
+        localStorage.setItem('spare_parts', JSON.stringify(invList));
+        setInventory(invList);
         try { window.dispatchEvent(new Event('storage')); } catch (e) {}
       } catch (err) {
-        console.warn('Real-time stock restoration notice:', err);
+        console.warn('Stock restoration notice:', err);
       }
     }
 
+    setDeletePartModal({ isOpen: false, jobId: null, part: null });
+
     try {
-      await API.post(`/workshop/${jobId}/remove_staged_part/`, { part_id: partId }, { timeout: 2000 });
+      await API.post(`/workshop/${jobId}/remove_staged_part/`, { part_id: part.id }, { timeout: 2000 });
     } catch (err) {
       console.warn('Backend API offline, removed part locally & cloud store:', err);
+    } finally {
+      alert(`🗑️ Spare Part '${part.part_name || part.name}' removed from Job Card successfully.`);
     }
   };
 
@@ -418,13 +405,17 @@ export default function WorkshopPage() {
     const targetJob = jobs.find(j => String(j.id) === String(jobId));
     if (!targetJob) return;
 
-    // Deduct stock for all parts on this bike that have not been deducted yet
-    const partsToConfirm = (targetJob.parts || []).filter(p => p && (!p.is_deducted || p.status !== 'CONFIRMED'));
     const allParts = targetJob.parts || [];
-    const effectivePartsToDeduct = partsToConfirm.length > 0 ? partsToConfirm : allParts;
-
     if (allParts.length === 0) {
       alert('ℹ️ No spare parts added to this bike yet!');
+      return;
+    }
+
+    // Deduct stock strictly for parts that are STAGED or not yet deducted
+    const partsToConfirm = allParts.filter(p => p && (!p.is_deducted || p.status !== 'CONFIRMED'));
+    
+    if (partsToConfirm.length === 0) {
+      alert('ℹ️ All spare parts on this bike are already Confirmed & Deducted from Inventory!');
       return;
     }
 
@@ -446,7 +437,7 @@ export default function WorkshopPage() {
       [...cloudInv, ...localInv].forEach(item => {
         if (item && (item.id || item.part_name || item.name)) {
           const rawName = String(item.part_name || item.name || '').trim();
-          const key = (item.id ? String(item.id) : rawName.toLowerCase()).replace(/[^a-z0-9]/g, '');
+          const key = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
           if (!allInvMap.has(key)) allInvMap.set(key, item);
         }
       });
@@ -454,7 +445,7 @@ export default function WorkshopPage() {
       let invList = Array.from(allInvMap.values());
       let invChanged = false;
 
-      effectivePartsToDeduct.forEach(pToUse => {
+      partsToConfirm.forEach(pToUse => {
         if (!pToUse) return;
         const pId = String(pToUse.inventory_id || pToUse.part_id || pToUse.id || '').replace(/[^a-z0-9]/g, '');
         const pName = String(pToUse.part_name || pToUse.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase().trim();
@@ -499,7 +490,7 @@ export default function WorkshopPage() {
     } catch (err) {
       console.warn('Backend API offline, confirmed parts locally & cloud store:', err);
     } finally {
-      alert('✅ Spare Parts Confirmed & Inventory Stock Deducted Successfully!');
+      alert(`✅ Spare Parts Confirmed!\n\n${partsToConfirm.length} item(s) confirmed and stock deducted from Inventory successfully.`);
     }
   };
 
@@ -1013,9 +1004,9 @@ export default function WorkshopPage() {
                                     {partStatus}
                                   </span>
                                   <button
-                                    onClick={() => handleRemovePart(job.id, p.id)}
+                                    onClick={() => openDeletePartModal(job.id, p)}
                                     className="text-slate-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 transition-colors"
-                                    title="Remove Part"
+                                    title="Remove Part (Password Protected)"
                                   >
                                     <Trash2 className="w-3.5 h-3.5" />
                                   </button>
@@ -1465,13 +1456,22 @@ export default function WorkshopPage() {
         </div>
       )}
 
-      {/* ADMIN PASSWORD DELETE MODAL */}
+      {/* ADMIN PASSWORD DELETE JOB MODAL */}
       <AdminPasswordModal
         isOpen={deleteJobModal.isOpen}
         onClose={() => setDeleteJobModal({ isOpen: false, job: null })}
         onConfirm={handleDeleteJobWithPassword}
         title="Delete Finished Service Job"
         itemDescription={deleteJobModal.job ? `Service Job #${deleteJobModal.job.id} (${deleteJobModal.job.vehicle_number})` : 'job'}
+      />
+
+      {/* ADMIN PASSWORD DELETE SPARE PART MODAL */}
+      <AdminPasswordModal
+        isOpen={deletePartModal.isOpen}
+        onClose={() => setDeletePartModal({ isOpen: false, jobId: null, part: null })}
+        onConfirm={handleDeletePartWithPassword}
+        title="Remove Spare Part from Bike Card"
+        itemDescription={deletePartModal.part ? `Spare Part '${deletePartModal.part.part_name || deletePartModal.part.name}' (Qty: ${deletePartModal.part.quantity || 1})` : 'part'}
       />
 
     </div>

@@ -132,45 +132,10 @@ export async function fetchMasterStore() {
 
       if (Array.isArray(mergedStore.jobs)) localStorage.setItem('workshop_jobs', JSON.stringify(mergedStore.jobs));
       if (Array.isArray(mergedStore.invoices)) localStorage.setItem('local_invoices', JSON.stringify(mergedStore.invoices));
-      if (Array.isArray(mergedStore.inventory)) {
-        const localDeleted = JSON.parse(localStorage.getItem('deleted_ids') || '[]');
-        const cloudDeleted = Array.isArray(mergedStore.deletedIds) ? mergedStore.deletedIds : [];
-        const allDeleted = Array.from(new Set([...localDeleted, ...cloudDeleted]));
-
-        const curLocal = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
-        const recMap = new Map();
-        [...mergedStore.inventory, ...curLocal].forEach(item => {
-          if (item && (item.id || item.part_name || item.name)) {
-            const rawId = String(item.id || `inv_${String(item.part_name || item.name).toLowerCase().replace(/[^a-z0-9]/g, '')}`);
-            const rawName = String(item.part_name || item.name || '').trim();
-            const normName = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
-
-            if (!allDeleted.includes(rawId) && !allDeleted.includes(rawName) && !allDeleted.includes(normName)) {
-              const parsedStock = parseInt(item.current_stock !== undefined ? item.current_stock : 0, 10);
-              const cleanObj = {
-                ...item,
-                id: rawId,
-                part_name: rawName || 'Spare Part',
-                current_stock: parsedStock,
-                min_stock_alert: item.min_stock_alert !== undefined ? parseInt(item.min_stock_alert, 10) : 2,
-                price: parseFloat(item.price || 0)
-              };
-              const existing = recMap.get(rawId);
-              if (!existing) {
-                recMap.set(rawId, cleanObj);
-              } else {
-                if (parsedStock < existing.current_stock) {
-                  recMap.set(rawId, { ...existing, ...cleanObj, current_stock: parsedStock });
-                } else if (cleanObj.price !== existing.price || cleanObj.min_stock_alert !== existing.min_stock_alert) {
-                  recMap.set(rawId, { ...existing, ...cleanObj });
-                }
-              }
-            }
-          }
-        });
-        const finalMerged = Array.from(recMap.values());
-        localStorage.setItem('inventory_items', JSON.stringify(finalMerged));
-        localStorage.setItem('spare_parts', JSON.stringify(finalMerged));
+      if (Array.isArray(mergedStore.recycleBin)) localStorage.setItem('recycle_bin_items', JSON.stringify(mergedStore.recycleBin));
+      if (Array.isArray(mergedStore.deletedIds)) {
+        localStorage.setItem('deleted_item_ids', JSON.stringify(mergedStore.deletedIds));
+        localStorage.setItem('deleted_ids', JSON.stringify(mergedStore.deletedIds));
       }
       if (Array.isArray(mergedStore.khataEntries)) localStorage.setItem('khata_entries', JSON.stringify(mergedStore.khataEntries));
       if (Array.isArray(mergedStore.bookings)) localStorage.setItem('local_bookings', JSON.stringify(mergedStore.bookings));
@@ -180,6 +145,10 @@ export async function fetchMasterStore() {
       }
       if (Array.isArray(mergedStore.adminProfiles)) localStorage.setItem('admin_profiles', JSON.stringify(mergedStore.adminProfiles));
       if (Array.isArray(mergedStore.customers)) localStorage.setItem('local_customers', JSON.stringify(mergedStore.customers));
+      if (Array.isArray(mergedStore.inventory)) {
+        localStorage.setItem('inventory_items', JSON.stringify(mergedStore.inventory));
+        localStorage.setItem('spare_parts', JSON.stringify(mergedStore.inventory));
+      }
     } catch (e) {
       console.warn('Failed to update local master_cloud_cache:', e);
     }
@@ -909,12 +878,38 @@ export async function pushCloudInvoice(invObj) {
   await saveMasterStore({ ...store, invoices: updated });
 }
 
-export async function deleteCloudInvoice(invId) {
+export async function deleteCloudInvoice(invId, invNumber = null) {
   if (!invId) return;
+  const strId = String(invId);
+  const rawId = strId.replace(/^inv_/, '').replace(/^job_/, '');
   const store = await fetchMasterStore();
-  const existing = (store.invoices || []).filter(i => i && typeof i === 'object');
-  const updated = existing.filter(i => i.id !== invId && String(i.id) !== String(invId) && i.invoice_number !== invId);
-  await saveMasterStore({ ...store, invoices: updated });
+  
+  const isTarget = (i) => {
+    if (!i) return false;
+    const curId = String(i.id || '');
+    const curRaw = curId.replace(/^inv_/, '').replace(/^job_/, '');
+    const curNum = String(i.invoice_number || '');
+    return curId === strId || curRaw === rawId || curNum === strId || (invNumber && curNum === String(invNumber));
+  };
+
+  const updatedInvs = (store.invoices || []).filter(i => !isTarget(i));
+  const updatedJobs = (store.jobs || []).filter(j => {
+    const jId = String(j.id || '');
+    const jRaw = jId.replace(/^inv_/, '').replace(/^job_/, '');
+    return jId !== strId && jRaw !== rawId;
+  });
+
+  const idsToMark = [strId, rawId, `inv_${rawId}`, `job_${rawId}`];
+  if (invNumber) idsToMark.push(String(invNumber));
+  const existingDeleted = (store.deletedIds || []).map(d => String(d));
+  const updatedDeleted = Array.from(new Set([...existingDeleted, ...idsToMark]));
+
+  await saveMasterStore({
+    ...store,
+    invoices: updatedInvs,
+    jobs: updatedJobs,
+    deletedIds: updatedDeleted
+  });
 }
 
 export async function fetchCloudCustomers() {

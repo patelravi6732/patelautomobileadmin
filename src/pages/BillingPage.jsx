@@ -45,10 +45,23 @@ export default function BillingPage() {
     }
 
     const deletedIds = await fetchCloudDeletedIds().catch(() => []);
+    const isDeleted = (id) => id && (deletedIds.includes(String(id)) || deletedIds.includes(String(id).replace(/^inv_/, '').replace(/^job_/, '')));
 
-    const localInvs = JSON.parse(localStorage.getItem('local_invoices') || '[]');
     const cloudInvs = await fetchCloudInvoices().catch(() => []);
-    const finishedJobs = (JSON.parse(localStorage.getItem('workshop_jobs') || '[]')).filter(j => j && (j.status === 'FINISHED' || j.status === 'COMPLETED'));
+    const rawLocalInvs = JSON.parse(localStorage.getItem('local_invoices') || '[]');
+    const localInvs = rawLocalInvs.filter(inv => inv && !isDeleted(inv.id) && !isDeleted(inv.invoice_number) && !isDeleted(inv.job_id));
+
+    // Keep local storage strictly clean of any item deleted on other devices
+    if (localInvs.length !== rawLocalInvs.length) {
+      localStorage.setItem('local_invoices', JSON.stringify(localInvs));
+    }
+
+    const rawJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
+    const finishedJobs = rawJobs.filter(j => j && (j.status === 'FINISHED' || j.status === 'COMPLETED') && !isDeleted(j.id) && !isDeleted(j.vehicle_number));
+    if (finishedJobs.length !== rawJobs.filter(j => j && (j.status === 'FINISHED' || j.status === 'COMPLETED')).length) {
+      const cleanJobs = rawJobs.filter(j => !isDeleted(j.id));
+      localStorage.setItem('workshop_jobs', JSON.stringify(cleanJobs));
+    }
 
     const derivedInvs = finishedJobs.map((j, idx) => {
       const partsVal = parseFloat(j.parts_total || 0);
@@ -79,7 +92,7 @@ export default function BillingPage() {
     });
 
     const allMap = new Map();
-    [...localInvs, ...cloudInvs, ...derivedInvs, ...backendInvs].forEach(inv => {
+    [...cloudInvs, ...localInvs, ...derivedInvs, ...backendInvs].forEach(inv => {
       if (inv && typeof inv === 'object') {
         const strId = String(inv.id || '');
         const rawId = strId.replace(/^inv_/, '').replace(/^job_/, '');
@@ -88,7 +101,7 @@ export default function BillingPage() {
         const dateMinute = inv.created_at ? new Date(inv.created_at).toISOString().slice(0, 16) : '';
 
         // Check if deleted
-        if (deletedIds.includes(strId) || deletedIds.includes(rawId) || deletedIds.includes(invNum)) {
+        if (isDeleted(strId) || isDeleted(rawId) || isDeleted(invNum)) {
           return;
         }
         

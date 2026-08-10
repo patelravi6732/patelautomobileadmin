@@ -44,9 +44,6 @@ export const DEFAULT_PRIMARY_ADMIN = {
   created_at: '2026-08-01T00:00:00Z'
 };
 
-let _lastFetchTime = 0;
-let _cachedStoreResult = null;
-
 export async function fetchMasterStore() {
   const getLocalCache = () => {
     try {
@@ -76,10 +73,6 @@ export async function fetchMasterStore() {
   };
 
   const localCache = getLocalCache();
-  if (Date.now() - _lastFetchTime < 2500 && _cachedStoreResult) {
-    return _cachedStoreResult;
-  }
-
   let freshStore = null;
   let activeUrl = getActiveBinUrl();
 
@@ -159,13 +152,9 @@ export async function fetchMasterStore() {
     } catch (e) {
       console.warn('Failed to update local master_cloud_cache:', e);
     }
-    _lastFetchTime = Date.now();
-    _cachedStoreResult = mergedStore;
     return mergedStore;
   }
 
-  _lastFetchTime = Date.now();
-  _cachedStoreResult = localCache;
   return localCache;
 }
 
@@ -322,48 +311,21 @@ export async function fetchCloudJobs() {
 
 export async function pushCloudJob(newJob) {
   if (!newJob || typeof newJob !== 'object') return;
-  const targetId = String(newJob.id || '');
-  const targetVeh = String(newJob.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+  const store = await fetchMasterStore();
+  const existing = (store.jobs || []).filter(j => j && typeof j === 'object');
+  
+  const isMatch = (j) => String(j.id) === String(newJob.id) ||
+    (j.vehicle_number && newJob.vehicle_number && j.vehicle_number === newJob.vehicle_number && (j.created_at === newJob.created_at || j.status === 'IN_PROGRESS'));
 
-  // 1. Update local storage workshop_jobs immediately
-  const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
-  const isMatchLocal = (j) => {
-    if (!j) return false;
-    if (targetId && String(j.id) === targetId) return true;
-    const jVeh = String(j.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-    return (targetVeh && jVeh && targetVeh === jVeh && j.status !== 'FINISHED' && j.status !== 'CANCELLED');
-  };
-
-  let updatedLocal = localJobs.map(j => isMatchLocal(j) ? { ...j, ...newJob } : j);
-  if (!updatedLocal.some(isMatchLocal)) {
-    updatedLocal.unshift(newJob);
+  const exists = existing.some(isMatch);
+  let updated = existing;
+  if (!exists) {
+    updated = [newJob, ...existing];
+  } else {
+    updated = existing.map(j => isMatch(j) ? { ...j, ...newJob } : j);
   }
-  localStorage.setItem('workshop_jobs', JSON.stringify(updatedLocal));
-
-  // 2. Update cloud store
-  try {
-    const store = await fetchMasterStore();
-    const existing = (store.jobs || []).filter(j => j && typeof j === 'object');
-    
-    const isMatch = (j) => {
-      if (!j) return false;
-      if (targetId && String(j.id) === targetId) return true;
-      const jVeh = String(j.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-      return (targetVeh && jVeh && targetVeh === jVeh && j.status !== 'FINISHED' && j.status !== 'CANCELLED');
-    };
-
-    const exists = existing.some(isMatch);
-    let updated = existing;
-    if (!exists) {
-      updated = [newJob, ...existing];
-    } else {
-      updated = existing.map(j => isMatch(j) ? { ...j, ...newJob } : j);
-    }
-    
-    await saveMasterStore({ ...store, jobs: updated });
-  } catch (e) {
-    console.warn('pushCloudJob notice:', e);
-  }
+  
+  await saveMasterStore({ ...store, jobs: updated });
 }
 
 export async function updateCloudJobStatus(jobId, newStatus) {

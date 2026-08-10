@@ -16,13 +16,7 @@ export default function WorkshopPage() {
   const [onlineBookings, setOnlineBookings] = useState(() => {
     try { return JSON.parse(localStorage.getItem('workshop_online_bookings') || '[]'); } catch (e) { return []; }
   });
-  const [inventory, setInventory] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
-    } catch {
-      return [];
-    }
-  });
+  const [inventory, setInventory] = useState([]);
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState('ACTIVE'); // ACTIVE or FINISHED
   const [mechanicOptions, setMechanicOptions] = useState(['Unassigned', 'Amitbhai Mechanic', 'Vishalbhai Mechanic', 'Manojbhai Mechanic']);
@@ -32,11 +26,6 @@ export default function WorkshopPage() {
   const [showPartModal, setShowPartModal] = useState(false);
   const [showFinishModal, setShowFinishModal] = useState(false);
   const [showAssignModal, setShowAssignModal] = useState(false);
-
-  // Custom Part Mode in Add Part Modal
-  const [customPartMode, setCustomPartMode] = useState(false);
-  const [customPartName, setCustomPartName] = useState('');
-  const [customPartPrice, setCustomPartPrice] = useState('');
 
   // Admin Password Delete Modals
   const [deleteJobModal, setDeleteJobModal] = useState({ isOpen: false, job: null });
@@ -114,67 +103,28 @@ export default function WorkshopPage() {
     const localBookings = JSON.parse(localStorage.getItem('local_bookings') || '[]');
     const cachedBookings = JSON.parse(localStorage.getItem('workshop_online_bookings') || '[]');
     
-    // 1. Process Workshop Jobs with intelligent Vehicle Matching & Parts Preservation
+    // 1. Process Workshop Jobs (localJobs first so deleted parts or edited jobs never revert)
     const allMap = new Map();
-    const activeVehMap = new Map(); // normVeh -> uniqueKey
-
     [...localJobs, ...cloudJobs, ...backendJobs].forEach(j => {
-      if (j && typeof j === 'object' && (j.id || j.vehicle_number)) {
-        const uniqueKey = String(j.id || `job_${j.vehicle_number}`);
-        const normVeh = String(j.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-        
+      if (j && typeof j === 'object' && j.id) {
+        const uniqueKey = String(j.id);
         if (!deletedIds.includes(uniqueKey) && !deletedIds.includes(String(j.id))) {
-          const rawParts = Array.isArray(j.parts) ? j.parts : [];
-          const rawPartsTotal = rawParts.reduce((acc, p) => acc + parseFloat(p.staged_total || (parseFloat(p.price || p.unit_price || 0) * parseInt(p.quantity || 1, 10))), 0);
-          const rawLabour = parseFloat(j.labour_charge !== undefined ? j.labour_charge : 100);
-
           const sanitizedJob = {
             ...j,
-            id: uniqueKey,
-            parts: rawParts,
-            parts_total: rawPartsTotal || parseFloat(j.parts_total || 0),
-            labour_charge: rawLabour,
-            live_total: (rawPartsTotal || parseFloat(j.parts_total || 0)) + rawLabour,
+            parts: Array.isArray(j.parts) ? j.parts : [],
+            parts_total: parseFloat(j.parts_total || 0),
+            labour_charge: parseFloat(j.labour_charge || 0),
+            live_total: parseFloat(j.live_total || j.grand_total || (parseFloat(j.parts_total || 0) + parseFloat(j.labour_charge || 0))),
             status: (j.status === 'FINISHED' || j.status === 'COMPLETED') ? 'FINISHED' : (j.status || 'IN_PROGRESS')
           };
-
-          const isActive = sanitizedJob.status !== 'FINISHED' && sanitizedJob.status !== 'CANCELLED';
-
-          if (isActive && normVeh && activeVehMap.has(normVeh)) {
-            const existingKey = activeVehMap.get(normVeh);
-            const existing = allMap.get(existingKey);
-            if (existing) {
-              // Merge existing and new, always preserving added parts!
-              const bestParts = (existing.parts && existing.parts.length > 0) ? existing.parts : sanitizedJob.parts;
-              const bestPartsTotal = bestParts.reduce((acc, p) => acc + parseFloat(p.staged_total || (parseFloat(p.price || p.unit_price || 0) * parseInt(p.quantity || 1, 10))), 0);
-              const bestLabour = existing.labour_charge !== undefined ? existing.labour_charge : sanitizedJob.labour_charge;
-              
-              const merged = {
-                ...sanitizedJob,
-                ...existing,
-                id: existing.id || sanitizedJob.id,
-                parts: bestParts,
-                parts_total: bestPartsTotal,
-                labour_charge: bestLabour,
-                live_total: bestPartsTotal + bestLabour,
-                assigned_mechanic: (existing.assigned_mechanic && existing.assigned_mechanic !== 'Unassigned') ? existing.assigned_mechanic : (sanitizedJob.assigned_mechanic || 'Unassigned')
-              };
-              allMap.set(existingKey, merged);
-              return;
-            }
-          }
-
           if (!allMap.has(uniqueKey)) {
             allMap.set(uniqueKey, sanitizedJob);
-            if (isActive && normVeh) {
-              activeVehMap.set(normVeh, uniqueKey);
-            }
           }
         }
       }
     });
 
-    // 2. Process Persistent Bookings Memory
+    // 2. Process Persistent Bookings Memory (Prevents network flickering)
     const allBookingsMap = new Map();
     [...cloudBookings, ...localBookings, ...cachedBookings].forEach(b => {
       if (b && typeof b === 'object' && (b.id || b.vehicle_number)) {
@@ -207,15 +157,18 @@ export default function WorkshopPage() {
           return;
         }
 
-        // 3. Skip if an active job for this exact vehicle already exists on workshop floor (No duplicate/reset!)
-        if (normVeh && activeVehMap.has(normVeh)) {
-          return;
-        }
-        if (allMap.has(bookingJobId)) {
+        // 3. Skip if an active job for this exact vehicle already exists on workshop floor (No duplicates!)
+        const alreadyHasActiveJob = Array.from(allMap.values()).some(j => {
+          if (!j || j.status === 'FINISHED' || j.status === 'COMPLETED' || j.status === 'CANCELLED') return false;
+          const jVeh = String(j.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+          return normVeh && jVeh && normVeh === jVeh;
+        });
+
+        if (alreadyHasActiveJob || allMap.has(bookingJobId)) {
           return;
         }
 
-        const newBookingJob = {
+        allMap.set(bookingJobId, {
           id: bookingJobId,
           booking_id: b.id,
           customer_name: b.customer_name || 'Online Customer',
@@ -231,12 +184,7 @@ export default function WorkshopPage() {
           status: b.status === 'ACCEPTED' ? 'IN_PROGRESS' : 'PENDING_BOOKING',
           is_online_booking: true,
           created_at: b.created_at || new Date().toISOString()
-        };
-
-        allMap.set(bookingJobId, newBookingJob);
-        if (normVeh) {
-          activeVehMap.set(normVeh, bookingJobId);
-        }
+        });
       }
     });
 
@@ -259,13 +207,13 @@ export default function WorkshopPage() {
         const dStr = String(d).toLowerCase().trim();
         const dNorm = dStr.replace(/[^a-z0-9]/g, '');
         return (itId && dStr && (itId === dStr || itId.replace(/[^a-z0-9]/g, '') === dNorm)) ||
-               (itName && dStr && (itName === dStr || itNorm === dNorm));
+               (itName && dStr && (itName === dStr || itName.includes(dStr) || dStr.includes(itName))) ||
+               (itNorm && dNorm && (itNorm === dNorm || itNorm.includes(dNorm) || dNorm.includes(itNorm)));
       });
     };
 
     const allInvMap = new Map();
-    const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
-
+    let localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
     [...localInv, ...cloudInv, ...invData].forEach(item => {
       if (item && typeof item === 'object' && (item.id || item.part_name || item.name)) {
         if (!isItemDeleted(item)) {
@@ -309,7 +257,7 @@ export default function WorkshopPage() {
     fetchData(true);
     const interval = setInterval(() => {
       fetchData(false);
-    }, 6000);
+    }, 3000);
     return () => clearInterval(interval);
   }, []);
 
@@ -364,10 +312,7 @@ export default function WorkshopPage() {
   const openAddPartModal = (job) => {
     setSelectedJob(job);
     setPartSearchQuery('');
-    setCustomPartMode(inventory.length === 0);
-    setCustomPartName('');
-    setCustomPartPrice('');
-    const firstItem = (inventory && inventory.length > 0) ? inventory[0] : null;
+    const firstItem = inventory && inventory.length > 0 ? inventory[0] : null;
     const firstKey = firstItem ? String(firstItem.id || firstItem.part_name || firstItem.name) : '';
     setSelectedPartId(firstKey);
     setPartQty(1);
@@ -381,54 +326,30 @@ export default function WorkshopPage() {
       return;
     }
 
-    let partName = '';
-    let unitPrice = 0;
-    let invId = null;
-    let isCatalogItem = false;
-    let partObj = null;
+    const targetKey = String(selectedPartId || '').trim();
+    const targetNorm = targetKey.toLowerCase().replace(/[^a-z0-9]/g, '');
 
-    if (customPartMode || !selectedPartId) {
-      partName = customPartName.trim();
-      unitPrice = parseFloat(customPartPrice) || 0;
-      if (!partName) {
-        alert('⚠️ Please enter a spare part name.');
-        return;
-      }
-      if (unitPrice <= 0) {
-        alert('⚠️ Please enter a valid part price (₹) greater than 0.');
-        return;
-      }
-      invId = `inv_custom_${Date.now()}`;
-    } else {
-      const targetKey = String(selectedPartId || '').trim();
-      const targetNorm = targetKey.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const partObj = (inventory || []).find(p => {
+      if (!p) return false;
+      const pKey = String(p.id || p.part_name || p.name || '').trim();
+      const pNorm = String(p.part_name || p.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      return (targetKey && pKey === targetKey) || (targetNorm && pNorm && targetNorm === pNorm);
+    }) || (inventory && inventory.length > 0 ? inventory[0] : null);
 
-      partObj = (inventory || []).find(p => {
-        if (!p) return false;
-        const pKey = String(p.id || p.part_name || p.name || '').trim();
-        const pNorm = String(p.part_name || p.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-        return (targetKey && pKey === targetKey) || (targetNorm && pNorm && targetNorm === pNorm);
-      });
-
-      if (!partObj) {
-        alert('⚠️ Please select a valid spare part from the list or switch to Custom Part.');
-        return;
-      }
-
-      partName = partObj.part_name || partObj.name || 'Spare Part';
-      unitPrice = parseFloat(partObj.price || 0);
-      invId = partObj.id || `inv_${targetNorm}`;
-      isCatalogItem = true;
+    if (!partObj) {
+      alert('⚠️ Please select a valid spare part from the list.');
+      return;
     }
 
+    const unitPrice = parseFloat(partObj.price || 0);
     const qty = parseInt(partQty || 1, 10);
     const stagedTotal = unitPrice * qty;
 
     const newPartEntry = {
       id: Date.now(),
-      inventory_id: invId,
-      part_id: invId,
-      part_name: partName,
+      inventory_id: partObj.id || `inv_${targetNorm}`,
+      part_id: partObj.id || `inv_${targetNorm}`,
+      part_name: partObj.part_name || partObj.name,
       price: unitPrice,
       unit_price: unitPrice,
       quantity: qty,
@@ -451,55 +372,45 @@ export default function WorkshopPage() {
       live_total: newLiveTotal
     };
 
-    const targetVehNorm = String(selectedJob.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-    const isMatchingTarget = (j) => {
-      if (!j) return false;
-      if (String(j.id) === String(selectedJob.id)) return true;
-      const jVehNorm = String(j.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-      return (targetVehNorm && jVehNorm && targetVehNorm === jVehNorm && j.status !== 'FINISHED' && j.status !== 'CANCELLED');
-    };
-
-    setJobs(prev => prev.map(j => isMatchingTarget(j) ? updatedJob : j));
+    setJobs(prev => prev.map(j => (String(j.id) === String(selectedJob.id) ? updatedJob : j)));
     
-    // 2. Deduct Inventory stock IMMEDIATELY if catalog item
+    // 1. Deduct Inventory stock IMMEDIATELY (10 -> 9)
+    const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+    const baseInv = inventory && inventory.length > 0 ? inventory : (localInv.length > 0 ? localInv : [partObj]);
+    const partNormName = String(partObj.part_name || partObj.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
     let updatedTargetItem = null;
-    if (isCatalogItem && partObj) {
-      const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
-      const baseInv = inventory && inventory.length > 0 ? inventory : localInv;
-      const partNormName = String(partName).toLowerCase().replace(/[^a-z0-9]/g, '');
+    const updatedInv = baseInv.map(invItem => {
+      if (!invItem) return invItem;
+      const curNormName = String(invItem.part_name || invItem.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const curId = String(invItem.id || '');
+      const isMatch = (partNormName && curNormName && (partNormName === curNormName || partNormName.includes(curNormName) || curNormName.includes(partNormName))) || (partObj.id && curId && String(partObj.id) === curId);
 
-      const updatedInv = baseInv.map(invItem => {
-        if (!invItem) return invItem;
-        const curNormName = String(invItem.part_name || invItem.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-        const curId = String(invItem.id || '');
-        const isMatch = (partNormName && curNormName && (partNormName === curNormName || partNormName.includes(curNormName) || curNormName.includes(partNormName))) || (partObj.id && curId && String(partObj.id) === curId);
+      if (isMatch) {
+        const currentQty = parseInt(invItem.current_stock !== undefined ? invItem.current_stock : 10, 10);
+        const newQty = Math.max(0, currentQty - qty);
+        const updatedObj = {
+          ...invItem,
+          current_stock: newQty,
+          stock_quantity: newQty,
+          quantity: newQty
+        };
+        updatedTargetItem = updatedObj;
+        return updatedObj;
+      }
+      return invItem;
+    });
 
-        if (isMatch) {
-          const currentQty = parseInt(invItem.current_stock !== undefined ? invItem.current_stock : 10, 10);
-          const newQty = Math.max(0, currentQty - qty);
-          const updatedObj = {
-            ...invItem,
-            current_stock: newQty,
-            stock_quantity: newQty,
-            quantity: newQty
-          };
-          updatedTargetItem = updatedObj;
-          return updatedObj;
-        }
-        return invItem;
-      });
+    localStorage.setItem('inventory_items', JSON.stringify(updatedInv));
+    localStorage.setItem('spare_parts', JSON.stringify(updatedInv));
+    setInventory(updatedInv);
+    try { window.dispatchEvent(new Event('storage')); } catch (e) {}
 
-      localStorage.setItem('inventory_items', JSON.stringify(updatedInv));
-      localStorage.setItem('spare_parts', JSON.stringify(updatedInv));
-      setInventory(updatedInv);
-      try { window.dispatchEvent(new Event('storage')); } catch (e) {}
-    }
-
-    // 3. Save to local storage and push to cloud
+    // 2. Update Job parts
     const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
-    let updatedLocal = localJobs.map(j => isMatchingTarget(j) ? updatedJob : j);
-    if (!updatedLocal.some(isMatchingTarget)) {
-      updatedLocal.unshift(updatedJob);
+    const updatedLocal = localJobs.map(j => (String(j.id) === String(selectedJob.id) ? updatedJob : j));
+    if (!updatedLocal.some(j => String(j.id) === String(selectedJob.id))) {
+      updatedLocal.push(updatedJob);
     }
     localStorage.setItem('workshop_jobs', JSON.stringify(updatedLocal));
     pushCloudJob(updatedJob).catch(console.warn);
@@ -511,16 +422,16 @@ export default function WorkshopPage() {
     setShowPartModal(false);
 
     try {
-      if (partObj && partObj.id) {
-        await API.post(`/workshop/${selectedJob.id}/add_staged_part/`, {
-          inventory_id: partObj.id,
-          quantity: qty
-        }, { timeout: 2000 });
-      }
+      await API.post(`/workshop/${selectedJob.id}/add_staged_part/`, {
+        inventory_id: partObj.id,
+        quantity: qty
+      }, { timeout: 2000 });
     } catch (err) {
       console.warn('Backend API notice:', err);
     } finally {
-      alert(`✅ Part '${partName}' Added!\n\n${qty}x @ ₹${unitPrice} = ₹${stagedTotal}\nCurrent Live Bill: ₹${newLiveTotal.toFixed(2)}`);
+      const prevStock = parseInt(partObj.current_stock !== undefined ? partObj.current_stock : 10, 10);
+      const afterStock = updatedTargetItem ? updatedTargetItem.current_stock : Math.max(0, prevStock - qty);
+      alert(`✅ Part '${partObj.part_name || partObj.name}' Added!\n\nStock Deducted: ${prevStock} ➔ ${afterStock} Units in Inventory.`);
     }
   };
 
@@ -1415,15 +1326,13 @@ export default function WorkshopPage() {
       {/* ADD SPARE PART MODAL */}
       {showPartModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 sm:p-7 max-w-lg w-full space-y-4 shadow-2xl overflow-hidden flex flex-col max-h-[88vh]">
+          <div className="bg-white rounded-3xl p-6 sm:p-7 max-w-lg w-full space-y-4 shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <div>
                 <h2 className="text-lg font-bold text-slate-900 font-poppins flex items-center gap-2">
                   <Package className="w-5 h-5 text-blue-600" /> Add Spare Part
                 </h2>
-                <p className="text-xs text-slate-500">
-                  {selectedJob?.vehicle_number} • {selectedJob?.customer_name}
-                </p>
+                <p className="text-xs text-slate-500">Adds part to job card and deducts stock from Inventory</p>
               </div>
               <button
                 onClick={() => setShowPartModal(false)}
@@ -1433,142 +1342,76 @@ export default function WorkshopPage() {
               </button>
             </div>
 
-            {/* TAB SELECTOR: FROM CATALOG OR CUSTOM PART */}
-            <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-2xl">
-              <button
-                type="button"
-                onClick={() => setCustomPartMode(false)}
-                className={`py-2 text-xs font-bold rounded-xl transition-all ${
-                  !customPartMode
-                    ? 'bg-white text-blue-700 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                📋 From Catalog ({inventory.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setCustomPartMode(true)}
-                className={`py-2 text-xs font-bold rounded-xl transition-all ${
-                  customPartMode
-                    ? 'bg-blue-600 text-white shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                ✏️ Custom Part / Service
-              </button>
-            </div>
-
             <form onSubmit={handleAddPart} className="space-y-4 flex-1 flex flex-col min-h-0">
-              {customPartMode ? (
-                /* CUSTOM PART ENTRY INPUTS */
-                <div className="space-y-4 py-2">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                      Spare Part / Service Name *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      autoFocus
-                      placeholder="e.g. Fork Oil Seal Pair, Carburetor Clean..."
-                      value={customPartName}
-                      onChange={(e) => setCustomPartName(e.target.value)}
-                      className="w-full px-4 py-3 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-xs font-bold text-slate-900 bg-slate-50"
-                    />
-                  </div>
+              {/* SEARCH BAR */}
+              <div className="relative shrink-0">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input 
+                  type="text"
+                  autoFocus
+                  placeholder="Search spare part by name, brand, or model..."
+                  value={partSearchQuery}
+                  onChange={(e) => setPartSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-3 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-xs bg-slate-50 font-medium text-slate-900 placeholder:text-slate-400"
+                />
+              </div>
 
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                      Unit Price (₹) *
-                    </label>
-                    <input
-                      type="number"
-                      required
-                      min="1"
-                      step="10"
-                      placeholder="e.g. 250"
-                      value={customPartPrice}
-                      onChange={(e) => setCustomPartPrice(e.target.value)}
-                      className="w-full px-4 py-3 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-sm font-extrabold text-slate-900 bg-slate-50"
-                    />
-                  </div>
-                </div>
-              ) : (
-                /* CATALOG SELECTION LIST */
-                <>
-                  {/* SEARCH BAR */}
-                  <div className="relative shrink-0">
-                    <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                    <input 
-                      type="text"
-                      autoFocus
-                      placeholder="Search spare part by name, brand, or model..."
-                      value={partSearchQuery}
-                      onChange={(e) => setPartSearchQuery(e.target.value)}
-                      className="w-full pl-10 pr-4 py-3 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-xs bg-slate-50 font-medium text-slate-900 placeholder:text-slate-400"
-                    />
-                  </div>
+              {/* INVENTORY LIST BOX */}
+              <div className="flex-1 overflow-y-auto space-y-2 pr-1 border border-slate-100 rounded-2xl p-2 bg-slate-50/50 max-h-60 min-h-40">
+                {(() => {
+                  const filtered = inventory.filter(item => {
+                    if (!item) return false;
+                    const name = (item.part_name || item.name || '').toLowerCase();
+                    const query = (partSearchQuery || '').toLowerCase();
+                    return name.includes(query);
+                  });
 
-                  {/* INVENTORY LIST BOX */}
-                  <div className="flex-1 overflow-y-auto space-y-2 pr-1 border border-slate-100 rounded-2xl p-2 bg-slate-50/50 max-h-56 min-h-36">
-                    {(() => {
-                      const curInv = (inventory && inventory.length > 0) ? inventory : DEFAULT_SPARE_PARTS;
-                      const filtered = curInv.filter(item => {
-                        if (!item) return false;
-                        const name = (item.part_name || item.name || '').toLowerCase();
-                        const query = (partSearchQuery || '').toLowerCase();
-                        return name.includes(query);
-                      });
+                  if (filtered.length === 0) {
+                    return (
+                      <div className="p-8 text-center text-xs text-slate-400 font-medium">
+                        No spare parts found matching "{partSearchQuery}"
+                      </div>
+                    );
+                  }
 
-                      if (filtered.length === 0) {
-                        return (
-                          <div className="p-6 text-center text-xs text-slate-400 font-medium">
-                            No parts matching "{partSearchQuery}". You can click <strong>"✏️ Custom Part"</strong> above to add it directly!
+                  return filtered.map((item) => {
+                    const itemKey = String(item.id || item.part_name || item.name || '');
+                    const itemNorm = String(item.part_name || item.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                    const selectedNorm = String(selectedPartId || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                    const isSelected = String(selectedPartId) === itemKey || (selectedNorm && itemNorm && selectedNorm === itemNorm);
+                    const rawName = item.part_name || item.name || 'Spare Part';
+                    const cleanItemName = rawName.split('#')[0].trim();
+                    return (
+                      <div
+                        key={itemKey || Math.random()}
+                        onClick={() => setSelectedPartId(itemKey)}
+                        className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between text-xs ${
+                          isSelected 
+                            ? 'bg-blue-50/90 border-blue-500 shadow-xs text-blue-900 font-bold' 
+                            : 'bg-white border-slate-200/80 hover:border-slate-300 text-slate-700'
+                        }`}
+                      >
+                        <div className="space-y-0.5 pr-2 min-w-0">
+                          <div className="font-bold text-slate-900 truncate text-xs">{cleanItemName}</div>
+                          <div className="text-[11px] text-slate-500 flex items-center gap-2">
+                            <span>Stock: <strong className="text-slate-700">{item.current_stock !== undefined ? item.current_stock : 10}</strong></span>
+                            <span>•</span>
+                            <span className="text-emerald-600 font-bold">₹{formatMoney(item.price)}</span>
                           </div>
-                        );
-                      }
-
-                      return filtered.map((item) => {
-                        const itemKey = String(item.id || item.part_name || item.name || '');
-                        const itemNorm = String(item.part_name || item.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-                        const selectedNorm = String(selectedPartId || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-                        const isSelected = String(selectedPartId) === itemKey || (selectedNorm && itemNorm && selectedNorm === itemNorm);
-                        const rawName = item.part_name || item.name || 'Spare Part';
-                        const cleanItemName = rawName.split('#')[0].trim();
-                        return (
-                          <div
-                            key={itemKey || Math.random()}
-                            onClick={() => setSelectedPartId(itemKey)}
-                            className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between text-xs ${
-                              isSelected 
-                                ? 'bg-blue-50/90 border-blue-500 shadow-xs text-blue-900 font-bold' 
-                                : 'bg-white border-slate-200/80 hover:border-slate-300 text-slate-700'
-                            }`}
-                          >
-                            <div className="space-y-0.5 pr-2 min-w-0">
-                              <div className="font-bold text-slate-900 truncate text-xs">{cleanItemName}</div>
-                              <div className="text-[11px] text-slate-500 flex items-center gap-2">
-                                <span>Stock: <strong className="text-slate-700">{item.current_stock !== undefined ? item.current_stock : 10}</strong></span>
-                                <span>•</span>
-                                <span className="text-emerald-600 font-bold">₹{formatMoney(item.price)}</span>
-                              </div>
-                            </div>
-                            <div className="shrink-0 flex items-center gap-2">
-                              <span className="font-extrabold text-sm text-slate-900">₹{formatMoney(item.price)}</span>
-                              {isSelected && (
-                                <span className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px] font-bold shadow-xs">
-                                  ✓
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      });
-                    })()}
-                  </div>
-                </>
-              )}
+                        </div>
+                        <div className="shrink-0 flex items-center gap-2">
+                          <span className="font-extrabold text-sm text-slate-900">₹{formatMoney(item.price)}</span>
+                          {isSelected && (
+                            <span className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px] font-bold shadow-xs">
+                              ✓
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
 
               {/* QUANTITY STEPPER */}
               <div className="flex items-center justify-between shrink-0 bg-slate-50 p-3 rounded-2xl border border-slate-100">

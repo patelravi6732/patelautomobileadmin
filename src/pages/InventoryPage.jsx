@@ -5,13 +5,7 @@ import { fetchCloudInventory, pushCloudInventoryItem, deleteCloudInventoryItem, 
 import AdminPasswordModal from '../components/AdminPasswordModal';
 
 export default function InventoryPage() {
-  const [items, setItems] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
-    } catch {
-      return [];
-    }
-  });
+  const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('ALL');
@@ -122,7 +116,7 @@ export default function InventoryPage() {
     fetchInventory(true);
     const interval = setInterval(() => {
       fetchInventory(false);
-    }, 6000);
+    }, 3000);
     return () => clearInterval(interval);
   }, []);
 

@@ -269,11 +269,12 @@ export default function WorkshopPage() {
       unit_price: unitPrice,
       quantity: qty,
       staged_total: stagedTotal,
-      status: 'STAGED',
-      is_confirmed: false
+      status: 'CONFIRMED',
+      is_confirmed: true,
+      is_deducted: true
     };
 
-    // Keep Inventory stock intact until user clicks "Confirm Parts"
+    // 1. Update Job parts
     const existingParts = Array.isArray(selectedJob.parts) ? selectedJob.parts : [];
     const updatedParts = [...existingParts, newPartEntry];
     const newPartsTotal = updatedParts.reduce((acc, p) => acc + parseFloat(p.staged_total || (parseFloat(p.price || p.unit_price || 0) * parseInt(p.quantity || 1, 10))), 0);
@@ -296,6 +297,41 @@ export default function WorkshopPage() {
     localStorage.setItem('workshop_jobs', JSON.stringify(updatedLocal));
     pushCloudJob(updatedJob).catch(console.warn);
 
+    // 2. Deduct Inventory stock IMMEDIATELY in real-time
+    try {
+      const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+      const targetId = String(partObj.id || '');
+      const targetName = String(partObj.part_name || partObj.name || '').toLowerCase().trim();
+
+      const updatedInv = localInv.map(invItem => {
+        if (!invItem) return invItem;
+        const curId = String(invItem.id || '');
+        const curName = String(invItem.part_name || invItem.name || '').toLowerCase().trim();
+        const isMatch = (targetId && curId && targetId === curId) || (targetName && curName && targetName === curName);
+
+        if (isMatch) {
+          const currentQty = parseInt(invItem.current_stock !== undefined ? invItem.current_stock : (invItem.stock_quantity !== undefined ? invItem.stock_quantity : (invItem.quantity !== undefined ? invItem.quantity : 0)), 10);
+          const newQty = Math.max(0, currentQty - qty);
+          const updatedItem = {
+            ...invItem,
+            current_stock: newQty,
+            stock_quantity: newQty,
+            quantity: newQty
+          };
+          pushCloudInventoryItem(updatedItem).catch(console.warn);
+          return updatedItem;
+        }
+        return invItem;
+      });
+
+      localStorage.setItem('inventory_items', JSON.stringify(updatedInv));
+      localStorage.setItem('spare_parts', JSON.stringify(updatedInv));
+      setInventory(updatedInv);
+      try { window.dispatchEvent(new Event('storage')); } catch (e) {}
+    } catch (err) {
+      console.warn('Real-time stock deduction notice:', err);
+    }
+
     setShowPartModal(false);
 
     try {
@@ -304,9 +340,9 @@ export default function WorkshopPage() {
         quantity: partQty
       }, { timeout: 2000 });
     } catch (err) {
-      console.warn('Backend API offline, added staged part locally & cloud store:', err);
+      console.warn('Backend API offline, added part locally & cloud store:', err);
     } finally {
-      alert(`Part '${partObj.part_name || partObj.name}' added to Job Card (Staged)! Click 'Confirm Parts' on the bike card to deduct stock from Inventory.`);
+      alert(`✅ Part '${partObj.part_name || partObj.name}' added to Bike & ${qty} Unit(s) stock deducted from Inventory!`);
     }
   };
 
@@ -314,6 +350,7 @@ export default function WorkshopPage() {
     const targetJob = jobs.find(j => String(j.id) === String(jobId));
     if (!targetJob) return;
 
+    const removedPart = (targetJob.parts || []).find(p => String(p.id) === String(partId));
     const updatedParts = (targetJob.parts || []).filter(p => String(p.id) !== String(partId));
     const newPartsTotal = updatedParts.reduce((acc, p) => acc + parseFloat(p.staged_total || (parseFloat(p.price || p.unit_price || 0) * parseInt(p.quantity || 1, 10))), 0);
     const newLiveTotal = newPartsTotal + parseFloat(targetJob.labour_charge || 0);
@@ -331,6 +368,44 @@ export default function WorkshopPage() {
     const updatedLocal = localJobs.map(j => (String(j.id) === String(jobId) ? updatedJob : j));
     localStorage.setItem('workshop_jobs', JSON.stringify(updatedLocal));
     pushCloudJob(updatedJob).catch(console.warn);
+
+    // If removed part was deducted, RESTORE stock back to inventory in real-time
+    if (removedPart) {
+      try {
+        const qtyToRestore = parseInt(removedPart.quantity || 1, 10);
+        const pId = String(removedPart.inventory_id || removedPart.part_id || removedPart.id || '');
+        const pName = String(removedPart.part_name || removedPart.name || '').toLowerCase().trim();
+
+        const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+        const restoredInv = localInv.map(invItem => {
+          if (!invItem) return invItem;
+          const curId = String(invItem.id || '');
+          const curName = String(invItem.part_name || invItem.name || '').toLowerCase().trim();
+          const isMatch = (pId && curId && pId === curId) || (pName && curName && pName === curName);
+
+          if (isMatch) {
+            const currentQty = parseInt(invItem.current_stock !== undefined ? invItem.current_stock : (invItem.stock_quantity !== undefined ? invItem.stock_quantity : (invItem.quantity !== undefined ? invItem.quantity : 0)), 10);
+            const newQty = currentQty + qtyToRestore;
+            const updatedItem = {
+              ...invItem,
+              current_stock: newQty,
+              stock_quantity: newQty,
+              quantity: newQty
+            };
+            pushCloudInventoryItem(updatedItem).catch(console.warn);
+            return updatedItem;
+          }
+          return invItem;
+        });
+
+        localStorage.setItem('inventory_items', JSON.stringify(restoredInv));
+        localStorage.setItem('spare_parts', JSON.stringify(restoredInv));
+        setInventory(restoredInv);
+        try { window.dispatchEvent(new Event('storage')); } catch (e) {}
+      } catch (err) {
+        console.warn('Real-time stock restoration notice:', err);
+      }
+    }
 
     try {
       await API.post(`/workshop/${jobId}/remove_staged_part/`, { part_id: partId }, { timeout: 2000 });

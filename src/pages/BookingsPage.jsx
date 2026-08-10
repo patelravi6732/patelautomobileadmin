@@ -184,8 +184,12 @@ export default function BookingsPage() {
   const filteredBookings = useMemo(() => {
     return bookings.filter((booking) => {
       if (!booking) return false;
-      if (selectedStatus && booking.status !== selectedStatus) {
-        return false;
+      if (selectedStatus) {
+        if (selectedStatus === 'ACCEPTED') {
+          if (booking.status !== 'ACCEPTED' && booking.status !== 'CONVERTED') return false;
+        } else if (booking.status !== selectedStatus) {
+          return false;
+        }
       }
       if (filterMode === 'ALL') {
         return true;
@@ -428,11 +432,16 @@ export default function BookingsPage() {
         </button>
         {[
           { status: 'COMPLETED', label: 'Completed', active: 'bg-emerald-600 text-white border-emerald-600 shadow-emerald-200', idle: 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' },
-          { status: 'ACCEPTED', label: 'Accepted', active: 'bg-blue-600 text-white border-blue-600 shadow-blue-200', idle: 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100' },
+          { status: 'ACCEPTED', label: 'Accepted / In-Workshop', active: 'bg-blue-600 text-white border-blue-600 shadow-blue-200', idle: 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100' },
           { status: 'PENDING', label: 'Pending', active: 'bg-amber-500 text-white border-amber-500 shadow-amber-200', idle: 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100' },
           { status: 'REJECTED', label: 'Rejected', active: 'bg-rose-600 text-white border-rose-600 shadow-rose-200', idle: 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100' },
         ].map((filter) => {
-          const count = bookings.filter((booking) => booking.status === filter.status).length;
+          const count = bookings.filter((booking) => {
+            if (filter.status === 'ACCEPTED') {
+              return booking.status === 'ACCEPTED' || booking.status === 'CONVERTED';
+            }
+            return booking.status === filter.status;
+          }).length;
           const isActive = selectedStatus === filter.status;
           return (
             <button

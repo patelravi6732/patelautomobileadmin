@@ -987,12 +987,12 @@ export default function KhataBookPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center bg-slate-50 p-4 rounded-xl border border-slate-200">
                     {parseFloat(statementCustomer?.pending_amount || statementCustomer?.balance || 0) > 0 && (() => {
                       const pendingAmtStr = (parseFloat(statementCustomer?.pending_amount !== undefined ? statementCustomer.pending_amount : (statementCustomer?.balance || 0)) || 0).toFixed(2);
-                      const upiId = garageInfo?.upi_id || 'pritpatel9397@oksbi';
+                      const upiId = garageInfo?.upi_id || '';
                       const payeeName = garageInfo?.upi_payee_name || garageInfo?.garage_name || 'Patel Automobiles';
                       const rawCustId = String(statementCustomer?.id || statementCustomer?.vehicle_number || 'bill').slice(-8);
-                      const fixedUpiUri = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(payeeName)}&am=${encodeURIComponent(pendingAmtStr)}&cu=INR&tn=${encodeURIComponent(`Dues Payment ${rawCustId}`)}`;
-                      const dynamicQrImage = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(fixedUpiUri)}`;
-                      const qrSrc = garageInfo?.upi_qr || garageInfo?.upi_qr_code || dynamicQrImage || '/upi_qr.jpg';
+                      const fixedUpiUri = upiId ? `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(payeeName)}&am=${encodeURIComponent(pendingAmtStr)}&cu=INR&tn=${encodeURIComponent(`Dues Payment ${rawCustId}`)}` : '';
+                      const dynamicQrImage = upiId ? `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(fixedUpiUri)}` : '';
+                      const qrSrc = (garageInfo?.upi_qr_code && garageInfo.upi_qr_code.trim() !== '' && !garageInfo.upi_qr_code.includes('undefined')) ? garageInfo.upi_qr_code : (dynamicQrImage || '/upi_qr.jpg');
 
                       return (
                         <div className="flex flex-col items-center justify-center p-3 bg-white rounded-xl border border-slate-300 shadow-sm text-center">
@@ -1136,7 +1136,7 @@ export default function KhataBookPage() {
             <div className="grid grid-cols-2 gap-4 items-center bg-slate-50 p-4 rounded-2xl border border-amber-200">
               <div className="flex flex-col items-center justify-center p-3 bg-white rounded-2xl border border-slate-300 shadow-sm text-center">
                 <a
-                  href={`upi://pay?pa=${garageInfo?.upi_id || 'pritpatel9397@oksbi'}&pn=${encodeURIComponent(garageInfo?.upi_payee_name || 'Prit Patel')}&cu=INR`}
+                  href={`upi://pay?pa=${garageInfo?.upi_id || ''}&pn=${encodeURIComponent(garageInfo?.upi_payee_name || 'Patel Automobiles')}&cu=INR`}
                   title="Click to Pay directly via UPI"
                   target="_blank"
                   rel="noreferrer"
@@ -1150,7 +1150,7 @@ export default function KhataBookPage() {
                   />
                 </a>
                 <span className="text-[11px] font-black text-slate-900 mt-1 uppercase tracking-wide">Scan &amp; Pay via GPay / UPI</span>
-                <span className="text-[11px] font-mono text-emerald-700 font-extrabold">{garageInfo?.upi_id || 'pritpatel9397@oksbi'}</span>
+                <span className="text-[11px] font-mono text-emerald-700 font-extrabold">{garageInfo?.upi_id || ''}</span>
               </div>
 
               <div className="p-4 rounded-2xl bg-rose-50 border-2 border-rose-200 text-center space-y-1 shadow-sm">

@@ -315,7 +315,7 @@ const renderCanvasInternal = (invoice, garageInfo, logoImg, qrImg) => {
     ctx.fillText('Scan & Pay via GPay / UPI', pad + (qrBoxSize / 2) + 10, startY + qrBoxSize + 28);
     ctx.fillStyle = '#059669';
     ctx.font = 'bold 11px Consolas, monospace, sans-serif';
-    ctx.fillText(garageInfo?.upi_id || 'pritpatel9397@oksbi', pad + (qrBoxSize / 2) + 10, startY + qrBoxSize + 42);
+    ctx.fillText(garageInfo?.upi_id || '', pad + (qrBoxSize / 2) + 10, startY + qrBoxSize + 42);
     ctx.textAlign = 'left';
     
     currentY = Math.max(currentY, startY + qrBoxSize + 60);
@@ -415,11 +415,11 @@ const renderCanvasInternal = (invoice, garageInfo, logoImg, qrImg) => {
 };
 
 export const getDynamicUpiQrUrl = (invoice, garageInfo) => {
-  const upiId = garageInfo?.upi_id || 'pritpatel9397@oksbi';
+  const upiId = garageInfo?.upi_id || '';
   const payeeName = garageInfo?.upi_payee_name || garageInfo?.garage_name || 'Patel Automobiles';
   const pendingAmt = parseFloat(invoice?.pending_amount || 0);
 
-  if (pendingAmt > 0) {
+  if (upiId && pendingAmt > 0) {
     const upiUri = `upi://pay?pa=${upiId}&pn=${encodeURIComponent(payeeName)}&am=${pendingAmt.toFixed(2)}&cu=INR&tn=${encodeURIComponent(`Invoice Payment #${invoice?.id || ''}`)}`;
     return `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(upiUri)}`;
   }

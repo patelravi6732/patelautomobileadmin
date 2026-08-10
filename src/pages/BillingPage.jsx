@@ -698,12 +698,12 @@ export default function BillingPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center bg-slate-50 p-4 rounded-xl border border-slate-200">
                   {parseFloat(selectedInvoice.pending_amount || 0) > 0 ? (() => {
                     const pendingAmtStr = parseFloat(selectedInvoice.pending_amount || 0).toFixed(2);
-                    const upiId = garageInfo?.upi_id || 'pritpatel9397@oksbi';
+                    const upiId = garageInfo?.upi_id || '';
                     const payeeName = garageInfo?.upi_payee_name || garageInfo?.garage_name || 'Patel Automobiles';
                     const rawInvId = String(selectedInvoice.invoice_number || selectedInvoice.id || 'bill').slice(-8);
-                    const fixedUpiUri = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(payeeName)}&am=${encodeURIComponent(pendingAmtStr)}&cu=INR&tn=${encodeURIComponent(`Invoice ${rawInvId}`)}`;
-                    const dynamicQrImage = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(fixedUpiUri)}`;
-                    const qrSrc = garageInfo?.upi_qr || dynamicQrImage || '/upi_qr.jpg';
+                    const fixedUpiUri = upiId ? `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(payeeName)}&am=${encodeURIComponent(pendingAmtStr)}&cu=INR&tn=${encodeURIComponent(`Invoice ${rawInvId}`)}` : '';
+                    const dynamicQrImage = upiId ? `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(fixedUpiUri)}` : '';
+                    const qrSrc = (garageInfo?.upi_qr_code && garageInfo.upi_qr_code.trim() !== '' && !garageInfo.upi_qr_code.includes('undefined')) ? garageInfo.upi_qr_code : (dynamicQrImage || '/upi_qr.jpg');
 
                     return (
                       <div className="flex flex-col items-center justify-center p-3 bg-white rounded-xl border border-slate-300 shadow-sm text-center">
@@ -855,7 +855,7 @@ export default function BillingPage() {
             <div className={`grid ${parseFloat(selectedInvoice.pending_amount || 0) > 0 ? 'grid-cols-2' : 'grid-cols-1'} gap-4 items-center bg-slate-50 p-3.5 rounded-2xl border border-slate-200 pt-4`}>
               {parseFloat(selectedInvoice.pending_amount || 0) > 0 && (() => {
                 const pendingAmtStr = parseFloat(selectedInvoice.pending_amount || 0).toFixed(2);
-                const upiId = garageInfo?.upi_id || 'pritpatel9397@oksbi';
+                const upiId = garageInfo?.upi_id || '';
                 const payeeName = garageInfo?.upi_payee_name || garageInfo?.garage_name || 'Patel Automobiles';
                 const fixedUpiUri = `upi://pay?pa=${upiId}&pn=${encodeURIComponent(payeeName)}&am=${pendingAmtStr}&cu=INR&tn=${encodeURIComponent(`Invoice Payment #${selectedInvoice.id || ''}`)}`;
                 const dynamicQrImage = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(fixedUpiUri)}`;

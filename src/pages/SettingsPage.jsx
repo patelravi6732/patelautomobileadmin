@@ -27,9 +27,9 @@ export default function SettingsPage() {
     mechanics_list: 'Unassigned, Amitbhai Mechanic, Vishalbhai Mechanic, Manojbhai Mechanic',
     default_labour_charge: 100.00,
     default_min_stock: '',
-    upi_qr_code: '/upi_qr.jpg',
-    upi_id: 'pritpatel9397@oksbi',
-    upi_payee_name: 'Prit Patel'
+    upi_qr_code: '',
+    upi_id: '',
+    upi_payee_name: 'Patel Automobiles'
   });
 
   // Multi-Admin State

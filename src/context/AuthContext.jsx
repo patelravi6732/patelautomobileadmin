@@ -8,10 +8,11 @@ export const DEFAULT_GARAGE_INFO = {
   phone: '+91 81403 71414',
   whatsapp_number: '+91 81403 71414',
   logo: '/logo.png',
-  upi_id: 'pritpatel9397@oksbi',
-  upi_payee_name: 'Prit Patel',
+  upi_id: '',
+  upi_payee_name: 'Patel Automobiles',
+  upi_qr_code: '',
   timing_text: 'Mon - Sat: 08:30 AM - 06:30 PM, Sun: 09:00 AM - 02:00 PM',
-  mechanics_list: 'Amitbhai Mechanic, Vishalbhai Mechanic, Manojbhai Mechanic',
+  mechanics_list: 'Unassigned, Amitbhai Mechanic, Vishalbhai Mechanic, Manojbhai Mechanic',
   default_labour_charge: 100.00
 };
 
@@ -45,15 +46,15 @@ export const AuthProvider = ({ children }) => {
     const merged = {
       ...DEFAULT_GARAGE_INFO,
       ...(backendInfo || {}),
-      ...(localSaved || {}),
-      ...(cloudInfo || {})
+      ...(cloudInfo || {}),
+      ...(localSaved || {})
     };
 
-    if (cloudInfo?.timing_text) merged.timing_text = cloudInfo.timing_text;
-    else if (localSaved?.timing_text) merged.timing_text = localSaved.timing_text;
-
-    if (cloudInfo?.phone) merged.phone = cloudInfo.phone;
-    else if (localSaved?.phone) merged.phone = localSaved.phone;
+    if (localSaved?.timing_text) merged.timing_text = localSaved.timing_text;
+    if (localSaved?.phone) merged.phone = localSaved.phone;
+    if (localSaved?.upi_id !== undefined) merged.upi_id = localSaved.upi_id;
+    if (localSaved?.upi_qr_code !== undefined) merged.upi_qr_code = localSaved.upi_qr_code;
+    if (localSaved?.upi_payee_name !== undefined) merged.upi_payee_name = localSaved.upi_payee_name;
 
     setGarageInfo(merged);
     localStorage.setItem('garage_info', JSON.stringify(merged));

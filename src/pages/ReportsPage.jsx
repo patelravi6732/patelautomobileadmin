@@ -3,82 +3,138 @@ import { BarChart3, IndianRupee, Package, Users, TrendingUp, AlertCircle, Wrench
 import API from '../services/api';
 import { fetchCloudDeletedIds, fetchCloudInvoices, fetchCloudInventory } from '../utils/cloudSync';
 
-export default function ReportsPage() {
-  const [reports, setReports] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  const fetchReports = async (isInitial = false) => {
-    if (isInitial) setLoading(true);
-    let backendReports = null;
-    try {
-      const res = await API.get('/reports/metrics/', { timeout: 1500 });
-      backendReports = res.data;
-    } catch (err) {
-      console.warn('Backend API offline for reports, computing from cloud & local memory:', err);
-    }
-
-    const deletedIds = await fetchCloudDeletedIds().catch(() => []);
-    const isDeleted = (id) => id && deletedIds.includes(String(id));
-
+const computeInstantReports = () => {
+  try {
+    const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
     const localInvoices = JSON.parse(localStorage.getItem('local_invoices') || '[]');
-    const cloudInvoices = await fetchCloudInvoices().catch(() => []);
-    const invMap = new Map();
-    [...cloudInvoices, ...localInvoices].forEach(inv => {
-      if (inv && (inv.id || inv.job_id || inv.invoice_number) && !isDeleted(inv.id) && !isDeleted(inv.invoice_number)) {
-        const key = String(inv.id || inv.job_id || inv.invoice_number);
-        invMap.set(key, inv);
-      }
-    });
-    const invoices = Array.from(invMap.values());
-
     const localInventory = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
-    const cloudInventory = await fetchCloudInventory().catch(() => []);
-    const invItemMap = new Map();
-    [...cloudInventory, ...localInventory].forEach(item => {
-      if (item && item.id && !isDeleted(item.id) && !isDeleted(item.part_name)) {
-        invItemMap.set(String(item.id), item);
+    const deletedIds = JSON.parse(localStorage.getItem('deleted_ids') || '[]');
+
+    const isDeleted = (id) => id && (deletedIds.includes(String(id)) || deletedIds.includes(String(id).replace(/^inv_/, '').replace(/^job_/, '')));
+
+    const allMap = new Map();
+    localInvoices.forEach(inv => {
+      if (inv && !isDeleted(inv.id) && !isDeleted(inv.invoice_number)) {
+        const key = String(inv.id || inv.invoice_number || inv.job_id);
+        allMap.set(key, {
+          ...inv,
+          grand_total: parseFloat(inv.grand_total || inv.total_amount || 0),
+          paid_amount: parseFloat(inv.paid_amount !== undefined ? inv.paid_amount : (inv.grand_total || inv.total_amount || 0)),
+          pending_amount: parseFloat(inv.pending_amount !== undefined ? inv.pending_amount : 0),
+          created_at: inv.created_at || new Date().toISOString()
+        });
       }
     });
-    const inventory = Array.from(invItemMap.values());
 
-    const todayStr = new Date().toISOString().split('T')[0];
-    const currentMonth = new Date().getMonth();
-    const currentYear = new Date().getFullYear();
+    const finishedJobs = localJobs.filter(j => j && (j.status === 'FINISHED' || j.status === 'COMPLETED') && !isDeleted(j.id) && !isDeleted(j.vehicle_number));
+    finishedJobs.forEach((j, idx) => {
+      const key = `bill_${j.id || idx}`;
+      if (!allMap.has(key) && !allMap.has(String(j.id))) {
+        const partsVal = parseFloat(j.parts_total || 0);
+        const labourVal = parseFloat(j.labour_charge || 100);
+        const discountVal = parseFloat(j.discount_amount || 0);
+        const totalVal = parseFloat(j.grand_total || j.total_amount || j.live_total || Math.max(0, partsVal + labourVal - discountVal));
+        const paidVal = j.paid_amount !== undefined ? parseFloat(j.paid_amount) : totalVal;
+        const pendingVal = j.pending_amount !== undefined ? parseFloat(j.pending_amount) : Math.max(0, totalVal - paidVal);
 
-    const dailyRevenue = invoices.filter(inv => inv && (inv.created_at || '').startsWith(todayStr))
-      .reduce((acc, inv) => acc + (parseFloat(inv.paid_amount || inv.grand_total) || 0), 0);
+        allMap.set(key, {
+          id: j.id || key,
+          invoice_number: `INV-${String(j.id || idx).slice(-4)}`,
+          customer_name: j.customer_name || 'Customer',
+          mobile_number: j.mobile_number || 'N/A',
+          vehicle_number: j.vehicle_number || 'GJ-15',
+          bike_model: j.bike_model || 'Two Wheeler',
+          grand_total: totalVal,
+          total_amount: totalVal,
+          paid_amount: paidVal,
+          pending_amount: pendingVal,
+          payment_status: pendingVal > 0 ? 'PENDING' : 'PAID',
+          created_at: j.finished_at || j.completed_at || j.created_at || new Date().toISOString()
+        });
+      }
+    });
 
-    const monthlyRevenue = invoices.filter(inv => {
-      if (!inv || !inv.created_at) return false;
-      const d = new Date(inv.created_at);
-      return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
-    }).reduce((acc, inv) => acc + (parseFloat(inv.paid_amount || inv.grand_total) || 0), 0);
+    const allInvoices = Array.from(allMap.values());
+    const now = new Date();
+    const todayISO = now.toISOString().split('T')[0];
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
 
-    const inventoryValue = inventory.reduce((acc, item) => {
+    const isToday = (dateVal) => {
+      if (!dateVal) return false;
+      const dStr = String(dateVal).trim();
+      if (dStr.startsWith(todayISO)) return true;
+      const parsed = new Date(dateVal);
+      if (!isNaN(parsed.getTime())) {
+        return parsed.getDate() === now.getDate() && parsed.getMonth() === currentMonth && parsed.getFullYear() === currentYear;
+      }
+      return false;
+    };
+
+    const isThisMonth = (dateVal) => {
+      if (!dateVal) return false;
+      const parsed = new Date(dateVal);
+      if (!isNaN(parsed.getTime())) {
+        return parsed.getMonth() === currentMonth && parsed.getFullYear() === currentYear;
+      }
+      return false;
+    };
+
+    const dailyRevenue = allInvoices
+      .filter(inv => isToday(inv.created_at))
+      .reduce((acc, inv) => acc + (parseFloat(inv.paid_amount) || 0), 0);
+
+    const monthlyRevenue = allInvoices
+      .filter(inv => isThisMonth(inv.created_at))
+      .reduce((acc, inv) => acc + (parseFloat(inv.paid_amount) || 0), 0);
+
+    const cleanInv = localInventory.filter(i => i && !isDeleted(i.id) && !isDeleted(i.part_name));
+    const inventoryValue = cleanInv.reduce((acc, item) => {
       const price = parseFloat(item.price || 0);
       const stock = parseInt(item.current_stock || 0, 10);
       return acc + (price * stock);
     }, 0);
 
-    const totalPendingDues = invoices.reduce((acc, inv) => acc + (parseFloat(inv.pending_amount) || 0), 0);
+    const totalPendingDues = allInvoices.reduce((acc, inv) => acc + (parseFloat(inv.pending_amount) || 0), 0);
 
-    setReports({
+    return {
       daily_revenue: dailyRevenue,
       monthly_revenue: monthlyRevenue,
-      total_invoices: invoices.length,
+      total_invoices: allInvoices.length,
       inventory_valuation: inventoryValue,
       total_inventory_value: inventoryValue,
       total_pending_payments: totalPendingDues
-    });
+    };
+  } catch {
+    return {
+      daily_revenue: 0,
+      monthly_revenue: 0,
+      total_invoices: 0,
+      inventory_valuation: 0,
+      total_inventory_value: 0,
+      total_pending_payments: 0
+    };
+  }
+};
+
+export default function ReportsPage() {
+  const [reports, setReports] = useState(() => computeInstantReports());
+  const [loading, setLoading] = useState(false);
+
+  const fetchReports = async () => {
+    try {
+      await fetchMasterStore().catch(() => null);
+    } catch (e) {}
+    setReports(computeInstantReports());
     setLoading(false);
   };
 
   useEffect(() => {
-    fetchReports(true);
+    fetchReports();
     const interval = setInterval(() => {
-      fetchReports(false);
-    }, 3000);
-    const handleStorage = () => fetchReports(false);
+      fetchReports();
+    }, 5000);
+    const handleStorage = () => setReports(computeInstantReports());
     window.addEventListener('storage', handleStorage);
     return () => {
       clearInterval(interval);

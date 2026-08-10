@@ -9,60 +9,88 @@ import { fetchMasterStore, fetchCloudAdminProfiles, getCleanDeletedIds } from '.
 
 const computeInstantStats = () => {
   try {
+    const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
+    const localInvoices = JSON.parse(localStorage.getItem('local_invoices') || '[]');
+    const localInventory = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+    const deletedIds = JSON.parse(localStorage.getItem('deleted_ids') || '[]');
+
+    const isDeleted = (id) => id && (deletedIds.includes(String(id)) || deletedIds.includes(String(id).replace(/^inv_/, '').replace(/^job_/, '')));
+
+    const allMap = new Map();
+    localInvoices.forEach(inv => {
+      if (inv && !isDeleted(inv.id) && !isDeleted(inv.invoice_number)) {
+        const key = String(inv.id || inv.invoice_number || inv.job_id);
+        allMap.set(key, {
+          ...inv,
+          grand_total: parseFloat(inv.grand_total || inv.total_amount || 0),
+          paid_amount: parseFloat(inv.paid_amount !== undefined ? inv.paid_amount : (inv.grand_total || inv.total_amount || 0)),
+          pending_amount: parseFloat(inv.pending_amount !== undefined ? inv.pending_amount : 0),
+          created_at: inv.created_at || new Date().toISOString()
+        });
+      }
+    });
+
+    const finishedJobs = localJobs.filter(j => j && (j.status === 'FINISHED' || j.status === 'COMPLETED') && !isDeleted(j.id) && !isDeleted(j.vehicle_number));
+    finishedJobs.forEach((j, idx) => {
+      const key = `bill_${j.id || idx}`;
+      if (!allMap.has(key) && !allMap.has(String(j.id))) {
+        const partsVal = parseFloat(j.parts_total || 0);
+        const labourVal = parseFloat(j.labour_charge || 100);
+        const discountVal = parseFloat(j.discount_amount || 0);
+        const totalVal = parseFloat(j.grand_total || j.total_amount || j.live_total || Math.max(0, partsVal + labourVal - discountVal));
+        const paidVal = j.paid_amount !== undefined ? parseFloat(j.paid_amount) : totalVal;
+        const pendingVal = j.pending_amount !== undefined ? parseFloat(j.pending_amount) : Math.max(0, totalVal - paidVal);
+
+        allMap.set(key, {
+          id: j.id || key,
+          invoice_number: `INV-${String(j.id || idx).slice(-4)}`,
+          customer_name: j.customer_name || 'Customer',
+          mobile_number: j.mobile_number || 'N/A',
+          vehicle_number: j.vehicle_number || 'GJ-15',
+          bike_model: j.bike_model || 'Two Wheeler',
+          grand_total: totalVal,
+          total_amount: totalVal,
+          paid_amount: paidVal,
+          pending_amount: pendingVal,
+          payment_status: pendingVal > 0 ? 'PENDING' : 'PAID',
+          created_at: j.finished_at || j.completed_at || j.created_at || new Date().toISOString()
+        });
+      }
+    });
+
+    const allInvoices = Array.from(allMap.values());
+    const activeJobs = localJobs.filter(j => j && j.status !== 'FINISHED' && j.status !== 'COMPLETED' && j.status !== 'CANCELLED' && !isDeleted(j.id));
+    
+    const now = new Date();
+    const todayISO = now.toISOString().split('T')[0];
+
     const isToday = (dateVal) => {
       if (!dateVal) return false;
       const dStr = String(dateVal).trim();
-      const todayISO = new Date().toISOString().split('T')[0];
-      const todayLoc = new Date().toLocaleDateString('en-CA');
-      const d = new Date().getDate();
-      const m = new Date().getMonth() + 1;
-      const y = new Date().getFullYear();
-      const dPad = String(d).padStart(2, '0');
-      const mPad = String(m).padStart(2, '0');
-      const todayDMY = `${dPad}/${mPad}/${y}`;
-      const todayDMYDash = `${dPad}-${mPad}/${y}`;
-
-      if (dStr.startsWith(todayISO) || dStr.startsWith(todayLoc) || dStr.includes(todayDMY) || dStr.includes(todayDMYDash)) return true;
-      
+      if (dStr.startsWith(todayISO)) return true;
       const parsed = new Date(dateVal);
       if (!isNaN(parsed.getTime())) {
-        return parsed.getDate() === d && (parsed.getMonth() + 1) === m && parsed.getFullYear() === y;
+        return parsed.getDate() === now.getDate() && parsed.getMonth() === now.getMonth() && parsed.getFullYear() === now.getFullYear();
       }
       return false;
     };
 
-    const localInvoices = JSON.parse(localStorage.getItem('local_invoices') || '[]');
-    const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
-    const localInventory = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+    const todayServices = localJobs.filter(j => isToday(j.created_at || j.finished_at || j.completed_at)).length +
+      allInvoices.filter(inv => isToday(inv.created_at) && !localJobs.some(j => String(j.id) === String(inv.id))).length;
 
-    const todayServices = Math.max(
-      localJobs.filter(j => isToday(j.created_at || j.finished_at || j.completed_at)).length,
-      localInvoices.filter(inv => isToday(inv.created_at || inv.visit_date)).length
-    );
+    const completedServices = allInvoices.length;
+    const pendingServices = activeJobs.length;
 
-    const completedServices = Math.max(
-      localJobs.filter(j => j.status === 'FINISHED' || j.status === 'COMPLETED').length,
-      localInvoices.length
-    );
+    const todayRevenue = allInvoices
+      .filter(inv => isToday(inv.created_at))
+      .reduce((acc, inv) => acc + (parseFloat(inv.paid_amount) || 0), 0);
 
-    const pendingServices = localJobs.filter(j => j && j.status !== 'FINISHED' && j.status !== 'COMPLETED' && j.status !== 'CANCELLED').length;
-    const pendingPayments = localInvoices.reduce((acc, inv) => acc + (parseFloat(inv.pending_amount) || 0), 0);
+    const totalPendingDues = allInvoices.reduce((acc, inv) => acc + (parseFloat(inv.pending_amount) || 0), 0);
 
-    const invoiceRevenue = localInvoices
-      .filter(inv => isToday(inv.created_at || inv.visit_date || inv.date))
-      .reduce((acc, inv) => acc + (parseFloat(inv.paid_amount !== undefined ? inv.paid_amount : (inv.grand_total || inv.total_amount || 0)) || 0), 0);
+    const cleanInv = localInventory.filter(i => i && !isDeleted(i.id) && !isDeleted(i.part_name));
+    const lowStockItems = cleanInv.filter(i => (parseInt(i.current_stock || 0, 10)) <= (parseInt(i.min_stock_alert !== undefined ? i.min_stock_alert : 2, 10)));
 
-    const jobsRevenue = localJobs
-      .filter(j => (j.status === 'FINISHED' || j.status === 'COMPLETED') && isToday(j.finished_at || j.completed_at || j.created_at))
-      .reduce((acc, j) => acc + (parseFloat(j.paid_amount !== undefined ? j.paid_amount : (j.grand_total || j.live_total || 0)) || 0), 0);
-
-    const totalAllPaid = localInvoices.reduce((acc, inv) => acc + (parseFloat(inv.paid_amount !== undefined ? inv.paid_amount : (inv.grand_total || 0)) || 0), 0);
-    const todayRevenue = Math.max(invoiceRevenue, jobsRevenue, totalAllPaid);
-
-    const lowStockItems = localInventory.filter(i => (parseInt(i.current_stock || 0, 10)) <= (parseInt(i.min_stock_alert || 2, 10)));
-    const lowStockCount = lowStockItems.length;
-
-    const recentJobs = [...localJobs].sort(
+    const recentJobs = [...localJobs].filter(j => !isDeleted(j.id)).sort(
       (a, b) => new Date(b.created_at || b.finished_at || Date.now()) - new Date(a.created_at || a.finished_at || Date.now())
     ).slice(0, 5);
 
@@ -70,9 +98,9 @@ const computeInstantStats = () => {
       today_services: todayServices,
       completed_services: completedServices,
       pending_services: pendingServices,
-      pending_payments: pendingPayments,
+      pending_payments: totalPendingDues,
       today_revenue: todayRevenue,
-      low_stock_count: lowStockCount,
+      low_stock_count: lowStockItems.length,
       recent_jobs: recentJobs,
       low_stock_items: lowStockItems
     };
@@ -95,110 +123,10 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(false);
 
   const fetchStats = async () => {
-    const cloudStore = await fetchMasterStore().catch(() => null);
-    const deletedIds = await getCleanDeletedIds().catch(() => []);
-    const isDeleted = (id) => id && deletedIds.includes(String(id));
-
-    // 1. Invoices
-    const localInvoices = JSON.parse(localStorage.getItem('local_invoices') || '[]');
-    const cloudInvoices = Array.isArray(cloudStore?.invoices) ? cloudStore.invoices : [];
-    const invMap = new Map();
-    [...cloudInvoices, ...localInvoices].forEach(inv => {
-      if (inv && (inv.id || inv.job_id || inv.invoice_number) && !isDeleted(inv.id) && !isDeleted(inv.invoice_number)) {
-        const key = String(inv.id || inv.job_id || inv.invoice_number);
-        invMap.set(key, inv);
-      }
-    });
-    const invoices = Array.from(invMap.values());
-
-    // 2. Jobs
-    const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
-    const cloudJobs = Array.isArray(cloudStore?.jobs) ? cloudStore.jobs : [];
-    const jobMap = new Map();
-    [...cloudJobs, ...localJobs].forEach(j => {
-      if (j && j.id && !isDeleted(j.id)) jobMap.set(String(j.id), j);
-    });
-    const jobs = Array.from(jobMap.values());
-
-    // 3. Inventory
-    const localInventory = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
-    const cloudInventory = Array.isArray(cloudStore?.inventory) ? cloudStore.inventory : [];
-    const itemMap = new Map();
-    [...cloudInventory, ...localInventory].forEach(item => {
-      if (item && item.id && !isDeleted(item.id) && !isDeleted(item.part_name)) {
-        itemMap.set(String(item.id), item);
-      }
-    });
-    const inventory = Array.from(itemMap.values());
-
-    // Unified Date Helper for IST & UTC matching
-    const isToday = (dateVal) => {
-      if (!dateVal) return false;
-      const dStr = String(dateVal).trim();
-      const todayISO = new Date().toISOString().split('T')[0];
-      const todayLoc = new Date().toLocaleDateString('en-CA');
-      const d = new Date().getDate();
-      const m = new Date().getMonth() + 1;
-      const y = new Date().getFullYear();
-      const dPad = String(d).padStart(2, '0');
-      const mPad = String(m).padStart(2, '0');
-      const todayDMY = `${dPad}/${mPad}/${y}`;
-      const todayDMYDash = `${dPad}-${mPad}-${y}`;
-
-      if (dStr.startsWith(todayISO) || dStr.startsWith(todayLoc) || dStr.includes(todayDMY) || dStr.includes(todayDMYDash)) return true;
-      
-      const parsed = new Date(dateVal);
-      if (!isNaN(parsed.getTime())) {
-        return parsed.getDate() === d && (parsed.getMonth() + 1) === m && parsed.getFullYear() === y;
-      }
-      return false;
-    };
-
-    // Calculate Exact Metrics
-    const todayServices = Math.max(
-      jobs.filter(j => isToday(j.created_at || j.finished_at || j.completed_at)).length,
-      invoices.filter(inv => isToday(inv.created_at || inv.visit_date)).length
-    );
-
-    const completedServices = Math.max(
-      jobs.filter(j => j.status === 'FINISHED' || j.status === 'COMPLETED').length,
-      invoices.length
-    );
-
-    const pendingServices = jobs.filter(j => j && j.status !== 'FINISHED' && j.status !== 'COMPLETED' && j.status !== 'CANCELLED').length;
-
-    const pendingPayments = invoices.reduce((acc, inv) => acc + (parseFloat(inv.pending_amount) || 0), 0);
-
-    const invoiceRevenue = invoices
-      .filter(inv => isToday(inv.created_at || inv.visit_date || inv.date))
-      .reduce((acc, inv) => acc + (parseFloat(inv.paid_amount !== undefined ? inv.paid_amount : (inv.grand_total || inv.total_amount || 0)) || 0), 0);
-
-    const jobsRevenue = jobs
-      .filter(j => (j.status === 'FINISHED' || j.status === 'COMPLETED') && isToday(j.finished_at || j.completed_at || j.created_at))
-      .reduce((acc, j) => acc + (parseFloat(j.paid_amount !== undefined ? j.paid_amount : (j.grand_total || j.live_total || 0)) || 0), 0);
-
-    const totalAllPaid = invoices.reduce((acc, inv) => acc + (parseFloat(inv.paid_amount !== undefined ? inv.paid_amount : (inv.grand_total || 0)) || 0), 0);
-
-    const todayRevenue = Math.max(invoiceRevenue, jobsRevenue, totalAllPaid);
-
-    const lowStockItems = inventory.filter(i => (parseInt(i.current_stock || 0, 10)) <= (parseInt(i.min_stock_alert || 2, 10)));
-    const lowStockCount = lowStockItems.length;
-
-    // Recent Jobs List
-    const recentJobs = [...jobs].sort(
-      (a, b) => new Date(b.created_at || b.finished_at || Date.now()) - new Date(a.created_at || a.finished_at || Date.now())
-    ).slice(0, 5);
-
-    setStats({
-      today_services: todayServices,
-      completed_services: completedServices,
-      pending_services: pendingServices,
-      pending_payments: pendingPayments,
-      today_revenue: todayRevenue,
-      low_stock_count: lowStockCount,
-      recent_jobs: recentJobs,
-      low_stock_items: lowStockItems
-    });
+    try {
+      await fetchMasterStore().catch(() => null);
+    } catch (e) {}
+    setStats(computeInstantStats());
     setLoading(false);
   };
 
@@ -206,8 +134,8 @@ export default function DashboardPage() {
     fetchStats();
     const interval = setInterval(() => {
       fetchStats();
-    }, 3000);
-    const handleStorage = () => fetchStats();
+    }, 5000);
+    const handleStorage = () => setStats(computeInstantStats());
     window.addEventListener('storage', handleStorage);
     return () => {
       clearInterval(interval);

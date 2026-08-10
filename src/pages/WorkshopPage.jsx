@@ -115,28 +115,67 @@ export default function WorkshopPage() {
     const localBookings = JSON.parse(localStorage.getItem('local_bookings') || '[]');
     const cachedBookings = JSON.parse(localStorage.getItem('workshop_online_bookings') || '[]');
     
-    // 1. Process Workshop Jobs (localJobs first so deleted parts or edited jobs never revert)
+    // 1. Process Workshop Jobs with intelligent Vehicle Matching & Parts Preservation
     const allMap = new Map();
+    const activeVehMap = new Map(); // normVeh -> uniqueKey
+
     [...localJobs, ...cloudJobs, ...backendJobs].forEach(j => {
-      if (j && typeof j === 'object' && j.id) {
-        const uniqueKey = String(j.id);
+      if (j && typeof j === 'object' && (j.id || j.vehicle_number)) {
+        const uniqueKey = String(j.id || `job_${j.vehicle_number}`);
+        const normVeh = String(j.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+        
         if (!deletedIds.includes(uniqueKey) && !deletedIds.includes(String(j.id))) {
+          const rawParts = Array.isArray(j.parts) ? j.parts : [];
+          const rawPartsTotal = rawParts.reduce((acc, p) => acc + parseFloat(p.staged_total || (parseFloat(p.price || p.unit_price || 0) * parseInt(p.quantity || 1, 10))), 0);
+          const rawLabour = parseFloat(j.labour_charge !== undefined ? j.labour_charge : 100);
+
           const sanitizedJob = {
             ...j,
-            parts: Array.isArray(j.parts) ? j.parts : [],
-            parts_total: parseFloat(j.parts_total || 0),
-            labour_charge: parseFloat(j.labour_charge || 0),
-            live_total: parseFloat(j.live_total || j.grand_total || (parseFloat(j.parts_total || 0) + parseFloat(j.labour_charge || 0))),
+            id: uniqueKey,
+            parts: rawParts,
+            parts_total: rawPartsTotal || parseFloat(j.parts_total || 0),
+            labour_charge: rawLabour,
+            live_total: (rawPartsTotal || parseFloat(j.parts_total || 0)) + rawLabour,
             status: (j.status === 'FINISHED' || j.status === 'COMPLETED') ? 'FINISHED' : (j.status || 'IN_PROGRESS')
           };
+
+          const isActive = sanitizedJob.status !== 'FINISHED' && sanitizedJob.status !== 'CANCELLED';
+
+          if (isActive && normVeh && activeVehMap.has(normVeh)) {
+            const existingKey = activeVehMap.get(normVeh);
+            const existing = allMap.get(existingKey);
+            if (existing) {
+              // Merge existing and new, always preserving added parts!
+              const bestParts = (existing.parts && existing.parts.length > 0) ? existing.parts : sanitizedJob.parts;
+              const bestPartsTotal = bestParts.reduce((acc, p) => acc + parseFloat(p.staged_total || (parseFloat(p.price || p.unit_price || 0) * parseInt(p.quantity || 1, 10))), 0);
+              const bestLabour = existing.labour_charge !== undefined ? existing.labour_charge : sanitizedJob.labour_charge;
+              
+              const merged = {
+                ...sanitizedJob,
+                ...existing,
+                id: existing.id || sanitizedJob.id,
+                parts: bestParts,
+                parts_total: bestPartsTotal,
+                labour_charge: bestLabour,
+                live_total: bestPartsTotal + bestLabour,
+                assigned_mechanic: (existing.assigned_mechanic && existing.assigned_mechanic !== 'Unassigned') ? existing.assigned_mechanic : (sanitizedJob.assigned_mechanic || 'Unassigned')
+              };
+              allMap.set(existingKey, merged);
+              return;
+            }
+          }
+
           if (!allMap.has(uniqueKey)) {
             allMap.set(uniqueKey, sanitizedJob);
+            if (isActive && normVeh) {
+              activeVehMap.set(normVeh, uniqueKey);
+            }
           }
         }
       }
     });
 
-    // 2. Process Persistent Bookings Memory (Prevents network flickering)
+    // 2. Process Persistent Bookings Memory
     const allBookingsMap = new Map();
     [...cloudBookings, ...localBookings, ...cachedBookings].forEach(b => {
       if (b && typeof b === 'object' && (b.id || b.vehicle_number)) {
@@ -169,18 +208,15 @@ export default function WorkshopPage() {
           return;
         }
 
-        // 3. Skip if an active job for this exact vehicle already exists on workshop floor (No duplicates!)
-        const alreadyHasActiveJob = Array.from(allMap.values()).some(j => {
-          if (!j || j.status === 'FINISHED' || j.status === 'COMPLETED' || j.status === 'CANCELLED') return false;
-          const jVeh = String(j.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-          return normVeh && jVeh && normVeh === jVeh;
-        });
-
-        if (alreadyHasActiveJob || allMap.has(bookingJobId)) {
+        // 3. Skip if an active job for this exact vehicle already exists on workshop floor (No duplicate/reset!)
+        if (normVeh && activeVehMap.has(normVeh)) {
+          return;
+        }
+        if (allMap.has(bookingJobId)) {
           return;
         }
 
-        allMap.set(bookingJobId, {
+        const newBookingJob = {
           id: bookingJobId,
           booking_id: b.id,
           customer_name: b.customer_name || 'Online Customer',
@@ -196,7 +232,12 @@ export default function WorkshopPage() {
           status: b.status === 'ACCEPTED' ? 'IN_PROGRESS' : 'PENDING_BOOKING',
           is_online_booking: true,
           created_at: b.created_at || new Date().toISOString()
-        });
+        };
+
+        allMap.set(bookingJobId, newBookingJob);
+        if (normVeh) {
+          activeVehMap.set(normVeh, bookingJobId);
+        }
       }
     });
 
@@ -276,7 +317,7 @@ export default function WorkshopPage() {
     fetchData(true);
     const interval = setInterval(() => {
       fetchData(false);
-    }, 3000);
+    }, 6000);
     return () => clearInterval(interval);
   }, []);
 
@@ -421,7 +462,15 @@ export default function WorkshopPage() {
       live_total: newLiveTotal
     };
 
-    setJobs(prev => prev.map(j => (String(j.id) === String(selectedJob.id) ? updatedJob : j)));
+    const targetVehNorm = String(selectedJob.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+    const isMatchingTarget = (j) => {
+      if (!j) return false;
+      if (String(j.id) === String(selectedJob.id)) return true;
+      const jVehNorm = String(j.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+      return (targetVehNorm && jVehNorm && targetVehNorm === jVehNorm && j.status !== 'FINISHED' && j.status !== 'CANCELLED');
+    };
+
+    setJobs(prev => prev.map(j => isMatchingTarget(j) ? updatedJob : j));
     
     // 2. Deduct Inventory stock IMMEDIATELY if catalog item
     let updatedTargetItem = null;
@@ -459,9 +508,9 @@ export default function WorkshopPage() {
 
     // 3. Save to local storage and push to cloud
     const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
-    const updatedLocal = localJobs.map(j => (String(j.id) === String(selectedJob.id) ? updatedJob : j));
-    if (!updatedLocal.some(j => String(j.id) === String(selectedJob.id))) {
-      updatedLocal.push(updatedJob);
+    let updatedLocal = localJobs.map(j => isMatchingTarget(j) ? updatedJob : j);
+    if (!updatedLocal.some(isMatchingTarget)) {
+      updatedLocal.unshift(updatedJob);
     }
     localStorage.setItem('workshop_jobs', JSON.stringify(updatedLocal));
     pushCloudJob(updatedJob).catch(console.warn);

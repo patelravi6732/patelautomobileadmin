@@ -377,23 +377,26 @@ export async function pushCloudBooking(newBooking) {
   const store = await fetchMasterStore();
   const existing = (store.bookings || []).filter(b => b && typeof b === 'object');
   
-  const exists = existing.some(b => 
-    b.id === newBooking.id || 
-    (b.vehicle_number && newBooking.vehicle_number && b.vehicle_number === newBooking.vehicle_number && b.preferred_date === newBooking.preferred_date)
-  );
+  const strNewId = String(newBooking.id || '');
+  const exists = existing.some(b => String(b.id || '') === strNewId);
 
   let updatedBookings = existing;
   if (!exists) {
-    updatedBookings = [newBooking, ...existing];
+    const freshBooking = { ...newBooking, status: newBooking.status || 'PENDING' };
+    updatedBookings = [freshBooking, ...existing];
   } else {
     updatedBookings = existing.map(b => 
-      (b.id === newBooking.id || (b.vehicle_number === newBooking.vehicle_number && b.preferred_date === newBooking.preferred_date))
-        ? { ...b, ...newBooking }
-        : b
+      String(b.id || '') === strNewId ? { ...b, ...newBooking } : b
     );
   }
 
+  const localBookings = JSON.parse(localStorage.getItem('local_bookings') || '[]');
+  const updatedLocal = [newBooking, ...localBookings.filter(b => String(b.id || '') !== strNewId)];
+  localStorage.setItem('local_bookings', JSON.stringify(updatedLocal));
+
   await saveMasterStore({ ...store, bookings: updatedBookings });
+  window.dispatchEvent(new Event('storage'));
+  window.dispatchEvent(new Event('master_store_updated'));
 }
 
 export async function updateCloudBookingStatus(bookingId, newStatus, vehicleNumber = null, prefDate = null) {
@@ -409,6 +412,8 @@ export async function updateCloudBookingStatus(bookingId, newStatus, vehicleNumb
     return b;
   });
   await saveMasterStore({ ...store, bookings: updatedBookings });
+  window.dispatchEvent(new Event('storage'));
+  window.dispatchEvent(new Event('master_store_updated'));
 }
 
 // ---------------- MESSAGES (CONTACT INQUIRIES) ----------------
@@ -421,13 +426,24 @@ export async function pushCloudMessage(newMsg) {
   if (!newMsg || typeof newMsg !== 'object') return;
   const store = await fetchMasterStore();
   const existing = (store.messages || []).filter(m => m && typeof m === 'object');
-  const exists = existing.some(m => m.id === newMsg.id || (m.name === newMsg.name && m.phone === newMsg.phone && m.message === newMsg.message));
+  const strNewId = String(newMsg.id || '');
+  const exists = existing.some(m => String(m.id || '') === strNewId);
   
   let updated = existing;
   if (!exists) {
     updated = [newMsg, ...existing];
+  } else {
+    updated = existing.map(m => String(m.id || '') === strNewId ? { ...m, ...newMsg } : m);
   }
+
+  const localMsgs = JSON.parse(localStorage.getItem('local_messages') || localStorage.getItem('contact_messages') || '[]');
+  const updatedLocal = [newMsg, ...localMsgs.filter(m => String(m.id || '') !== strNewId)];
+  localStorage.setItem('local_messages', JSON.stringify(updatedLocal));
+  localStorage.setItem('contact_messages', JSON.stringify(updatedLocal));
+
   await saveMasterStore({ ...store, messages: updated });
+  window.dispatchEvent(new Event('storage'));
+  window.dispatchEvent(new Event('master_store_updated'));
 }
 
 // ---------------- WORKSHOP JOBS (CONVERT TO SERVICE) ----------------

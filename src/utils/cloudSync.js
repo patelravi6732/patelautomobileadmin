@@ -121,106 +121,37 @@ export async function fetchMasterStore(forceFresh = false) {
     }
 
     if (freshStore) {
-      const curLocalJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
-      const localJobMap = new Map();
-      curLocalJobs.forEach(j => {
-        if (j && j.id) localJobMap.set(String(j.id), j);
-      });
-
-      const mergedJobs = (freshStore.jobs || []).map(cloudJob => {
-        if (!cloudJob || !cloudJob.id) return cloudJob;
-        const localJob = localJobMap.get(String(cloudJob.id));
-        if (localJob) {
-          const localParts = Array.isArray(localJob.parts) ? localJob.parts : [];
-          const cloudParts = Array.isArray(cloudJob.parts) ? cloudJob.parts : [];
-          const finalParts = localParts.length >= cloudParts.length ? localParts : cloudParts;
-          const finalPartsTotal = finalParts.reduce((acc, p) => acc + parseFloat(p.staged_total || (parseFloat(p.price || p.unit_price || 0) * parseInt(p.quantity || 1, 10))), 0);
-          return {
-            ...localJob,
-            ...cloudJob,
-            parts: finalParts,
-            parts_total: finalPartsTotal,
-            live_total: finalPartsTotal + parseFloat(cloudJob.labour_charge || localJob.labour_charge || 0)
-          };
-        }
-        return cloudJob;
-      });
-
-      curLocalJobs.forEach(localJob => {
-        if (localJob && localJob.id && !mergedJobs.some(j => String(j.id) === String(localJob.id))) {
-          mergedJobs.push(localJob);
-        }
-      });
-
-      const localRecycle = JSON.parse(localStorage.getItem('recycle_bin_items') || '[]');
-      const cloudRecycle = Array.isArray(freshStore.recycleBin) ? freshStore.recycleBin : [];
-      const recMap = new Map();
-      [...localRecycle, ...cloudRecycle].forEach(r => {
-        if (r && typeof r === 'object' && (r.id || r.title)) {
-          recMap.set(String(r.id || `${r.title}_${r.deleted_at}`), r);
-        }
-      });
-      const mergedRecycleBin = Array.from(recMap.values());
-
-      const localBookings = JSON.parse(localStorage.getItem('local_bookings') || '[]');
-      const cloudBookings = Array.isArray(freshStore.bookings) ? freshStore.bookings : [];
-      const bookMap = new Map();
-      [...localBookings, ...cloudBookings].forEach(b => {
-        if (b && typeof b === 'object' && (b.id || b.vehicle_number)) {
-          const key = String(b.id || `${b.vehicle_number}_${b.preferred_date}`);
-          bookMap.set(key, { ...bookMap.get(key), ...b });
-        }
-      });
-      const mergedBookings = Array.from(bookMap.values());
-
-      const localMessages = JSON.parse(localStorage.getItem('local_messages') || localStorage.getItem('contact_messages') || '[]');
-      const cloudMessages = Array.isArray(freshStore.messages) ? freshStore.messages : [];
-      const msgMap = new Map();
-      [...localMessages, ...cloudMessages].forEach(m => {
-        if (m && typeof m === 'object' && (m.id || m.name || m.message)) {
-          const key = String(m.id || `${m.phone || m.mobile_number}_${m.created_at || m.date}`);
-          msgMap.set(key, { ...msgMap.get(key), ...m });
-        }
-      });
-      const mergedMessages = Array.from(msgMap.values());
-
       const mergedStore = {
-        bookings: mergedBookings,
-        messages: mergedMessages,
-        jobs: mergedJobs,
-        inventory: freshStore.inventory,
-        recycleBin: mergedRecycleBin,
+        bookings: freshStore.bookings || [],
+        messages: freshStore.messages || [],
+        jobs: freshStore.jobs || [],
+        inventory: freshStore.inventory || [],
+        recycleBin: freshStore.recycleBin || [],
         garageInfo: freshStore.garageInfo || localCache.garageInfo,
-        adminProfiles: freshStore.adminProfiles,
-        khataEntries: freshStore.khataEntries,
-        customers: freshStore.customers,
-        invoices: freshStore.invoices,
-        attendance: freshStore.attendance,
-        salaryPayments: freshStore.salaryPayments,
-        deletedIds: freshStore.deletedIds
+        adminProfiles: freshStore.adminProfiles || [],
+        khataEntries: freshStore.khataEntries || [],
+        customers: freshStore.customers || [],
+        invoices: freshStore.invoices || [],
+        attendance: freshStore.attendance || [],
+        salaryPayments: freshStore.salaryPayments || [],
+        deletedIds: freshStore.deletedIds || []
       };
       try {
         localStorage.setItem('master_cloud_cache', JSON.stringify(mergedStore));
 
-        if (Array.isArray(mergedStore.jobs)) localStorage.setItem('workshop_jobs', JSON.stringify(mergedStore.jobs));
-        if (Array.isArray(mergedStore.invoices)) localStorage.setItem('local_invoices', JSON.stringify(mergedStore.invoices));
-        if (Array.isArray(mergedStore.recycleBin)) localStorage.setItem('recycle_bin_items', JSON.stringify(mergedStore.recycleBin));
-        if (Array.isArray(mergedStore.deletedIds)) {
-          localStorage.setItem('deleted_item_ids', JSON.stringify(mergedStore.deletedIds));
-          localStorage.setItem('deleted_ids', JSON.stringify(mergedStore.deletedIds));
-        }
-        if (Array.isArray(mergedStore.khataEntries)) localStorage.setItem('khata_entries', JSON.stringify(mergedStore.khataEntries));
-        if (Array.isArray(mergedStore.bookings)) localStorage.setItem('local_bookings', JSON.stringify(mergedStore.bookings));
-        if (Array.isArray(mergedStore.messages)) {
-          localStorage.setItem('local_messages', JSON.stringify(mergedStore.messages));
-          localStorage.setItem('contact_messages', JSON.stringify(mergedStore.messages));
-        }
-        if (Array.isArray(mergedStore.adminProfiles)) localStorage.setItem('admin_profiles', JSON.stringify(mergedStore.adminProfiles));
-        if (Array.isArray(mergedStore.customers)) localStorage.setItem('local_customers', JSON.stringify(mergedStore.customers));
-        if (Array.isArray(mergedStore.inventory)) {
-          localStorage.setItem('inventory_items', JSON.stringify(mergedStore.inventory));
-          localStorage.setItem('spare_parts', JSON.stringify(mergedStore.inventory));
-        }
+        localStorage.setItem('workshop_jobs', JSON.stringify(mergedStore.jobs));
+        localStorage.setItem('local_invoices', JSON.stringify(mergedStore.invoices));
+        localStorage.setItem('recycle_bin_items', JSON.stringify(mergedStore.recycleBin));
+        localStorage.setItem('deleted_item_ids', JSON.stringify(mergedStore.deletedIds));
+        localStorage.setItem('deleted_ids', JSON.stringify(mergedStore.deletedIds));
+        localStorage.setItem('khata_entries', JSON.stringify(mergedStore.khataEntries));
+        localStorage.setItem('local_bookings', JSON.stringify(mergedStore.bookings));
+        localStorage.setItem('local_messages', JSON.stringify(mergedStore.messages));
+        localStorage.setItem('contact_messages', JSON.stringify(mergedStore.messages));
+        localStorage.setItem('admin_profiles', JSON.stringify(mergedStore.adminProfiles));
+        localStorage.setItem('local_customers', JSON.stringify(mergedStore.customers));
+        localStorage.setItem('inventory_items', JSON.stringify(mergedStore.inventory));
+        localStorage.setItem('spare_parts', JSON.stringify(mergedStore.inventory));
         window.dispatchEvent(new Event('storage'));
         window.dispatchEvent(new Event('master_store_updated'));
       } catch (e) {

@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Wrench, Plus, Trash2, CheckCircle2, XCircle, AlertCircle, CalendarClock,
+  Wrench, Plus, Trash2, CheckCircle2, XCircle, AlertCircle, CalendarClock, RotateCcw,
   IndianRupee, Package, Bike, User, Phone, Check, Receipt, UserCheck, Users, Lock, Search, ChevronDown, Edit2, Tag
 } from 'lucide-react';
 import API from '../services/api';
-import { fetchCloudJobs, updateCloudJobStatus, deleteCloudJob, fetchCloudInventory, pushCloudJob, pushCloudRecycleBinItem, pushCloudKhataEntry, pushCloudInvoice, updateCloudBookingStatus, fetchCloudDeletedIds, fetchCloudBookings, atomicFinishWorkshopJob, pushCloudInventoryItem, deleteJobToRecycleBin } from '../utils/cloudSync';
+import { fetchCloudJobs, updateCloudJobStatus, deleteCloudJob, fetchCloudInventory, pushCloudJob, pushCloudRecycleBinItem, pushCloudKhataEntry, pushCloudInvoice, updateCloudBookingStatus, fetchCloudDeletedIds, fetchCloudBookings, atomicFinishWorkshopJob, pushCloudInventoryItem, deleteJobToRecycleBin, pushAuditLog } from '../utils/cloudSync';
 import { useAuth } from '../context/AuthContext';
 import AdminPasswordModal from '../components/AdminPasswordModal';
 
@@ -29,6 +29,7 @@ export default function WorkshopPage() {
 
   // Admin Password Delete Modals
   const [deleteJobModal, setDeleteJobModal] = useState({ isOpen: false, job: null });
+  const [undoJobModal, setUndoJobModal] = useState({ isOpen: false, job: null });
   const [deletePartModal, setDeletePartModal] = useState({ isOpen: false, jobId: null, part: null });
   
   // Form states
@@ -913,6 +914,30 @@ export default function WorkshopPage() {
     }
   };
 
+  const handleUndoJobWithPassword = async (adminPassword) => {
+    if (!undoJobModal.job) return;
+    const targetJob = undoJobModal.job;
+    const jobId = targetJob.id;
+
+    const updatedJob = { ...targetJob, status: 'IN_PROGRESS', updated_at: new Date().toISOString() };
+
+    const currentJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
+    const updatedLocal = currentJobs.map(j => (String(j.id) === String(jobId) ? updatedJob : j));
+    if (!updatedLocal.some(j => String(j.id) === String(jobId))) {
+      updatedLocal.push(updatedJob);
+    }
+    localStorage.setItem('workshop_jobs', JSON.stringify(updatedLocal));
+
+    setJobs(prev => prev.map(j => (String(j.id) === String(jobId) ? updatedJob : j)));
+
+    await updateCloudJobStatus(jobId, 'IN_PROGRESS').catch(console.warn);
+    pushAuditLog('UNDO_CANCEL', 'Workshop', `Restored cancelled job ${targetJob.vehicle_number} (${targetJob.customer_name}) back to Active Workshop`).catch(console.warn);
+
+    setUndoJobModal({ isOpen: false, job: null });
+    setTab('ACTIVE');
+    alert(`🎉 Service job for ${targetJob.vehicle_number} has been restored back to Active Workshop Floor!`);
+  };
+
   const getNormStatus = (j) => String(j?.status || '').trim().toUpperCase();
 
   const activeJobs = jobs.filter(j => j && !['FINISHED', 'COMPLETED', 'CANCELLED', 'CLOSED', 'REJECTED'].includes(getNormStatus(j)));
@@ -978,7 +1003,7 @@ export default function WorkshopPage() {
         </div>
       </div>
 
-      {tab !== 'FINISHED' && (
+      {tab !== 'FINISHED' && tab !== 'CANCELLED' && (
         loading ? (
           <div className="p-8 text-center text-slate-500 font-medium">Loading Workshop Floor...</div>
       ) : displayedJobs.length === 0 ? (
@@ -1271,12 +1296,20 @@ export default function WorkshopPage() {
                     </p>
                   </div>
 
-                  <button
-                    onClick={() => setDeleteJobModal({ isOpen: true, job })}
-                    className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 font-bold text-xs rounded-xl border border-red-200 flex items-center gap-1.5 transition-colors"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" /> Delete Job (Password Protected)
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={() => setUndoJobModal({ isOpen: true, job })}
+                      className="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-xs rounded-xl border border-purple-200 flex items-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 text-purple-600" /> Undo / Re-activate (Password)
+                    </button>
+                    <button
+                      onClick={() => setDeleteJobModal({ isOpen: true, job })}
+                      className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 font-bold text-xs rounded-xl border border-red-200 flex items-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" /> Delete Job (Password Protected)
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -1597,6 +1630,15 @@ export default function WorkshopPage() {
         onConfirm={handleDeleteJobWithPassword}
         title="Delete Finished Service Job"
         itemDescription={deleteJobModal.job ? `Service Job #${deleteJobModal.job.id} (${deleteJobModal.job.vehicle_number})` : 'job'}
+      />
+
+      {/* ADMIN PASSWORD UNDO CANCELLED JOB MODAL */}
+      <AdminPasswordModal
+        isOpen={undoJobModal.isOpen}
+        onClose={() => setUndoJobModal({ isOpen: false, job: null })}
+        onConfirm={handleUndoJobWithPassword}
+        title="Undo Cancel & Re-activate Service Job"
+        itemDescription={undoJobModal.job ? `Service Job #${undoJobModal.job.id} (${undoJobModal.job.vehicle_number} - ${undoJobModal.job.customer_name})` : 'job'}
       />
 
       {/* ADMIN PASSWORD DELETE SPARE PART MODAL */}

@@ -366,18 +366,29 @@ export default function WorkshopPage() {
       return;
     }
 
+    const filteredInv = (inventory || []).filter(item => {
+      if (!item) return false;
+      const name = (item.part_name || item.name || '').toLowerCase();
+      const query = (partSearchQuery || '').toLowerCase();
+      return name.includes(query);
+    });
+
     const targetKey = String(selectedPartId || '').trim();
     const targetNorm = targetKey.toLowerCase().replace(/[^a-z0-9]/g, '');
 
-    const partObj = (inventory || []).find(p => {
+    let partObj = (inventory || []).find(p => {
       if (!p) return false;
       const pKey = String(p.id || p.part_name || p.name || '').trim();
       const pNorm = String(p.part_name || p.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
       return (targetKey && pKey === targetKey) || (targetNorm && pNorm && targetNorm === pNorm);
-    }) || (inventory && inventory.length > 0 ? inventory[0] : null);
+    });
+
+    if (!partObj && filteredInv.length > 0) {
+      partObj = filteredInv[0];
+    }
 
     if (!partObj) {
-      alert('⚠️ Please select a valid spare part from the list.');
+      alert('⚠️ Please click to select a valid spare part from the list.');
       return;
     }
 

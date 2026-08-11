@@ -108,8 +108,24 @@ const computeInstantStats = () => {
       return true;
     };
 
-    const todayServices = localJobs.filter(j => isToday(j.created_at || j.finished_at || j.completed_at)).length +
-      allInvoices.filter(inv => isToday(inv.created_at || inv.visit_date || inv.date) && !localJobs.some(j => String(j.id) === String(inv.id))).length;
+    const standaloneTodayInvoicesCount = allInvoices.filter(inv => {
+      if (!inv || !isToday(inv.created_at || inv.visit_date || inv.date)) return false;
+      const strInvId = String(inv.id || '');
+      const strJobId = String(inv.job_id || '');
+      const strVeh = String(inv.vehicle_number || '').trim().toLowerCase();
+
+      const belongsToJob = localJobs.some(j => {
+        if (!j) return false;
+        const jId = String(j.id || '');
+        const jVeh = String(j.vehicle_number || '').trim().toLowerCase();
+        return (jId && strInvId && (jId === strInvId || strInvId.includes(jId))) ||
+               (jId && strJobId && (jId === strJobId || strJobId.includes(jId))) ||
+               (jVeh && strVeh && jVeh === strVeh);
+      });
+      return !belongsToJob;
+    }).length;
+
+    const todayServices = localJobs.filter(j => j && !isDeleted(j.id) && isToday(j.created_at || j.finished_at || j.completed_at)).length + standaloneTodayInvoicesCount;
 
     const completedServices = allInvoices.length;
     const pendingServices = activeJobs.length;

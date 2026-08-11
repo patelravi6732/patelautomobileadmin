@@ -138,7 +138,9 @@ export default function WorkshopPage() {
               const existing = allMap.get(uniqueKey);
               const existingParts = Array.isArray(existing.parts) ? existing.parts : [];
               const currentParts = Array.isArray(sanitizedJob.parts) ? sanitizedJob.parts : [];
-              const finalParts = currentParts.length >= existingParts.length ? currentParts : existingParts;
+              const existingQtySum = existingParts.reduce((sum, p) => sum + parseInt(p.quantity || 1, 10), 0);
+              const currentQtySum = currentParts.reduce((sum, p) => sum + parseInt(p.quantity || 1, 10), 0);
+              const finalParts = currentQtySum >= existingQtySum ? currentParts : existingParts;
               const finalPartsTotal = finalParts.reduce((acc, p) => acc + parseFloat(p.staged_total || (parseFloat(p.price || p.unit_price || 0) * parseInt(p.quantity || 1, 10))), 0);
               allMap.set(uniqueKey, {
                 ...existing,
@@ -394,25 +396,56 @@ export default function WorkshopPage() {
 
     const unitPrice = parseFloat(partObj.price || 0);
     const qty = parseInt(partQty || 1, 10);
-    const stagedTotal = unitPrice * qty;
 
-    const newPartEntry = {
-      id: Date.now(),
-      inventory_id: partObj.id || `inv_${targetNorm}`,
-      part_id: partObj.id || `inv_${targetNorm}`,
-      part_name: partObj.part_name || partObj.name,
-      price: unitPrice,
-      unit_price: unitPrice,
-      quantity: qty,
-      staged_total: stagedTotal,
-      status: 'CONFIRMED',
-      is_confirmed: true,
-      is_deducted: true
-    };
+    const targetPartNorm = String(partObj.part_name || partObj.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const targetPartId = String(partObj.id || '');
 
-    // 1. Update Job parts
     const existingParts = Array.isArray(selectedJob.parts) ? selectedJob.parts : [];
-    const updatedParts = [...existingParts, newPartEntry];
+    let partFound = false;
+
+    const updatedParts = existingParts.map(p => {
+      if (!p) return p;
+      const pNorm = String(p.part_name || p.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const pId = String(p.inventory_id || p.part_id || p.id || '');
+
+      const isSamePart = (targetPartId && pId && targetPartId === pId) || 
+                         (targetPartNorm && pNorm && targetPartNorm === pNorm);
+
+      if (isSamePart) {
+        partFound = true;
+        const newQty = parseInt(p.quantity || 1, 10) + qty;
+        const unitP = parseFloat(p.unit_price || p.price || unitPrice);
+        const newStagedTotal = unitP * newQty;
+        return {
+          ...p,
+          quantity: newQty,
+          unit_price: unitP,
+          price: unitP,
+          staged_total: newStagedTotal,
+          status: 'CONFIRMED',
+          is_confirmed: true,
+          is_deducted: true
+        };
+      }
+      return p;
+    });
+
+    if (!partFound) {
+      updatedParts.push({
+        id: Date.now(),
+        inventory_id: partObj.id || `inv_${targetPartNorm}`,
+        part_id: partObj.id || `inv_${targetPartNorm}`,
+        part_name: partObj.part_name || partObj.name,
+        price: unitPrice,
+        unit_price: unitPrice,
+        quantity: qty,
+        staged_total: unitPrice * qty,
+        status: 'CONFIRMED',
+        is_confirmed: true,
+        is_deducted: true
+      });
+    }
+
     const newPartsTotal = updatedParts.reduce((acc, p) => acc + parseFloat(p.staged_total || (parseFloat(p.price || p.unit_price || 0) * parseInt(p.quantity || 1, 10))), 0);
     const newLiveTotal = newPartsTotal + parseFloat(selectedJob.labour_charge || 0);
 

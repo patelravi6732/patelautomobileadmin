@@ -104,12 +104,24 @@ export default function WorkshopPage() {
       const localBookings = JSON.parse(localStorage.getItem('local_bookings') || '[]');
       const cachedBookings = JSON.parse(localStorage.getItem('workshop_online_bookings') || '[]');
       
+      const isJobDeleted = (jobId) => {
+        if (!jobId) return false;
+        const strId = String(jobId).trim();
+        const rawId = strId.replace(/^job_/, '').replace(/^inv_/, '');
+        return deletedIds.some(d => {
+          if (!d) return false;
+          const dStr = String(d).trim();
+          const dRaw = dStr.replace(/^job_/, '').replace(/^inv_/, '');
+          return dStr === strId || dRaw === rawId || dStr === rawId || dRaw === strId;
+        });
+      };
+
       // 1. Process Workshop Jobs (localJobs first so deleted parts or edited jobs never revert)
       const allMap = new Map();
       [...localJobs, ...cloudJobs, ...backendJobs].forEach(j => {
         if (j && typeof j === 'object' && j.id) {
           const uniqueKey = String(j.id);
-          if (!deletedIds.includes(uniqueKey) && !deletedIds.includes(String(j.id))) {
+          if (!isJobDeleted(uniqueKey) && !isJobDeleted(j.id) && !isJobDeleted(j.vehicle_number)) {
             const sanitizedJob = {
               ...j,
               parts: Array.isArray(j.parts) ? j.parts : [],
@@ -275,8 +287,15 @@ export default function WorkshopPage() {
     fetchData(true);
     const interval = setInterval(() => {
       fetchData(false);
-    }, 5000);
-    return () => clearInterval(interval);
+    }, 4000);
+    const handleStorage = () => fetchData(true);
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener('master_store_updated', handleStorage);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('master_store_updated', handleStorage);
+    };
   }, []);
 
   const openAssignModal = (job) => {

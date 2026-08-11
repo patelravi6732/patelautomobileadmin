@@ -42,6 +42,12 @@ export default function RecycleBinPage() {
 
   useEffect(() => {
     fetchRecycleBin();
+    window.addEventListener('storage', fetchRecycleBin);
+    window.addEventListener('master_store_updated', fetchRecycleBin);
+    return () => {
+      window.removeEventListener('storage', fetchRecycleBin);
+      window.removeEventListener('master_store_updated', fetchRecycleBin);
+    };
   }, []);
 
   const handleRestore = async (item) => {

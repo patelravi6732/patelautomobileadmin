@@ -156,12 +156,22 @@ export async function fetchMasterStore(forceFresh = false) {
         }
       });
 
+      const localRecycle = JSON.parse(localStorage.getItem('recycle_bin_items') || '[]');
+      const cloudRecycle = Array.isArray(freshStore.recycleBin) ? freshStore.recycleBin : [];
+      const recMap = new Map();
+      [...localRecycle, ...cloudRecycle].forEach(r => {
+        if (r && typeof r === 'object' && (r.id || r.title)) {
+          recMap.set(String(r.id || `${r.title}_${r.deleted_at}`), r);
+        }
+      });
+      const mergedRecycleBin = Array.from(recMap.values());
+
       const mergedStore = {
         bookings: freshStore.bookings,
         messages: freshStore.messages,
         jobs: mergedJobs,
         inventory: freshStore.inventory,
-        recycleBin: freshStore.recycleBin,
+        recycleBin: mergedRecycleBin,
         garageInfo: freshStore.garageInfo || localCache.garageInfo,
         adminProfiles: freshStore.adminProfiles,
         khataEntries: freshStore.khataEntries,
@@ -609,6 +619,20 @@ export async function deleteCloudInventoryItem(target) {
   const targetName = typeof target === 'object' ? String(target.part_name || target.name || '').toLowerCase().trim() : targetId.toLowerCase().trim();
   const targetNorm = targetName.replace(/[^a-z0-9]/g, '');
 
+  const itemObj = typeof target === 'object' ? target : { id: targetId, name: targetName };
+  const trashObj = {
+    id: `trash_inv_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+    item_type: 'Inventory Item',
+    title: `Inventory: ${itemObj.part_name || itemObj.name || 'Spare Part'}`,
+    deleted_by: 'Patel Owner (Admin)',
+    deleted_at: new Date().toISOString(),
+    details: `Part Name: ${itemObj.part_name || itemObj.name || 'N/A'} • Category: ${itemObj.category || 'General'} • Stock: ${itemObj.current_stock || 0} • Price: ₹${itemObj.price || 0}`,
+    payload: itemObj
+  };
+
+  const localTrash = JSON.parse(localStorage.getItem('recycle_bin_items') || '[]');
+  localStorage.setItem('recycle_bin_items', JSON.stringify([trashObj, ...localTrash.filter(r => String(r.id) !== trashObj.id)]));
+
   // 1. Add to deletedIds (local & cloud)
   const localDeleted = JSON.parse(localStorage.getItem('deleted_ids') || '[]');
   const updatedDeleted = Array.from(new Set([...localDeleted, targetId, targetNorm, targetName].filter(Boolean)));
@@ -632,7 +656,17 @@ export async function deleteCloudInventoryItem(target) {
   const store = await fetchMasterStore();
   const existing = (store.inventory || []).filter(i => i && typeof i === 'object');
   const updated = existing.filter(i => !isMatchItem(i));
-  await saveMasterStore({ ...store, inventory: updated, deletedIds: Array.from(new Set([...(store.deletedIds || []), ...updatedDeleted])) });
+  const storeRecycle = [trashObj, ...(store.recycleBin || []).filter(r => String(r.id) !== trashObj.id)];
+
+  await saveMasterStore({
+    ...store,
+    inventory: updated,
+    recycleBin: storeRecycle,
+    deletedIds: Array.from(new Set([...(store.deletedIds || []), ...updatedDeleted]))
+  });
+
+  window.dispatchEvent(new Event('storage'));
+  window.dispatchEvent(new Event('master_store_updated'));
 }
 
 // ---------------- RECYCLE BIN ----------------

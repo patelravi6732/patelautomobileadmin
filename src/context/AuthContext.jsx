@@ -174,7 +174,7 @@ export const AuthProvider = ({ children }) => {
     const isPasswordCorrect = (
       cleanPass === expectedPassword ||
       (expectedPassword && cleanPass.toLowerCase() === expectedPassword.toLowerCase()) ||
-      cleanPass === '@ravipatel2005'
+      cleanPass === '@patelautomobile1414'
     );
 
     if (!isPasswordCorrect) {

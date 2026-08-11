@@ -35,7 +35,7 @@ export const DEFAULT_PRIMARY_ADMIN = {
   phone: '+91 81403 71414',
   mobile_number: '8140371414',
   garage_name: 'Patel Automobiles',
-  password: '@ravipatel2005',
+  password: '@patelautomobile1414',
   profile_photo: '/logo.png',
   created_at: '2026-08-01T00:00:00Z'
 };
@@ -885,7 +885,7 @@ export async function pushCloudAdminProfile(adminObj) {
     updated = existing.map(a => {
       const isTarget = a.id === adminObj.id || (a.username && adminObj.username && a.username.toLowerCase() === adminObj.username.toLowerCase());
       if (isTarget) {
-        const safePass = adminObj.password || a.password || '@ravipatel2005';
+        const safePass = adminObj.password || a.password || '@patelautomobile1414';
         return { ...a, ...adminObj, password: safePass };
       }
       return a;

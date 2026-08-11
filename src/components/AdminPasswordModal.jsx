@@ -19,7 +19,7 @@ function validateAdminSecurityPassword(inputPassword) {
     if (isMatch) return true;
   } catch (e) {}
 
-  if (cleanInput === '@ravipatel2005') return true;
+  if (cleanInput === '@patelautomobile1414') return true;
 
   return false;
 }

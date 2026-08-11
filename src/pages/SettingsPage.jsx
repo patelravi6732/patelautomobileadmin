@@ -399,7 +399,7 @@ export default function SettingsPage() {
       username: adminForm.username || adminForm.user_name,
       phone: adminForm.phone || '+91 81403 71414',
       email: adminForm.email || 'contact@patelautomobiles.com',
-      password: adminForm.new_password || (editingAdmin && editingAdmin.password) || adminForm.password || '@ravipatel2005',
+      password: adminForm.new_password || (editingAdmin && editingAdmin.password) || adminForm.password || '@patelautomobile1414',
       date_of_birth: adminForm.date_of_birth || '',
       profile_photo: adminForm.profile_photo || '/logo.png'
     };

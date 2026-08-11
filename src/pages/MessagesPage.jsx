@@ -82,10 +82,19 @@ export default function MessagesPage() {
 
   useEffect(() => {
     fetchMessages();
+    const handleSync = () => fetchMessages();
+    window.addEventListener('storage', handleSync);
+    window.addEventListener('master_store_updated', handleSync);
+
     const interval = setInterval(() => {
       fetchMessages();
     }, 3000);
-    return () => clearInterval(interval);
+
+    return () => {
+      window.removeEventListener('storage', handleSync);
+      window.removeEventListener('master_store_updated', handleSync);
+      clearInterval(interval);
+    };
   }, []);
 
   const handleTextChange = (id, text) => {

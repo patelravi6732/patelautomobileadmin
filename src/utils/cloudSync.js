@@ -166,9 +166,31 @@ export async function fetchMasterStore(forceFresh = false) {
       });
       const mergedRecycleBin = Array.from(recMap.values());
 
+      const localBookings = JSON.parse(localStorage.getItem('local_bookings') || '[]');
+      const cloudBookings = Array.isArray(freshStore.bookings) ? freshStore.bookings : [];
+      const bookMap = new Map();
+      [...localBookings, ...cloudBookings].forEach(b => {
+        if (b && typeof b === 'object' && (b.id || b.vehicle_number)) {
+          const key = String(b.id || `${b.vehicle_number}_${b.preferred_date}`);
+          bookMap.set(key, { ...bookMap.get(key), ...b });
+        }
+      });
+      const mergedBookings = Array.from(bookMap.values());
+
+      const localMessages = JSON.parse(localStorage.getItem('local_messages') || localStorage.getItem('contact_messages') || '[]');
+      const cloudMessages = Array.isArray(freshStore.messages) ? freshStore.messages : [];
+      const msgMap = new Map();
+      [...localMessages, ...cloudMessages].forEach(m => {
+        if (m && typeof m === 'object' && (m.id || m.name || m.message)) {
+          const key = String(m.id || `${m.phone || m.mobile_number}_${m.created_at || m.date}`);
+          msgMap.set(key, { ...msgMap.get(key), ...m });
+        }
+      });
+      const mergedMessages = Array.from(msgMap.values());
+
       const mergedStore = {
-        bookings: freshStore.bookings,
-        messages: freshStore.messages,
+        bookings: mergedBookings,
+        messages: mergedMessages,
         jobs: mergedJobs,
         inventory: freshStore.inventory,
         recycleBin: mergedRecycleBin,

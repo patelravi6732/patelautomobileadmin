@@ -100,10 +100,19 @@ export default function BookingsPage() {
 
   useEffect(() => {
     fetchBookings();
+    const handleSync = () => fetchBookings();
+    window.addEventListener('storage', handleSync);
+    window.addEventListener('master_store_updated', handleSync);
+
     const interval = setInterval(() => {
       fetchBookings();
     }, 3000);
-    return () => clearInterval(interval);
+
+    return () => {
+      window.removeEventListener('storage', handleSync);
+      window.removeEventListener('master_store_updated', handleSync);
+      clearInterval(interval);
+    };
   }, []);
 
   const openNotifyModal = (booking, isAccepted) => {

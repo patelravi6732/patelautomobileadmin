@@ -247,6 +247,33 @@ export async function fetchMasterStore(forceFresh = false) {
 
 async function saveMasterStore(storeData) {
   try {
+    const curCache = _cachedMasterStore || {};
+    const localBookings = JSON.parse(localStorage.getItem('local_bookings') || '[]');
+    const localMessages = JSON.parse(localStorage.getItem('local_messages') || localStorage.getItem('contact_messages') || '[]');
+    const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
+    const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+    const localRecycle = JSON.parse(localStorage.getItem('recycle_bin_items') || '[]');
+    const localKhata = JSON.parse(localStorage.getItem('khata_entries') || '[]');
+    const localCust = JSON.parse(localStorage.getItem('local_customers') || '[]');
+    const localInvList = JSON.parse(localStorage.getItem('local_invoices') || '[]');
+
+    storeData = {
+      ...storeData,
+      bookings: Array.isArray(storeData.bookings) && storeData.bookings.length > 0 ? storeData.bookings : (Array.isArray(curCache.bookings) && curCache.bookings.length > 0 ? curCache.bookings : localBookings),
+      messages: Array.isArray(storeData.messages) && storeData.messages.length > 0 ? storeData.messages : (Array.isArray(curCache.messages) && curCache.messages.length > 0 ? curCache.messages : localMessages),
+      jobs: Array.isArray(storeData.jobs) ? storeData.jobs : (curCache.jobs || localJobs),
+      inventory: Array.isArray(storeData.inventory) ? storeData.inventory : (curCache.inventory || localInv),
+      recycleBin: Array.isArray(storeData.recycleBin) ? storeData.recycleBin : (curCache.recycleBin || localRecycle),
+      garageInfo: storeData.garageInfo || curCache.garageInfo || JSON.parse(localStorage.getItem('garage_info') || 'null'),
+      adminProfiles: storeData.adminProfiles || curCache.adminProfiles || JSON.parse(localStorage.getItem('admin_profiles') || '[]'),
+      khataEntries: Array.isArray(storeData.khataEntries) ? storeData.khataEntries : (curCache.khataEntries || localKhata),
+      customers: Array.isArray(storeData.customers) ? storeData.customers : (curCache.customers || localCust),
+      invoices: Array.isArray(storeData.invoices) ? storeData.invoices : (curCache.invoices || localInvList),
+      attendance: Array.isArray(storeData.attendance) ? storeData.attendance : (curCache.attendance || []),
+      salaryPayments: Array.isArray(storeData.salaryPayments) ? storeData.salaryPayments : (curCache.salaryPayments || []),
+      deletedIds: Array.isArray(storeData.deletedIds) ? storeData.deletedIds : (curCache.deletedIds || JSON.parse(localStorage.getItem('deleted_ids') || '[]'))
+    };
+
     _cachedMasterStore = storeData;
     _lastMasterFetchTime = Date.now();
 
@@ -374,10 +401,15 @@ export async function fetchCloudBookings() {
 
 export async function pushCloudBooking(newBooking) {
   if (!newBooking || typeof newBooking !== 'object') return;
-  const store = await fetchMasterStore();
-  const existing = (store.bookings || []).filter(b => b && typeof b === 'object');
-  
+
   const strNewId = String(newBooking.id || '');
+
+  const localBookings = JSON.parse(localStorage.getItem('local_bookings') || '[]');
+  const updatedLocal = [newBooking, ...localBookings.filter(b => String(b.id || '') !== strNewId)];
+  localStorage.setItem('local_bookings', JSON.stringify(updatedLocal));
+
+  const store = await fetchMasterStore(true);
+  const existing = (store.bookings || []).filter(b => b && typeof b === 'object');
   const exists = existing.some(b => String(b.id || '') === strNewId);
 
   let updatedBookings = existing;
@@ -389,10 +421,6 @@ export async function pushCloudBooking(newBooking) {
       String(b.id || '') === strNewId ? { ...b, ...newBooking } : b
     );
   }
-
-  const localBookings = JSON.parse(localStorage.getItem('local_bookings') || '[]');
-  const updatedLocal = [newBooking, ...localBookings.filter(b => String(b.id || '') !== strNewId)];
-  localStorage.setItem('local_bookings', JSON.stringify(updatedLocal));
 
   await saveMasterStore({ ...store, bookings: updatedBookings });
   window.dispatchEvent(new Event('storage'));
@@ -424,9 +452,16 @@ export async function fetchCloudMessages() {
 
 export async function pushCloudMessage(newMsg) {
   if (!newMsg || typeof newMsg !== 'object') return;
-  const store = await fetchMasterStore();
-  const existing = (store.messages || []).filter(m => m && typeof m === 'object');
+
   const strNewId = String(newMsg.id || '');
+
+  const localMsgs = JSON.parse(localStorage.getItem('local_messages') || localStorage.getItem('contact_messages') || '[]');
+  const updatedLocal = [newMsg, ...localMsgs.filter(m => String(m.id || '') !== strNewId)];
+  localStorage.setItem('local_messages', JSON.stringify(updatedLocal));
+  localStorage.setItem('contact_messages', JSON.stringify(updatedLocal));
+
+  const store = await fetchMasterStore(true);
+  const existing = (store.messages || []).filter(m => m && typeof m === 'object');
   const exists = existing.some(m => String(m.id || '') === strNewId);
   
   let updated = existing;
@@ -435,11 +470,6 @@ export async function pushCloudMessage(newMsg) {
   } else {
     updated = existing.map(m => String(m.id || '') === strNewId ? { ...m, ...newMsg } : m);
   }
-
-  const localMsgs = JSON.parse(localStorage.getItem('local_messages') || localStorage.getItem('contact_messages') || '[]');
-  const updatedLocal = [newMsg, ...localMsgs.filter(m => String(m.id || '') !== strNewId)];
-  localStorage.setItem('local_messages', JSON.stringify(updatedLocal));
-  localStorage.setItem('contact_messages', JSON.stringify(updatedLocal));
 
   await saveMasterStore({ ...store, messages: updated });
   window.dispatchEvent(new Event('storage'));

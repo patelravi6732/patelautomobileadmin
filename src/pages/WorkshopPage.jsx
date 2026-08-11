@@ -117,39 +117,56 @@ export default function WorkshopPage() {
         });
       };
 
-      // 1. Process Workshop Jobs (Smart Merge localJobs and cloudJobs so parts are never wiped out)
+      // 1. Process Workshop Jobs (Smart Merge localJobs and cloudJobs by ID & Vehicle Number)
       const allMap = new Map();
       const jobSources = [...localJobs, ...(cloudJobs || []), ...(backendJobs || [])];
       jobSources.forEach(j => {
-        if (j && typeof j === 'object' && j.id) {
-          const uniqueKey = String(j.id);
-          if (!isJobDeleted(uniqueKey) && !isJobDeleted(j.id) && !isJobDeleted(j.vehicle_number)) {
-            const sanitizedJob = {
-              ...j,
-              parts: Array.isArray(j.parts) ? j.parts : [],
-              parts_total: parseFloat(j.parts_total || 0),
-              labour_charge: parseFloat(j.labour_charge || 0),
-              live_total: parseFloat(j.live_total || j.grand_total || (parseFloat(j.parts_total || 0) + parseFloat(j.labour_charge || 0))),
-              status: (j.status === 'FINISHED' || j.status === 'COMPLETED') ? 'FINISHED' : (j.status || 'IN_PROGRESS')
-            };
-            if (!allMap.has(uniqueKey)) {
-              allMap.set(uniqueKey, sanitizedJob);
-            } else {
-              const existing = allMap.get(uniqueKey);
-              const existingParts = Array.isArray(existing.parts) ? existing.parts : [];
-              const currentParts = Array.isArray(sanitizedJob.parts) ? sanitizedJob.parts : [];
-              const existingQtySum = existingParts.reduce((sum, p) => sum + parseInt(p.quantity || 1, 10), 0);
-              const currentQtySum = currentParts.reduce((sum, p) => sum + parseInt(p.quantity || 1, 10), 0);
-              const finalParts = currentQtySum >= existingQtySum ? currentParts : existingParts;
-              const finalPartsTotal = finalParts.reduce((acc, p) => acc + parseFloat(p.staged_total || (parseFloat(p.price || p.unit_price || 0) * parseInt(p.quantity || 1, 10))), 0);
-              allMap.set(uniqueKey, {
-                ...existing,
-                ...sanitizedJob,
-                parts: finalParts,
-                parts_total: finalPartsTotal,
-                live_total: finalPartsTotal + parseFloat(existing.labour_charge || sanitizedJob.labour_charge || 0)
-              });
+        if (j && typeof j === 'object' && (j.id || j.vehicle_number)) {
+          const strId = String(j.id || '');
+          const rawId = strId.replace(/^job_/, '').replace(/^inv_/, '');
+          const vehNorm = String(j.vehicle_number || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+
+          let existingKey = null;
+          for (const [k, ex] of allMap.entries()) {
+            const exId = String(ex.id || '');
+            const exRaw = exId.replace(/^job_/, '').replace(/^inv_/, '');
+            const exVeh = String(ex.vehicle_number || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+            if ((rawId && exRaw && rawId === exRaw) || (strId && exId && strId === exId) || (vehNorm && exVeh && vehNorm === exVeh)) {
+              existingKey = k;
+              break;
             }
+          }
+
+          if (existingKey && isJobDeleted(existingKey)) return;
+          if (isJobDeleted(strId) || isJobDeleted(j.vehicle_number)) return;
+
+          const sanitizedJob = {
+            ...j,
+            parts: Array.isArray(j.parts) ? j.parts : [],
+            parts_total: parseFloat(j.parts_total || 0),
+            labour_charge: parseFloat(j.labour_charge || 0),
+            live_total: parseFloat(j.live_total || j.grand_total || (parseFloat(j.parts_total || 0) + parseFloat(j.labour_charge || 0))),
+            status: (j.status === 'FINISHED' || j.status === 'COMPLETED') ? 'FINISHED' : (j.status || 'IN_PROGRESS')
+          };
+
+          if (!existingKey) {
+            const newKey = strId || `job_veh_${vehNorm}`;
+            allMap.set(newKey, sanitizedJob);
+          } else {
+            const existing = allMap.get(existingKey);
+            const existingParts = Array.isArray(existing.parts) ? existing.parts : [];
+            const currentParts = Array.isArray(sanitizedJob.parts) ? sanitizedJob.parts : [];
+            const existingQtySum = existingParts.reduce((sum, p) => sum + parseInt(p.quantity || 1, 10), 0);
+            const currentQtySum = currentParts.reduce((sum, p) => sum + parseInt(p.quantity || 1, 10), 0);
+            const finalParts = currentQtySum >= existingQtySum ? currentParts : existingParts;
+            const finalPartsTotal = finalParts.reduce((acc, p) => acc + parseFloat(p.staged_total || (parseFloat(p.price || p.unit_price || 0) * parseInt(p.quantity || 1, 10))), 0);
+            allMap.set(existingKey, {
+              ...existing,
+              ...sanitizedJob,
+              parts: finalParts,
+              parts_total: finalPartsTotal,
+              live_total: finalPartsTotal + parseFloat(existing.labour_charge || sanitizedJob.labour_charge || 0)
+            });
           }
         }
       });
@@ -456,8 +473,22 @@ export default function WorkshopPage() {
       live_total: newLiveTotal
     };
 
+    const selId = String(selectedJob.id || '');
+    const selRaw = selId.replace(/^job_/, '').replace(/^inv_/, '');
+    const selVeh = String(selectedJob.vehicle_number || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    const isMatchJob = (j) => {
+      if (!j) return false;
+      const jId = String(j.id || '');
+      const jRaw = jId.replace(/^job_/, '').replace(/^inv_/, '');
+      const jVeh = String(j.vehicle_number || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+      return (selId && jId && (selId === jId || selId.includes(jId) || jId.includes(selId))) ||
+             (selRaw && jRaw && selRaw === jRaw) ||
+             (selVeh && jVeh && selVeh === jVeh);
+    };
+
     setSelectedJob(updatedJob);
-    setJobs(prev => prev.map(j => (String(j.id) === String(selectedJob.id) ? updatedJob : j)));
+    setJobs(prev => prev.map(j => (isMatchJob(j) ? updatedJob : j)));
     
     // 1. Deduct Inventory stock IMMEDIATELY (10 -> 9)
     const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
@@ -493,8 +524,8 @@ export default function WorkshopPage() {
 
     // 2. Update Job parts
     const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
-    const updatedLocal = localJobs.map(j => (String(j.id) === String(selectedJob.id) ? updatedJob : j));
-    if (!updatedLocal.some(j => String(j.id) === String(selectedJob.id))) {
+    const updatedLocal = localJobs.map(j => (isMatchJob(j) ? updatedJob : j));
+    if (!updatedLocal.some(isMatchJob)) {
       updatedLocal.push(updatedJob);
     }
     localStorage.setItem('workshop_jobs', JSON.stringify(updatedLocal));

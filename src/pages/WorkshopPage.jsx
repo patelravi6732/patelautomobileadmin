@@ -117,9 +117,9 @@ export default function WorkshopPage() {
         });
       };
 
-      // 1. Process Workshop Jobs (Cloud Jobs is authoritative single source of truth)
+      // 1. Process Workshop Jobs (Smart Merge localJobs and cloudJobs so parts are never wiped out)
       const allMap = new Map();
-      const jobSources = (cloudJobs && Array.isArray(cloudJobs)) ? [...cloudJobs, ...backendJobs] : [...localJobs, ...backendJobs];
+      const jobSources = [...localJobs, ...(cloudJobs || []), ...(backendJobs || [])];
       jobSources.forEach(j => {
         if (j && typeof j === 'object' && j.id) {
           const uniqueKey = String(j.id);
@@ -138,7 +138,7 @@ export default function WorkshopPage() {
               const existing = allMap.get(uniqueKey);
               const existingParts = Array.isArray(existing.parts) ? existing.parts : [];
               const currentParts = Array.isArray(sanitizedJob.parts) ? sanitizedJob.parts : [];
-              const finalParts = currentParts.length > 0 ? currentParts : (existingParts.length > 0 ? existingParts : []);
+              const finalParts = currentParts.length >= existingParts.length ? currentParts : existingParts;
               const finalPartsTotal = finalParts.reduce((acc, p) => acc + parseFloat(p.staged_total || (parseFloat(p.price || p.unit_price || 0) * parseInt(p.quantity || 1, 10))), 0);
               allMap.set(uniqueKey, {
                 ...existing,
@@ -412,6 +412,7 @@ export default function WorkshopPage() {
       live_total: newLiveTotal
     };
 
+    setSelectedJob(updatedJob);
     setJobs(prev => prev.map(j => (String(j.id) === String(selectedJob.id) ? updatedJob : j)));
     
     // 1. Deduct Inventory stock IMMEDIATELY (10 -> 9)

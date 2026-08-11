@@ -9,8 +9,8 @@ export default function RecycleBinPage() {
   const [loading, setLoading] = useState(true);
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, item: null, isDeleteAll: false });
 
-  const fetchRecycleBin = async () => {
-    setLoading(true);
+  const fetchRecycleBin = async (showLoading = false) => {
+    if (showLoading) setLoading(true);
     let backendItems = [];
     try {
       const res = await API.get('/recycle-bin/', { timeout: 800 });
@@ -41,12 +41,15 @@ export default function RecycleBinPage() {
   };
 
   useEffect(() => {
-    fetchRecycleBin();
-    window.addEventListener('storage', fetchRecycleBin);
-    window.addEventListener('master_store_updated', fetchRecycleBin);
+    fetchRecycleBin(true);
+
+    const handleSilentSync = () => fetchRecycleBin(false);
+
+    window.addEventListener('storage', handleSilentSync);
+    window.addEventListener('master_store_updated', handleSilentSync);
     return () => {
-      window.removeEventListener('storage', fetchRecycleBin);
-      window.removeEventListener('master_store_updated', fetchRecycleBin);
+      window.removeEventListener('storage', handleSilentSync);
+      window.removeEventListener('master_store_updated', handleSilentSync);
     };
   }, []);
 

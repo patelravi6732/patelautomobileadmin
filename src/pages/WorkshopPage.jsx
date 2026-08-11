@@ -117,9 +117,10 @@ export default function WorkshopPage() {
         });
       };
 
-      // 1. Process Workshop Jobs (localJobs first so deleted parts or edited jobs never revert)
+      // 1. Process Workshop Jobs (Cloud Jobs is authoritative single source of truth)
       const allMap = new Map();
-      [...localJobs, ...cloudJobs, ...backendJobs].forEach(j => {
+      const jobSources = (cloudJobs && Array.isArray(cloudJobs)) ? [...cloudJobs, ...backendJobs] : [...localJobs, ...backendJobs];
+      jobSources.forEach(j => {
         if (j && typeof j === 'object' && j.id) {
           const uniqueKey = String(j.id);
           if (!isJobDeleted(uniqueKey) && !isJobDeleted(j.id) && !isJobDeleted(j.vehicle_number)) {
@@ -151,9 +152,10 @@ export default function WorkshopPage() {
         }
       });
 
-      // 2. Process Persistent Bookings Memory (Prevents network flickering)
+      // 2. Process Persistent Bookings Memory (Cloud Bookings is authoritative)
       const allBookingsMap = new Map();
-      [...cloudBookings, ...localBookings, ...cachedBookings].forEach(b => {
+      const bookingSources = (cloudBookings && Array.isArray(cloudBookings)) ? cloudBookings : localBookings;
+      bookingSources.forEach(b => {
         if (b && typeof b === 'object' && (b.id || b.vehicle_number)) {
           const key = String(b.id || `${b.vehicle_number}_${b.preferred_date}`);
           if (!deletedIds.includes(key) && !deletedIds.includes(String(b.id))) {

@@ -913,10 +913,12 @@ export default function WorkshopPage() {
     }
   };
 
-  const activeJobs = jobs.filter(j => j && j.status !== 'FINISHED' && j.status !== 'COMPLETED' && j.status !== 'CANCELLED');
-  const finishedJobs = jobs.filter(j => j && (j.status === 'FINISHED' || j.status === 'COMPLETED'));
-  const cancelledJobs = jobs.filter(j => j && j.status === 'CANCELLED');
-  const onlineBookingJobs = jobs.filter(j => j && j.status !== 'FINISHED' && j.status !== 'COMPLETED' && j.status !== 'CANCELLED' && (j.is_online_booking || j.booking_id || j.source === 'ONLINE_BOOKING' || String(j.complaint || '').toLowerCase().includes('booking')));
+  const getNormStatus = (j) => String(j?.status || '').trim().toUpperCase();
+
+  const activeJobs = jobs.filter(j => j && !['FINISHED', 'COMPLETED', 'CANCELLED', 'CLOSED', 'REJECTED'].includes(getNormStatus(j)));
+  const finishedJobs = jobs.filter(j => j && ['FINISHED', 'COMPLETED'].includes(getNormStatus(j)));
+  const cancelledJobs = jobs.filter(j => j && ['CANCELLED', 'CLOSED', 'REJECTED'].includes(getNormStatus(j)));
+  const onlineBookingJobs = jobs.filter(j => j && !['FINISHED', 'COMPLETED', 'CANCELLED', 'CLOSED', 'REJECTED'].includes(getNormStatus(j)) && (j.is_online_booking || j.booking_id || j.source === 'ONLINE_BOOKING' || String(j.complaint || '').toLowerCase().includes('booking')));
 
   const displayedJobs = tab === 'ONLINE_BOOKINGS' ? onlineBookingJobs : (tab === 'FINISHED' ? finishedJobs : (tab === 'CANCELLED' ? cancelledJobs : activeJobs));
 

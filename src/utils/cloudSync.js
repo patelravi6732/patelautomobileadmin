@@ -215,6 +215,9 @@ export async function fetchMasterStore(forceFresh = false) {
 
 async function saveMasterStore(storeData) {
   try {
+    _cachedMasterStore = storeData;
+    _lastMasterFetchTime = Date.now();
+
     const curLocalJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
     const localJobMap = new Map();
     curLocalJobs.forEach(j => {
@@ -227,14 +230,14 @@ async function saveMasterStore(storeData) {
       if (localJob) {
         const localParts = Array.isArray(localJob.parts) ? localJob.parts : [];
         const cloudParts = Array.isArray(cloudJob.parts) ? cloudJob.parts : [];
-        const finalParts = localParts.length >= cloudParts.length ? localParts : cloudParts;
+        const finalParts = cloudParts.length >= localParts.length ? localParts : cloudParts;
         const finalPartsTotal = finalParts.reduce((acc, p) => acc + parseFloat(p.staged_total || (parseFloat(p.price || p.unit_price || 0) * parseInt(p.quantity || 1, 10))), 0);
         return {
-          ...cloudJob,
           ...localJob,
+          ...cloudJob,
           parts: finalParts,
           parts_total: finalPartsTotal,
-          live_total: finalPartsTotal + parseFloat(localJob.labour_charge || cloudJob.labour_charge || 0)
+          live_total: finalPartsTotal + parseFloat(cloudJob.labour_charge !== undefined ? cloudJob.labour_charge : (localJob.labour_charge || 0))
         };
       }
       return cloudJob;

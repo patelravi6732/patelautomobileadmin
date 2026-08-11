@@ -52,21 +52,9 @@ export default function BookingsPage() {
   ];
 
   const fetchBookings = async () => {
-    const localBookings = JSON.parse(localStorage.getItem('local_bookings') || '[]');
     let backendBookings = [];
     let cloudBookings = [];
     let deletedIds = [];
-
-    // Instant local set so UI is 100% responsive immediately
-    if (localBookings.length > 0) {
-      setBookings(localBookings);
-      setLoading(false);
-    }
-
-    try {
-      const res = await API.get('/bookings/', { timeout: 1000 }).catch(() => ({ data: [] }));
-      backendBookings = res.data || [];
-    } catch (err) {}
 
     try {
       [cloudBookings, deletedIds] = await Promise.all([
@@ -75,15 +63,22 @@ export default function BookingsPage() {
       ]);
     } catch (e) {}
 
+    try {
+      const res = await API.get('/bookings/', { timeout: 1000 }).catch(() => ({ data: [] }));
+      backendBookings = res.data || [];
+    } catch (err) {}
+
+    const localBookings = JSON.parse(localStorage.getItem('local_bookings') || '[]');
+
     const allBookingsMap = new Map();
-    [...cloudBookings, ...backendBookings, ...localBookings].forEach(b => {
+    [...localBookings, ...cloudBookings, ...backendBookings].forEach(b => {
       if (b && typeof b === 'object' && (b.id || b.vehicle_number)) {
         const uniqueKey = String(b.id || `${b.vehicle_number}_${b.preferred_date}`);
         if (!deletedIds.includes(uniqueKey) && !deletedIds.includes(String(b.id))) {
-          if (!allBookingsMap.has(uniqueKey)) {
+          const existing = allBookingsMap.get(uniqueKey);
+          if (!existing) {
             allBookingsMap.set(uniqueKey, b);
           } else {
-            const existing = allBookingsMap.get(uniqueKey);
             allBookingsMap.set(uniqueKey, { ...existing, ...b });
           }
         }
@@ -91,10 +86,15 @@ export default function BookingsPage() {
     });
 
     const mergedList = Array.from(allBookingsMap.values()).sort(
-      (a, b) => new Date(b.created_at || Date.now()) - new Date(a.created_at || Date.now())
+      (a, b) => new Date(b.created_at || b.date || Date.now()) - new Date(a.created_at || a.date || Date.now())
     );
 
-    setBookings(mergedList);
+    setBookings(prev => {
+      if (JSON.stringify(prev) === JSON.stringify(mergedList)) {
+        return prev;
+      }
+      return mergedList;
+    });
     setLoading(false);
   };
 

@@ -160,7 +160,7 @@ export default function ReportsPage() {
 
   const fetchReports = async () => {
     try {
-      await fetchMasterStore().catch(() => null);
+      await fetchMasterStore(true).catch(() => null);
     } catch (e) {}
     setReports(computeInstantReports());
     setLoading(false);
@@ -170,12 +170,14 @@ export default function ReportsPage() {
     fetchReports();
     const interval = setInterval(() => {
       fetchReports();
-    }, 5000);
+    }, 4000);
     const handleStorage = () => setReports(computeInstantReports());
     window.addEventListener('storage', handleStorage);
+    window.addEventListener('master_store_updated', handleStorage);
     return () => {
       clearInterval(interval);
       window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('master_store_updated', handleStorage);
     };
   }, []);
 

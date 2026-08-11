@@ -140,11 +140,11 @@ export async function fetchMasterStore(forceFresh = false) {
           const finalParts = localParts.length >= cloudParts.length ? localParts : cloudParts;
           const finalPartsTotal = finalParts.reduce((acc, p) => acc + parseFloat(p.staged_total || (parseFloat(p.price || p.unit_price || 0) * parseInt(p.quantity || 1, 10))), 0);
           return {
-            ...cloudJob,
             ...localJob,
+            ...cloudJob,
             parts: finalParts,
             parts_total: finalPartsTotal,
-            live_total: finalPartsTotal + parseFloat(localJob.labour_charge || cloudJob.labour_charge || 0)
+            live_total: finalPartsTotal + parseFloat(cloudJob.labour_charge || localJob.labour_charge || 0)
           };
         }
         return cloudJob;
@@ -193,6 +193,8 @@ export async function fetchMasterStore(forceFresh = false) {
           localStorage.setItem('inventory_items', JSON.stringify(mergedStore.inventory));
           localStorage.setItem('spare_parts', JSON.stringify(mergedStore.inventory));
         }
+        window.dispatchEvent(new Event('storage'));
+        window.dispatchEvent(new Event('master_store_updated'));
       } catch (e) {
         console.warn('Failed to update local master_cloud_cache:', e);
       }

@@ -156,7 +156,7 @@ export default function DashboardPage() {
 
   const fetchStats = async () => {
     try {
-      await fetchMasterStore().catch(() => null);
+      await fetchMasterStore(true).catch(() => null);
     } catch (e) {}
     setStats(computeInstantStats());
     setLoading(false);
@@ -166,12 +166,14 @@ export default function DashboardPage() {
     fetchStats();
     const interval = setInterval(() => {
       fetchStats();
-    }, 5000);
+    }, 4000);
     const handleStorage = () => setStats(computeInstantStats());
     window.addEventListener('storage', handleStorage);
+    window.addEventListener('master_store_updated', handleStorage);
     return () => {
       clearInterval(interval);
       window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('master_store_updated', handleStorage);
     };
   }, []);
 

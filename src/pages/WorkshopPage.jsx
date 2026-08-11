@@ -138,7 +138,7 @@ export default function WorkshopPage() {
               const existing = allMap.get(uniqueKey);
               const existingParts = Array.isArray(existing.parts) ? existing.parts : [];
               const currentParts = Array.isArray(sanitizedJob.parts) ? sanitizedJob.parts : [];
-              const finalParts = existingParts.length >= currentParts.length ? existingParts : currentParts;
+              const finalParts = currentParts.length > 0 ? currentParts : (existingParts.length > 0 ? existingParts : []);
               const finalPartsTotal = finalParts.reduce((acc, p) => acc + parseFloat(p.staged_total || (parseFloat(p.price || p.unit_price || 0) * parseInt(p.quantity || 1, 10))), 0);
               allMap.set(uniqueKey, {
                 ...existing,

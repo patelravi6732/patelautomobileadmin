@@ -33,7 +33,18 @@ const computeInstantStats = () => {
     const finishedJobs = localJobs.filter(j => j && (j.status === 'FINISHED' || j.status === 'COMPLETED') && !isDeleted(j.id) && !isDeleted(j.vehicle_number));
     finishedJobs.forEach((j, idx) => {
       const key = `bill_${j.id || idx}`;
-      if (!allMap.has(key) && !allMap.has(String(j.id))) {
+      const strJobId = String(j.id || '');
+      const strVehNum = String(j.vehicle_number || '').trim().toLowerCase();
+
+      const alreadyHasInvoice = Array.from(allMap.values()).some(inv => {
+        if (!inv) return false;
+        const invJobId = String(inv.job_id || inv.id || '');
+        const invVeh = String(inv.vehicle_number || '').trim().toLowerCase();
+        return (strJobId && invJobId && (invJobId === strJobId || invJobId.includes(strJobId))) ||
+               (strVehNum && invVeh && strVehNum === invVeh);
+      });
+
+      if (!alreadyHasInvoice && !allMap.has(key) && !allMap.has(strJobId)) {
         const partsVal = parseFloat(j.parts_total || 0);
         const labourVal = parseFloat(j.labour_charge || 100);
         const discountVal = parseFloat(j.discount_amount || 0);

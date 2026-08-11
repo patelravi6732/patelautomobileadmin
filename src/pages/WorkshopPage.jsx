@@ -4,7 +4,7 @@ import {
   IndianRupee, Package, Bike, User, Phone, Check, Receipt, UserCheck, Users, Lock, Search, ChevronDown, Edit2, Tag
 } from 'lucide-react';
 import API from '../services/api';
-import { fetchCloudJobs, updateCloudJobStatus, deleteCloudJob, fetchCloudInventory, pushCloudJob, pushCloudRecycleBinItem, pushCloudKhataEntry, pushCloudInvoice, updateCloudBookingStatus, fetchCloudDeletedIds, fetchCloudBookings, atomicFinishWorkshopJob, pushCloudInventoryItem } from '../utils/cloudSync';
+import { fetchCloudJobs, updateCloudJobStatus, deleteCloudJob, fetchCloudInventory, pushCloudJob, pushCloudRecycleBinItem, pushCloudKhataEntry, pushCloudInvoice, updateCloudBookingStatus, fetchCloudDeletedIds, fetchCloudBookings, atomicFinishWorkshopJob, pushCloudInventoryItem, deleteJobToRecycleBin } from '../utils/cloudSync';
 import { useAuth } from '../context/AuthContext';
 import AdminPasswordModal from '../components/AdminPasswordModal';
 
@@ -877,26 +877,8 @@ export default function WorkshopPage() {
     const targetJob = deleteJobModal.job;
     const targetId = targetJob.id;
 
-    // 1. Move to Recycle Bin (local & cloud)
-    const trashObj = {
-      id: `trash_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-      item_type: 'Workshop Job',
-      title: `Service Job: ${targetJob.vehicle_number} (${targetJob.customer_name})`,
-      deleted_by: 'Patel Owner (Admin)',
-      deleted_at: new Date().toISOString(),
-      details: `Customer: ${targetJob.customer_name} • Phone: ${targetJob.mobile_number} • Model: ${targetJob.bike_model || 'Bike'} • Total: ₹${targetJob.live_total || 0}`,
-      payload: targetJob
-    };
-
-    const existingTrash = JSON.parse(localStorage.getItem('recycle_bin_items') || '[]');
-    localStorage.setItem('recycle_bin_items', JSON.stringify([trashObj, ...existingTrash]));
-    pushCloudRecycleBinItem(trashObj).catch(console.warn);
-
-    // 2. Delete from cloud store & local memory
-    deleteCloudJob(targetId).catch(console.warn);
-    const currentJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
-    const updatedLocal = currentJobs.filter(j => String(j.id) !== String(targetId));
-    localStorage.setItem('workshop_jobs', JSON.stringify(updatedLocal));
+    // 1. Move to Recycle Bin & purge atomically (0ms local & cloud)
+    deleteJobToRecycleBin(targetJob).catch(console.warn);
 
     setJobs(prev => prev.filter(j => String(j.id) !== String(targetId)));
     setDeleteJobModal({ isOpen: false, job: null });

@@ -638,6 +638,46 @@ export async function fetchCloudRecycleBin() {
   return (store.recycleBin || []).filter(r => r && typeof r === 'object' && (r.id || r.item_type));
 }
 
+export async function deleteJobToRecycleBin(targetJob) {
+  if (!targetJob || !targetJob.id) return;
+  const strId = String(targetJob.id);
+  const vehNum = String(targetJob.vehicle_number || '');
+
+  const trashObj = {
+    id: `trash_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+    item_type: 'Workshop Job',
+    title: `Service Job: ${vehNum} (${targetJob.customer_name || 'Customer'})`,
+    deleted_by: 'Patel Owner (Admin)',
+    deleted_at: new Date().toISOString(),
+    details: `Customer: ${targetJob.customer_name || 'Customer'} • Phone: ${targetJob.mobile_number || 'N/A'} • Model: ${targetJob.bike_model || 'Bike'} • Total: ₹${targetJob.live_total || targetJob.grand_total || 0}`,
+    payload: targetJob
+  };
+
+  const localTrash = JSON.parse(localStorage.getItem('recycle_bin_items') || '[]');
+  localStorage.setItem('recycle_bin_items', JSON.stringify([trashObj, ...localTrash.filter(r => String(r.id) !== trashObj.id)]));
+
+  const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
+  localStorage.setItem('workshop_jobs', JSON.stringify(localJobs.filter(j => String(j.id) !== strId)));
+
+  const localDeleted = JSON.parse(localStorage.getItem('deleted_ids') || '[]');
+  localStorage.setItem('deleted_ids', JSON.stringify(Array.from(new Set([...localDeleted, strId]))));
+
+  const store = await fetchMasterStore();
+  const storeJobs = (store.jobs || []).filter(j => String(j.id) !== strId);
+  const storeRecycle = [trashObj, ...(store.recycleBin || []).filter(r => String(r.id) !== trashObj.id)];
+  const storeDeleted = Array.from(new Set([...(store.deletedIds || []).map(String), strId]));
+
+  await saveMasterStore({
+    ...store,
+    jobs: storeJobs,
+    recycleBin: storeRecycle,
+    deletedIds: storeDeleted
+  });
+
+  window.dispatchEvent(new Event('storage'));
+  window.dispatchEvent(new Event('master_store_updated'));
+}
+
 export async function pushCloudRecycleBinItem(trashObj) {
   if (!trashObj || typeof trashObj !== 'object') return;
   const store = await fetchMasterStore();
@@ -649,17 +689,14 @@ export async function pushCloudRecycleBinItem(trashObj) {
 export async function restoreCloudRecycleBinItem(itemId) {
   if (!itemId) return;
 
-  // 1. Remove from local recycle_bin_items
-  const localTrash = JSON.parse(localStorage.getItem('recycle_bin_items') || '[]');
-  const updatedLocalTrash = localTrash.filter(r => r.id !== itemId && String(r.id) !== String(itemId));
-  localStorage.setItem('recycle_bin_items', JSON.stringify(updatedLocalTrash));
-
-  // 2. Remove from master_cloud_cache store.recycleBin
   const store = await fetchMasterStore();
-  const existing = (store.recycleBin || []).filter(r => r && typeof r === 'object');
-  const target = existing.find(r => r.id === itemId || String(r.id) === String(itemId));
-  const updatedCloudTrash = existing.filter(r => r.id !== itemId && String(r.id) !== String(itemId));
-  
+  const existingTrash = (store.recycleBin || []).filter(r => r && typeof r === 'object');
+  const target = existingTrash.find(r => String(r.id) === String(itemId) || (r.payload && String(r.payload.id) === String(itemId)));
+  const updatedCloudTrash = existingTrash.filter(r => String(r.id) !== String(itemId) && (!r.payload || String(r.payload.id) !== String(itemId)));
+
+  const localTrash = JSON.parse(localStorage.getItem('recycle_bin_items') || '[]');
+  localStorage.setItem('recycle_bin_items', JSON.stringify(localTrash.filter(r => String(r.id) !== String(itemId) && (!r.payload || String(r.payload.id) !== String(itemId)))));
+
   let updatedInvs = store.invoices || [];
   let updatedJobs = store.jobs || [];
   let updatedKhata = store.khataEntries || [];
@@ -669,35 +706,82 @@ export async function restoreCloudRecycleBinItem(itemId) {
   let updatedMessages = store.messages || [];
 
   if (target && target.payload) {
-    const payloadId = String(target.payload.id || '');
-    if (target.item_type === 'Billing Invoice') {
-      updatedInvs = [target.payload, ...updatedInvs.filter(i => String(i.id) !== payloadId)];
-    } else if (target.item_type === 'Workshop Job') {
-      updatedJobs = [target.payload, ...updatedJobs.filter(j => String(j.id) !== payloadId)];
-    } else if (target.item_type === 'Khata Account') {
-      updatedKhata = [target.payload, ...updatedKhata.filter(k => String(k.id) !== payloadId)];
-    } else if (target.item_type === 'Inventory') {
-      updatedInventory = [target.payload, ...updatedInventory.filter(i => String(i.id) !== payloadId)];
-    } else if (target.item_type === 'Customer Record') {
-      updatedCustomers = [target.payload, ...updatedCustomers.filter(c => String(c.id) !== payloadId)];
-    } else if (target.item_type === 'Online Booking') {
-      updatedBookings = [target.payload, ...updatedBookings.filter(b => String(b.id) !== payloadId)];
-    } else if (target.item_type === 'Contact Inquiry / Message') {
-      updatedMessages = [target.payload, ...updatedMessages.filter(m => String(m.id) !== payloadId)];
+    const p = target.payload;
+    const payloadId = String(p.id || '');
+    const payloadNum = String(p.invoice_number || '');
+    const payloadVeh = String(p.vehicle_number || '');
+    const payloadPart = String(p.part_name || p.name || '');
+    const payloadNorm = payloadPart.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    const idsToRemove = new Set([payloadId, payloadNum, payloadVeh, payloadPart, payloadNorm].filter(Boolean));
+
+    const localDeleted1 = JSON.parse(localStorage.getItem('deleted_item_ids') || '[]');
+    const localDeleted2 = JSON.parse(localStorage.getItem('deleted_ids') || '[]');
+    localStorage.setItem('deleted_item_ids', JSON.stringify(localDeleted1.filter(d => !idsToRemove.has(String(d)) && !idsToRemove.has(String(d).toLowerCase().replace(/[^a-z0-9]/g, '')))));
+    localStorage.setItem('deleted_ids', JSON.stringify(localDeleted2.filter(d => !idsToRemove.has(String(d)) && !idsToRemove.has(String(d).toLowerCase().replace(/[^a-z0-9]/g, '')))));
+
+    const type = (target.item_type || '').toLowerCase();
+    if (type.includes('inventory') || type.includes('spare') || type.includes('part')) {
+      const curInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+      const upInv = [p, ...curInv.filter(i => String(i.id) !== payloadId && String(i.part_name || i.name) !== payloadPart)];
+      localStorage.setItem('inventory_items', JSON.stringify(upInv));
+      localStorage.setItem('spare_parts', JSON.stringify(upInv));
+      updatedInventory = [p, ...updatedInventory.filter(i => String(i.id) !== payloadId)];
+    } else if (type.includes('workshop') || type.includes('job')) {
+      const curJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
+      const upJobs = [p, ...curJobs.filter(j => String(j.id) !== payloadId)];
+      localStorage.setItem('workshop_jobs', JSON.stringify(upJobs));
+      updatedJobs = [p, ...updatedJobs.filter(j => String(j.id) !== payloadId)];
+    } else if (type.includes('billing') || type.includes('invoice')) {
+      const curInvs = JSON.parse(localStorage.getItem('local_invoices') || '[]');
+      const upInvs = [p, ...curInvs.filter(i => String(i.id) !== payloadId)];
+      localStorage.setItem('local_invoices', JSON.stringify(upInvs));
+      updatedInvs = [p, ...updatedInvs.filter(i => String(i.id) !== payloadId)];
+    } else if (type.includes('khata')) {
+      const curKhata = JSON.parse(localStorage.getItem('khata_entries') || '[]');
+      const upKhata = [p, ...curKhata.filter(k => String(k.id) !== payloadId)];
+      localStorage.setItem('khata_entries', JSON.stringify(upKhata));
+      updatedKhata = [p, ...updatedKhata.filter(k => String(k.id) !== payloadId)];
+    } else if (type.includes('customer')) {
+      const curCust = JSON.parse(localStorage.getItem('local_customers') || '[]');
+      const upCust = [p, ...curCust.filter(c => String(c.id) !== payloadId)];
+      localStorage.setItem('local_customers', JSON.stringify(upCust));
+      updatedCustomers = [p, ...updatedCustomers.filter(c => String(c.id) !== payloadId)];
+    } else if (type.includes('booking')) {
+      const curBook = JSON.parse(localStorage.getItem('local_bookings') || '[]');
+      const upBook = [p, ...curBook.filter(b => String(b.id) !== payloadId)];
+      localStorage.setItem('local_bookings', JSON.stringify(upBook));
+      updatedBookings = [p, ...updatedBookings.filter(b => String(b.id) !== payloadId)];
+    } else if (type.includes('message')) {
+      const curMsgs = JSON.parse(localStorage.getItem('local_messages') || '[]');
+      const upMsgs = [p, ...curMsgs.filter(m => String(m.id) !== payloadId)];
+      localStorage.setItem('local_messages', JSON.stringify(upMsgs));
+      updatedMessages = [p, ...updatedMessages.filter(m => String(m.id) !== payloadId)];
     }
+
+    const storeDeleted = (store.deletedIds || []).map(String).filter(d => !idsToRemove.has(d) && !idsToRemove.has(d.toLowerCase().replace(/[^a-z0-9]/g, '')));
+
+    await saveMasterStore({
+      ...store,
+      recycleBin: updatedCloudTrash,
+      deletedIds: storeDeleted,
+      invoices: updatedInvs,
+      jobs: updatedJobs,
+      khataEntries: updatedKhata,
+      inventory: updatedInventory,
+      customers: updatedCustomers,
+      bookings: updatedBookings,
+      messages: updatedMessages
+    });
+  } else {
+    await saveMasterStore({
+      ...store,
+      recycleBin: updatedCloudTrash
+    });
   }
 
-  await saveMasterStore({
-    ...store,
-    recycleBin: updatedCloudTrash,
-    invoices: updatedInvs,
-    jobs: updatedJobs,
-    khataEntries: updatedKhata,
-    inventory: updatedInventory,
-    customers: updatedCustomers,
-    bookings: updatedBookings,
-    messages: updatedMessages
-  });
+  window.dispatchEvent(new Event('storage'));
+  window.dispatchEvent(new Event('master_store_updated'));
 }
 
 export async function emptyCloudRecycleBin() {

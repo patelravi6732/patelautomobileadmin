@@ -150,8 +150,23 @@ export async function fetchMasterStore(forceFresh = false) {
         localStorage.setItem('contact_messages', JSON.stringify(mergedStore.messages));
         localStorage.setItem('admin_profiles', JSON.stringify(mergedStore.adminProfiles));
         localStorage.setItem('local_customers', JSON.stringify(mergedStore.customers));
-        localStorage.setItem('inventory_items', JSON.stringify(mergedStore.inventory));
-        localStorage.setItem('spare_parts', JSON.stringify(mergedStore.inventory));
+
+        const curLocalInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+        const mergedInvMap = new Map();
+        [...curLocalInv, ...(mergedStore.inventory || [])].forEach(i => {
+          if (i && typeof i === 'object' && (i.id || i.part_name || i.name)) {
+            const strId = String(i.id || `inv_${String(i.part_name || i.name).toLowerCase().replace(/[^a-z0-9]/g, '')}`);
+            if (!mergedInvMap.has(strId)) {
+              mergedInvMap.set(strId, i);
+            } else {
+              mergedInvMap.set(strId, { ...mergedInvMap.get(strId), ...i });
+            }
+          }
+        });
+        const finalMergedInv = Array.from(mergedInvMap.values());
+        localStorage.setItem('inventory_items', JSON.stringify(finalMergedInv));
+        localStorage.setItem('spare_parts', JSON.stringify(finalMergedInv));
+
         window.dispatchEvent(new Event('storage'));
         window.dispatchEvent(new Event('master_store_updated'));
       } catch (e) {
@@ -288,8 +303,21 @@ async function saveMasterStore(storeData) {
     if (Array.isArray(storeData.khataEntries)) localStorage.setItem('khata_entries', JSON.stringify(storeData.khataEntries));
     if (Array.isArray(storeData.customers)) localStorage.setItem('local_customers', JSON.stringify(storeData.customers));
     if (Array.isArray(resolvedInv)) {
-      localStorage.setItem('inventory_items', JSON.stringify(resolvedInv));
-      localStorage.setItem('spare_parts', JSON.stringify(resolvedInv));
+      const curLocalInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+      const mergedInvMap = new Map();
+      [...curLocalInv, ...resolvedInv].forEach(i => {
+        if (i && typeof i === 'object' && (i.id || i.part_name || i.name)) {
+          const strId = String(i.id || `inv_${String(i.part_name || i.name).toLowerCase().replace(/[^a-z0-9]/g, '')}`);
+          if (!mergedInvMap.has(strId)) {
+            mergedInvMap.set(strId, i);
+          } else {
+            mergedInvMap.set(strId, { ...mergedInvMap.get(strId), ...i });
+          }
+        }
+      });
+      const finalMergedInv = Array.from(mergedInvMap.values());
+      localStorage.setItem('inventory_items', JSON.stringify(finalMergedInv));
+      localStorage.setItem('spare_parts', JSON.stringify(finalMergedInv));
     }
     if (Array.isArray(storeData.bookings)) localStorage.setItem('local_bookings', JSON.stringify(storeData.bookings));
     if (Array.isArray(storeData.messages)) {

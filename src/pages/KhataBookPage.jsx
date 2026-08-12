@@ -50,7 +50,10 @@ export default function KhataBookPage() {
   const handleDeleteWithPassword = async (adminPassword) => {
     if (!deleteModal.debtor) return;
     const targetDebtor = deleteModal.debtor;
-    const targetId = targetDebtor.id;
+    const targetId = String(targetDebtor.id || targetDebtor.invoice_id || '');
+    const rawId = targetId.replace(/^inv_/, '').replace(/^job_/, '').replace(/^khata_/, '').replace(/^booking_/, '');
+    const invNum = targetDebtor.invoice_number || '';
+    const vehNum = (targetDebtor.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
 
     // 1. Move to Recycle Bin
     const trashObj = {
@@ -67,19 +70,44 @@ export default function KhataBookPage() {
     localStorage.setItem('recycle_bin_items', JSON.stringify([trashObj, ...existingTrash]));
     pushCloudRecycleBinItem(trashObj).catch(console.warn);
 
-    // 2. Mark as deleted & purge locally & cloud
-    markIdAsDeleted(targetId).catch(console.warn);
-    deleteCloudKhataEntry(targetId).catch(console.warn);
+    // 2. Mark ALL ID variations as deleted & purge cloud store
+    const idsToMark = [targetId, rawId, `inv_${rawId}`, `job_${rawId}`, `khata_${rawId}`];
+    if (invNum) idsToMark.push(invNum);
+    idsToMark.forEach(id => {
+      if (id) {
+        markIdAsDeleted(id).catch(console.warn);
+        deleteCloudKhataEntry(id).catch(console.warn);
+        deleteCloudInvoice(id).catch(console.warn);
+        deleteCloudJob(id).catch(console.warn);
+      }
+    });
 
+    const isMatch = (item) => {
+      if (!item) return false;
+      const itId = String(item.id || '');
+      const itJobId = String(item.job_id || '');
+      const itInvNum = String(item.invoice_number || '');
+      const itVeh = (item.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+      return idsToMark.includes(itId) || idsToMark.includes(itJobId) || (invNum && itInvNum === invNum) || (vehNum && itVeh === vehNum);
+    };
+
+    // Purge local_invoices
+    const localInvs = JSON.parse(localStorage.getItem('local_invoices') || '[]');
+    localStorage.setItem('local_invoices', JSON.stringify(localInvs.filter(i => !isMatch(i))));
+
+    // Purge workshop_jobs
+    const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
+    localStorage.setItem('workshop_jobs', JSON.stringify(localJobs.filter(j => !isMatch(j))));
+
+    // Purge khata_entries
     const localKhata = JSON.parse(localStorage.getItem('khata_entries') || '[]');
-    const updatedLocalKhata = localKhata.filter(k => (k.vehicle_number !== targetDebtor.vehicle_number && String(k.id) !== String(targetId)));
-    localStorage.setItem('khata_entries', JSON.stringify(updatedLocalKhata));
+    localStorage.setItem('khata_entries', JSON.stringify(localKhata.filter(k => !isMatch(k))));
 
+    // Purge khata_debtors
     const localDebtors = JSON.parse(localStorage.getItem('khata_debtors') || '[]');
-    const updatedLocalDebtors = localDebtors.filter(d => (d.vehicle_number !== targetDebtor.vehicle_number && String(d.id) !== String(targetId)));
-    localStorage.setItem('khata_debtors', JSON.stringify(updatedLocalDebtors));
+    localStorage.setItem('khata_debtors', JSON.stringify(localDebtors.filter(d => !isMatch(d))));
 
-    setDebtors(prev => prev.filter(d => String(d.id) !== String(targetId) && d.vehicle_number !== targetDebtor.vehicle_number));
+    setDebtors(prev => prev.filter(d => !isMatch(d)));
     setDeleteModal({ isOpen: false, debtor: null });
 
     try {
@@ -111,14 +139,25 @@ export default function KhataBookPage() {
       }
 
       const deletedIds = await fetchCloudDeletedIds().catch(() => []);
+      const isDeleted = (id) => {
+        if (!id) return false;
+        const s = String(id).trim();
+        const raw = s.replace(/^inv_/, '').replace(/^job_/, '').replace(/^khata_/, '').replace(/^booking_/, '');
+        return deletedIds.some(d => {
+          if (!d) return false;
+          const dStr = String(d).trim();
+          const dRaw = dStr.replace(/^inv_/, '').replace(/^job_/, '').replace(/^khata_/, '').replace(/^booking_/, '');
+          return s === dStr || (raw && dRaw && raw === dRaw);
+        });
+      };
 
       // Read all records across stores safely
-      const localKhata = JSON.parse(localStorage.getItem('khata_entries') || '[]').filter(k => k && !deletedIds.includes(String(k.id)));
-      const cloudKhata = (await fetchCloudKhataEntries().catch(() => [])).filter(k => k && !deletedIds.includes(String(k.id)));
+      const localKhata = JSON.parse(localStorage.getItem('khata_entries') || '[]').filter(k => k && !isDeleted(k.id) && !isDeleted(k.job_id));
+      const cloudKhata = (await fetchCloudKhataEntries().catch(() => [])).filter(k => k && !isDeleted(k.id) && !isDeleted(k.job_id));
       const combinedKhata = [...localKhata, ...cloudKhata];
 
-      const localInvs = JSON.parse(localStorage.getItem('local_invoices') || '[]').filter(i => i && !deletedIds.includes(String(i.id)) && !deletedIds.includes(String(i.invoice_number)));
-      const cloudInvs = (await fetchCloudInvoices().catch(() => [])).filter(i => i && !deletedIds.includes(String(i.id)) && !deletedIds.includes(String(i.invoice_number)));
+      const localInvs = JSON.parse(localStorage.getItem('local_invoices') || '[]').filter(i => i && !isDeleted(i.id) && !isDeleted(i.invoice_number) && !isDeleted(i.job_id));
+      const cloudInvs = (await fetchCloudInvoices().catch(() => [])).filter(i => i && !isDeleted(i.id) && !isDeleted(i.invoice_number) && !isDeleted(i.job_id));
       
       const invMap = new Map();
       [...localInvs, ...cloudInvs].forEach(inv => {
@@ -138,8 +177,8 @@ export default function KhataBookPage() {
       });
       const combinedInvs = Array.from(invMap.values());
 
-      const allJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]').filter(j => j && !deletedIds.includes(String(j.id)));
-      const cloudJobs = (await fetchCloudJobs().catch(() => [])).filter(j => j && !deletedIds.includes(String(j.id)));
+      const allJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]').filter(j => j && !isDeleted(j.id) && !isDeleted(j.booking_id));
+      const cloudJobs = (await fetchCloudJobs().catch(() => [])).filter(j => j && !isDeleted(j.id) && !isDeleted(j.booking_id));
       const combinedJobs = [...allJobs, ...cloudJobs];
       const finishedJobs = combinedJobs.filter(j => j && (j.status === 'FINISHED' || j.status === 'COMPLETED'));
 
@@ -149,7 +188,7 @@ export default function KhataBookPage() {
 
       // 1. Process Invoices
       combinedInvs.forEach(inv => {
-        if (!inv || deletedIds.includes(String(inv.id)) || deletedIds.includes(String(inv.invoice_number))) return;
+        if (!inv || isDeleted(inv.id) || isDeleted(inv.invoice_number) || isDeleted(inv.job_id)) return;
         const partsVal = parseFloat(inv.parts_total || 0);
         const labourVal = parseFloat(inv.labour_charge || 0);
         const discountVal = parseFloat(inv.discount_amount || 0);

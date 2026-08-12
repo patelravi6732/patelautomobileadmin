@@ -444,19 +444,31 @@ export async function updateCloudJobStatus(jobId, newStatus) {
 export async function deleteCloudJob(jobId) {
   if (!jobId) return;
   const strId = String(jobId);
+  const rawId = strId.replace(/^job_/, '').replace(/^inv_/, '');
 
   // 1. Remove from workshop_jobs
   const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
-  const updatedLocal = localJobs.filter(j => j && String(j.id) !== strId);
+  const updatedLocal = localJobs.filter(j => {
+    if (!j) return false;
+    const jId = String(j.id || '');
+    const jRaw = jId.replace(/^job_/, '').replace(/^inv_/, '');
+    return jId !== strId && jRaw !== rawId;
+  });
   localStorage.setItem('workshop_jobs', JSON.stringify(updatedLocal));
 
   // 2. Mark deleted in deletedIds
   await markIdAsDeleted(jobId).catch(console.warn);
+  if (rawId && rawId !== strId) await markIdAsDeleted(rawId).catch(console.warn);
 
   // 3. Remove from master_cloud_cache store.jobs
   const store = await fetchMasterStore();
   const existing = (store.jobs || []).filter(j => j && typeof j === 'object');
-  const updated = existing.filter(j => j && String(j.id) !== strId);
+  const updated = existing.filter(j => {
+    if (!j) return false;
+    const jId = String(j.id || '');
+    const jRaw = jId.replace(/^job_/, '').replace(/^inv_/, '');
+    return jId !== strId && jRaw !== rawId;
+  });
   await saveMasterStore({ ...store, jobs: updated });
 }
 

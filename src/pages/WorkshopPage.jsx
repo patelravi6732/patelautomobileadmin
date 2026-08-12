@@ -161,24 +161,27 @@ export default function WorkshopPage() {
             const mergedPartsMap = new Map();
             [...existingParts, ...currentParts].forEach(p => {
               if (p && (p.id || p.part_name || p.name)) {
-                const pKey = String(p.inventory_id || p.part_id || p.id || p.part_name || p.name).toLowerCase().replace(/[^a-z0-9]/g, '');
-                if (!mergedPartsMap.has(pKey)) {
-                  mergedPartsMap.set(pKey, p);
-                } else {
-                  const exP = mergedPartsMap.get(pKey);
-                  const exQty = parseInt(exP.quantity || 1, 10);
-                  const curQty = parseInt(p.quantity || 1, 10);
-                  const finalQty = Math.max(exQty, curQty);
-                  const unitPrice = parseFloat(p.price || p.unit_price || exP.price || exP.unit_price || 0);
-                  mergedPartsMap.set(pKey, {
-                    ...exP,
-                    ...p,
-                    quantity: finalQty,
-                    staged_total: finalQty * unitPrice,
-                    status: (p.status === 'CONFIRMED' || exP.status === 'CONFIRMED') ? 'CONFIRMED' : (p.status || exP.status || 'STAGED'),
-                    is_confirmed: Boolean(p.is_confirmed || exP.is_confirmed),
-                    is_deducted: Boolean(p.is_deducted || exP.is_deducted)
-                  });
+                const rawName = String(p.part_name || p.name || '').trim();
+                const pKey = rawName ? rawName.toLowerCase().replace(/[^a-z0-9]/g, '') : String(p.inventory_id || p.part_id || p.id || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                if (pKey) {
+                  if (!mergedPartsMap.has(pKey)) {
+                    mergedPartsMap.set(pKey, p);
+                  } else {
+                    const exP = mergedPartsMap.get(pKey);
+                    const exQty = parseInt(exP.quantity || 1, 10);
+                    const curQty = parseInt(p.quantity || 1, 10);
+                    const finalQty = Math.max(exQty, curQty);
+                    const unitPrice = parseFloat(p.price || p.unit_price || exP.price || exP.unit_price || 0);
+                    mergedPartsMap.set(pKey, {
+                      ...exP,
+                      ...p,
+                      quantity: finalQty,
+                      staged_total: finalQty * unitPrice,
+                      status: (p.status === 'CONFIRMED' || exP.status === 'CONFIRMED') ? 'CONFIRMED' : (p.status || exP.status || 'STAGED'),
+                      is_confirmed: Boolean(p.is_confirmed || exP.is_confirmed),
+                      is_deducted: Boolean(p.is_deducted || exP.is_deducted)
+                    });
+                  }
                 }
               }
             });

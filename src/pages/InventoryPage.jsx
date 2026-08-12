@@ -52,10 +52,11 @@ export default function InventoryPage() {
     const isItemDeleted = (item) => {
       if (!item) return true;
       const itId = String(item.id || '').toLowerCase().trim();
+      if (!itId) return false;
       return allDeletedIds.some(d => {
         if (!d) return false;
         const dStr = String(d).toLowerCase().trim();
-        return (itId && dStr && (itId === dStr || itId === dStr.replace(/[^a-z0-9]/g, '')));
+        return dStr.startsWith('inv_') && itId === dStr;
       });
     };
 
@@ -64,42 +65,41 @@ export default function InventoryPage() {
     
     // Clean local storage of any deleted item
     const cleanLocalInv = rawLocalInv.filter(i => !isItemDeleted(i));
+    const cleanCloudInv = cloudInv.filter(i => !isItemDeleted(i));
+
     if (cleanLocalInv.length !== rawLocalInv.length) {
       localStorage.setItem('inventory_items', JSON.stringify(cleanLocalInv));
       localStorage.setItem('spare_parts', JSON.stringify(cleanLocalInv));
     }
 
     const allMap = new Map();
-    [...cleanLocalInv, ...cloudInv].forEach(item => {
+    [...cleanLocalInv, ...cleanCloudInv].forEach(item => {
       if (item && typeof item === 'object' && (item.id || item.part_name || item.name)) {
-        if (!isItemDeleted(item)) {
-          const rawId = String(item.id || `inv_${String(item.part_name || item.name).toLowerCase().replace(/[^a-z0-9]/g, '')}`);
-          const rawName = String(item.part_name || item.name || '').trim();
-          const parsedStock = parseInt(item.current_stock !== undefined ? item.current_stock : 0, 10);
-          const parsedMin = item.min_stock_alert !== undefined && item.min_stock_alert !== '' ? parseInt(item.min_stock_alert, 10) : 2;
-          
-          const newItemObj = {
-            id: rawId,
-            part_name: rawName || 'Spare Part',
-            category: item.category || 'General',
-            price: parseFloat(item.price || 0),
-            current_stock: parsedStock,
-            min_stock_alert: parsedMin,
-            updated_at: item.updated_at || null
-          };
+        const rawId = String(item.id || `inv_${String(item.part_name || item.name).toLowerCase().replace(/[^a-z0-9]/g, '')}`);
+        const rawName = String(item.part_name || item.name || '').trim();
+        const parsedStock = parseInt(item.current_stock !== undefined ? item.current_stock : 0, 10);
+        const parsedMin = item.min_stock_alert !== undefined && item.min_stock_alert !== '' ? parseInt(item.min_stock_alert, 10) : 2;
+        
+        const newItemObj = {
+          id: rawId,
+          part_name: rawName || 'Spare Part',
+          category: item.category || 'General',
+          price: parseFloat(item.price || 0),
+          current_stock: parsedStock,
+          min_stock_alert: parsedMin,
+          updated_at: item.updated_at || new Date().toISOString()
+        };
 
+        if (!allMap.has(rawId)) {
+          allMap.set(rawId, newItemObj);
+        } else {
           const existing = allMap.get(rawId);
-          if (!existing) {
-            allMap.set(rawId, newItemObj);
-          } else {
-            const mergedItem = {
-              ...existing,
-              ...newItemObj,
-              current_stock: newItemObj.updated_at && existing.updated_at && new Date(newItemObj.updated_at) < new Date(existing.updated_at) ? existing.current_stock : newItemObj.current_stock,
-              price: newItemObj.price || existing.price || 0
-            };
-            allMap.set(rawId, mergedItem);
-          }
+          allMap.set(rawId, {
+            ...existing,
+            ...newItemObj,
+            current_stock: newItemObj.current_stock !== undefined ? newItemObj.current_stock : existing.current_stock,
+            price: newItemObj.price || existing.price || 0
+          });
         }
       }
     });

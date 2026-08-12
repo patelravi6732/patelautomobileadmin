@@ -97,9 +97,13 @@ export default function InventoryPage() {
           if (!existing) {
             allMap.set(rawId, newItemObj);
           } else {
-            if (item.updated_at && (!existing.updated_at || new Date(item.updated_at) > new Date(existing.updated_at))) {
-              allMap.set(rawId, newItemObj);
-            }
+            const mergedItem = {
+              ...existing,
+              ...newItemObj,
+              current_stock: newItemObj.updated_at && existing.updated_at && new Date(newItemObj.updated_at) < new Date(existing.updated_at) ? existing.current_stock : newItemObj.current_stock,
+              price: newItemObj.price || existing.price || 0
+            };
+            allMap.set(rawId, mergedItem);
           }
         }
       }
@@ -121,8 +125,15 @@ export default function InventoryPage() {
     fetchInventory(true);
     const interval = setInterval(() => {
       fetchInventory(false);
-    }, 5000);
-    return () => clearInterval(interval);
+    }, 4000);
+    const handleStorage = () => fetchInventory(false);
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener('master_store_updated', handleStorage);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('master_store_updated', handleStorage);
+    };
   }, []);
 
   const openAddModal = () => {

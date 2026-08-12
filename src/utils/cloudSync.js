@@ -870,7 +870,7 @@ export async function fetchCloudAdminProfiles() {
 
   let cloudList = [];
   try {
-    const res = await axios.get(PRIMARY_BIN_URL + '?t=' + Date.now(), {
+    const res = await axios.get('/api/public/master_store/?t=' + Date.now(), {
       headers: { 'Accept': 'application/json', 'Cache-Control': 'no-cache' },
       timeout: 3000
     });
@@ -882,6 +882,9 @@ export async function fetchCloudAdminProfiles() {
   }
 
   const allAdminsMap = new Map();
+  if (DEFAULT_PRIMARY_ADMIN && DEFAULT_PRIMARY_ADMIN.username) {
+    allAdminsMap.set(DEFAULT_PRIMARY_ADMIN.username.toLowerCase(), DEFAULT_PRIMARY_ADMIN);
+  }
 
   cloudList.forEach(a => { 
     const key = (a.username || a.user_name || a.phone || a.id || '').toLowerCase();

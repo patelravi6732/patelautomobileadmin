@@ -1,9 +1,9 @@
 import axios from 'axios';
 
-const DEFAULT_PRIMARY_BIN_URL = 'https://jsonblob.com/api/jsonBlob/019fefc6-21be-77b8-ac69-adb834903ebd';
+const DEFAULT_PRIMARY_BIN_URL = '/api/public/master_store/';
 
 function getActiveBinUrl() {
-  return DEFAULT_PRIMARY_BIN_URL;
+  return '/api/public/master_store/';
 }
 
 async function createFreshCloudBin(initialData) {

@@ -1,7 +1,15 @@
 {
   "rewrites": [
     {
-      "source": "/(.*)",
+      "source": "/api/public/master_store",
+      "destination": "/api/public/master_store.js"
+    },
+    {
+      "source": "/api/public/master_store/(.*)",
+      "destination": "/api/public/master_store.js"
+    },
+    {
+      "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
   ]

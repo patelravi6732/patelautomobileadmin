@@ -205,14 +205,14 @@ export default function WorkshopPage() {
             return;
           }
 
-          // 3. Skip if an active job for this exact vehicle already exists on workshop floor (No duplicates!)
-          const alreadyHasActiveJob = Array.from(allMap.values()).some(j => {
-            if (!j || j.status === 'FINISHED' || j.status === 'COMPLETED' || j.status === 'CANCELLED') return false;
+          // 3. Skip if any job (active or finished) for this exact vehicle already exists (No duplicates!)
+          const hasExistingJobForVehicle = Array.from(allMap.values()).some(j => {
+            if (!j) return false;
             const jVeh = String(j.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
             return normVeh && jVeh && normVeh === jVeh;
           });
 
-          if (alreadyHasActiveJob || allMap.has(bookingJobId)) {
+          if (hasExistingJobForVehicle || allMap.has(bookingJobId)) {
             return;
           }
 
@@ -917,6 +917,25 @@ export default function WorkshopPage() {
       khataDebit: khataDebitEntry,
       updatedInventory: updatedInvList
     }).catch(console.warn);
+
+    // Update online booking memory so it never re-creates as active
+    try {
+      const localBookings = JSON.parse(localStorage.getItem('local_bookings') || localStorage.getItem('workshop_online_bookings') || '[]');
+      const updatedBookings = localBookings.map(b => {
+        if (!b) return b;
+        const bId = String(b.id || '');
+        const bVeh = String(b.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+        const tVeh = String(selectedJob.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+        if (bId === String(targetId) || bId === String(selectedJob.booking_id) || (bVeh && tVeh && bVeh === tVeh)) {
+          return { ...b, status: 'FINISHED' };
+        }
+        return b;
+      });
+      localStorage.setItem('local_bookings', JSON.stringify(updatedBookings));
+      localStorage.setItem('workshop_online_bookings', JSON.stringify(updatedBookings));
+    } catch (bErr) {
+      console.warn('Booking status update notice:', bErr);
+    }
 
     // 5. Update local React state immediately (0ms lag)
     setJobs(prev => prev.map(j => (String(j.id) === String(targetId) ? finishedJobData : j)));

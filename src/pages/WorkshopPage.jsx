@@ -396,7 +396,9 @@ export default function WorkshopPage() {
   const openAddPartModal = (job) => {
     setSelectedJob(job);
     setPartSearchQuery('');
-    const firstItem = inventory && inventory.length > 0 ? inventory[0] : null;
+    const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+    const currentInv = (inventory && inventory.length > 0) ? inventory : localInv;
+    const firstItem = currentInv && currentInv.length > 0 ? currentInv[0] : null;
     const firstKey = firstItem ? String(firstItem.id || firstItem.part_name || firstItem.name) : '';
     setSelectedPartId(firstKey);
     setPartQty(1);
@@ -410,7 +412,10 @@ export default function WorkshopPage() {
       return;
     }
 
-    const filteredInv = (inventory || []).filter(item => {
+    const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+    const allInv = (inventory && inventory.length > 0) ? inventory : localInv;
+
+    const filteredInv = allInv.filter(item => {
       if (!item) return false;
       const name = (item.part_name || item.name || '').toLowerCase();
       const query = (partSearchQuery || '').toLowerCase();
@@ -420,7 +425,7 @@ export default function WorkshopPage() {
     const targetKey = String(selectedPartId || '').trim();
     const targetNorm = targetKey.toLowerCase().replace(/[^a-z0-9]/g, '');
 
-    let partObj = (inventory || []).find(p => {
+    let partObj = allInv.find(p => {
       if (!p) return false;
       const pKey = String(p.id || p.part_name || p.name || '').trim();
       const pNorm = String(p.part_name || p.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -528,8 +533,7 @@ export default function WorkshopPage() {
     setJobs(prev => prev.map(j => (isMatchJob(j) ? updatedJob : j)));
     
     // 1. Deduct Inventory stock IMMEDIATELY (10 -> 9)
-    const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
-    const baseInv = inventory && inventory.length > 0 ? inventory : (localInv.length > 0 ? localInv : [partObj]);
+    const baseInv = (inventory && inventory.length > 0) ? inventory : (localInv.length > 0 ? localInv : [partObj]);
     const partNormName = String(partObj.part_name || partObj.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
     let updatedTargetItem = null;
@@ -1548,7 +1552,9 @@ export default function WorkshopPage() {
               {/* INVENTORY LIST BOX */}
               <div className="flex-1 overflow-y-auto space-y-2 pr-1 border border-slate-100 rounded-2xl p-2 bg-slate-50/50 max-h-60 min-h-40">
                 {(() => {
-                  const filtered = inventory.filter(item => {
+                  const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+                  const invListToDisplay = (inventory && inventory.length > 0) ? inventory : localInv;
+                  const filtered = invListToDisplay.filter(item => {
                     if (!item) return false;
                     const name = (item.part_name || item.name || '').toLowerCase();
                     const query = (partSearchQuery || '').toLowerCase();

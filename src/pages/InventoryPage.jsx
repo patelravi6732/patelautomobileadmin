@@ -52,15 +52,10 @@ export default function InventoryPage() {
     const isItemDeleted = (item) => {
       if (!item) return true;
       const itId = String(item.id || '').toLowerCase().trim();
-      const itName = String(item.part_name || item.name || '').toLowerCase().trim();
-      const itNorm = itName.replace(/[^a-z0-9]/g, '');
-
       return allDeletedIds.some(d => {
         if (!d) return false;
         const dStr = String(d).toLowerCase().trim();
-        const dNorm = dStr.replace(/[^a-z0-9]/g, '');
-        return (itId && dStr && (itId === dStr || itId === dNorm)) ||
-               (itName && dStr && (itName === dStr || itNorm === dNorm || itNorm === dStr));
+        return (itId && dStr && (itId === dStr || itId === dStr.replace(/[^a-z0-9]/g, '')));
       });
     };
 
@@ -176,24 +171,38 @@ export default function InventoryPage() {
   };
 
   const saveNewPart = async (data) => {
+    const nowIso = new Date().toISOString();
     const newPartObj = {
-      id: `inv_${Date.now()}`,
+      id: `inv_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
       part_name: data.part_name,
       category: data.category || 'General',
       price: parseFloat(data.price || 0),
       current_stock: parseInt(data.current_stock || 0, 10),
       min_stock_alert: data.min_stock_alert !== '' ? parseInt(data.min_stock_alert, 10) : 2,
-      created_at: new Date().toISOString()
+      created_at: nowIso,
+      updated_at: nowIso
     };
+
+    // Remove any historical deletion block matching this part name
+    const rawName = String(data.part_name || '').trim().toLowerCase();
+    const normName = rawName.replace(/[^a-z0-9]/g, '');
+    const localDeleted = JSON.parse(localStorage.getItem('deleted_ids') || '[]');
+    const cleanedDeleted = localDeleted.filter(d => {
+      if (!d) return false;
+      const dStr = String(d).toLowerCase().trim();
+      const dNorm = dStr.replace(/[^a-z0-9]/g, '');
+      return dStr !== rawName && dNorm !== normName;
+    });
+    localStorage.setItem('deleted_ids', JSON.stringify(cleanedDeleted));
 
     // Save locally and push to cloud bin
     pushCloudInventoryItem(newPartObj).catch(console.warn);
     const existing = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
-    const updatedLocal = [newPartObj, ...existing];
+    const updatedLocal = [newPartObj, ...existing.filter(i => i && String(i.id) !== newPartObj.id)];
     localStorage.setItem('inventory_items', JSON.stringify(updatedLocal));
     localStorage.setItem('spare_parts', JSON.stringify(updatedLocal));
 
-    setItems(prev => [newPartObj, ...prev]);
+    setItems(prev => [newPartObj, ...prev.filter(i => i && String(i.id) !== newPartObj.id)]);
     setShowAddModal(false);
 
     try {

@@ -487,11 +487,13 @@ export default function BillingPage() {
           <div className="p-12 text-center text-slate-400 font-medium">No matching billing records found for the selected filter.</div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[940px] text-left text-xs sm:text-sm">
+            <table className="w-full min-w-[1020px] text-left text-xs sm:text-sm">
               <thead className="bg-slate-50/90 text-slate-600 font-extrabold uppercase tracking-wider text-[11px] border-b border-slate-200/80">
                 <tr>
                   <th className="p-4 sm:p-5">Customer &amp; Vehicle</th>
                   <th className="p-4 sm:p-5">Service Total</th>
+                  <th className="p-4 sm:p-5">Discount</th>
+                  <th className="p-4 sm:p-5">Net Total</th>
                   <th className="p-4 sm:p-5">Received</th>
                   <th className="p-4 sm:p-5">Payment Status</th>
                   <th className="p-4 sm:p-5">Completed On</th>
@@ -499,80 +501,90 @@ export default function BillingPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
-                {filteredInvoices.map((inv) => (
-                  <tr key={inv.id} className="hover:bg-blue-50/40 transition-colors">
-                    <td className="p-4 sm:p-5 min-w-56">
-                      <span className="font-extrabold text-slate-900 text-sm block">{inv.customer_name}</span>
-                      <span className="inline-flex mt-1 rounded-md bg-slate-100 px-2 py-1 text-[11px] text-slate-600 font-mono font-bold">
-                        {inv.vehicle_number} <span className="mx-1 text-slate-300">•</span> {inv.bike_model}
-                      </span>
-                    </td>
-                    <td className="p-4 sm:p-5 font-black text-slate-900 font-poppins text-base whitespace-nowrap">
-                      ₹{parseFloat(inv.grand_total || 0).toFixed(2)}
-                    </td>
-                    <td className="p-4 sm:p-5 font-black text-emerald-600 font-poppins text-base whitespace-nowrap">
-                      ₹{(() => {
-                        const grandVal = parseFloat(inv.grand_total || 0);
-                        const rawPaid = parseFloat(inv.paid_amount !== undefined && inv.paid_amount !== null ? inv.paid_amount : (inv.received_amount !== undefined && inv.received_amount !== null ? inv.received_amount : (inv.payment_status === 'PAID' ? grandVal : 0)));
-                        const clampedPaid = Math.min(grandVal, Math.max(0, rawPaid));
-                        return clampedPaid.toFixed(2);
-                      })()}
-                    </td>
-                    <td className="p-4 sm:p-5">
-                      {(() => {
-                        const grandVal = parseFloat(inv.grand_total || inv.total_amount || 0);
-                        const paidVal = parseFloat(inv.paid_amount !== undefined && inv.paid_amount !== null ? inv.paid_amount : (inv.received_amount !== undefined && inv.received_amount !== null ? inv.received_amount : (inv.payment_status === 'PAID' ? grandVal : 0)));
-                        const pendingVal = Math.max(0, grandVal - paidVal);
+                {filteredInvoices.map((inv) => {
+                  const partsVal = parseFloat(inv.parts_total || 0);
+                  const labourVal = parseFloat(inv.labour_charge || 0);
+                  const discountVal = parseFloat(inv.discount_amount || inv.discount || 0);
+                  const grossSubtotal = (partsVal + labourVal > 0) ? (partsVal + labourVal) : (parseFloat(inv.grand_total || inv.total_amount || 0) + discountVal);
+                  const netTotal = parseFloat(inv.grand_total || inv.total_amount || Math.max(0, grossSubtotal - discountVal));
+                  const rawPaid = parseFloat(inv.paid_amount !== undefined && inv.paid_amount !== null ? inv.paid_amount : (inv.received_amount !== undefined && inv.received_amount !== null ? inv.received_amount : (inv.payment_status === 'PAID' ? netTotal : 0)));
+                  const clampedPaid = Math.min(netTotal, Math.max(0, rawPaid));
+                  const pendingVal = Math.max(0, netTotal - clampedPaid);
 
-                        return (
-                          <span className={`px-3 py-1 rounded-full text-[11px] font-extrabold uppercase ${
-                            pendingVal <= 0
-                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                              : paidVal > 0
-                                ? 'bg-purple-100 text-purple-800 border border-purple-200'
-                                : 'bg-amber-100 text-amber-800 border border-amber-200'
-                          }`}>
-                            {pendingVal <= 0 ? 'PAID' : paidVal > 0 ? `PARTIAL (₹${pendingVal.toFixed(0)} Pending)` : 'PENDING'}
+                  return (
+                    <tr key={inv.id} className="hover:bg-blue-50/40 transition-colors">
+                      <td className="p-4 sm:p-5 min-w-56">
+                        <span className="font-extrabold text-slate-900 text-sm block">{inv.customer_name}</span>
+                        <span className="inline-flex mt-1 rounded-md bg-slate-100 px-2 py-1 text-[11px] text-slate-600 font-mono font-bold">
+                          {inv.vehicle_number} <span className="mx-1 text-slate-300">•</span> {inv.bike_model}
+                        </span>
+                      </td>
+                      <td className="p-4 sm:p-5 font-bold text-slate-800 font-poppins text-sm whitespace-nowrap">
+                        ₹{grossSubtotal.toFixed(2)}
+                      </td>
+                      <td className="p-4 sm:p-5 whitespace-nowrap">
+                        {discountVal > 0 ? (
+                          <span className="px-2.5 py-1 rounded-lg text-xs font-black bg-amber-100 text-amber-800 border border-amber-200">
+                            -₹{discountVal.toFixed(2)}
                           </span>
-                        );
-                      })()}
-                    </td>
-                    <td className="p-4 sm:p-5 text-slate-500 font-semibold text-xs whitespace-nowrap">
-                      {formatDateDMY(inv.created_at || inv.visit_date)}
-                    </td>
-                    <td className="p-4 sm:p-5 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          type="button"
-                          onClick={() => handleDownloadInvoicePhoto(inv)}
-                          disabled={sharingPhoto}
-                          className="h-9 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition-all hover:scale-105 whitespace-nowrap cursor-pointer"
-                          title="Download bill photo"
-                        >
-                          <Download className="w-3.5 h-3.5" /> Download
-                        </button>
+                        ) : (
+                          <span className="text-xs text-slate-400 font-semibold">—</span>
+                        )}
+                      </td>
+                      <td className="p-4 sm:p-5 font-black text-slate-900 font-poppins text-base whitespace-nowrap">
+                        ₹{netTotal.toFixed(2)}
+                      </td>
+                      <td className="p-4 sm:p-5 font-black text-emerald-600 font-poppins text-base whitespace-nowrap">
+                        ₹{clampedPaid.toFixed(2)}
+                      </td>
+                      <td className="p-4 sm:p-5">
+                        <span className={`px-3 py-1 rounded-full text-[11px] font-extrabold uppercase ${
+                          pendingVal <= 0
+                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                            : clampedPaid > 0
+                              ? 'bg-purple-100 text-purple-800 border border-purple-200'
+                              : 'bg-amber-100 text-amber-800 border border-amber-200'
+                        }`}>
+                          {pendingVal <= 0 ? 'PAID' : clampedPaid > 0 ? `PARTIAL (₹${pendingVal.toFixed(0)} Pending)` : 'PENDING'}
+                        </span>
+                      </td>
+                      <td className="p-4 sm:p-5 text-slate-500 font-semibold text-xs whitespace-nowrap">
+                        {formatDateDMY(inv.created_at || inv.visit_date)}
+                      </td>
+                      <td className="p-4 sm:p-5 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadInvoicePhoto(inv)}
+                            disabled={sharingPhoto}
+                            className="h-9 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition-all hover:scale-105 whitespace-nowrap cursor-pointer"
+                            title="Download bill photo"
+                          >
+                            <Download className="w-3.5 h-3.5" /> Download
+                          </button>
 
-                        <button
-                          type="button"
-                          onClick={() => handleOpenWhatsAppChat(inv)}
-                          className="h-9 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition-all hover:scale-105 whitespace-nowrap"
-                          title="Open WhatsApp Chat"
-                        >
-                          <Send className="w-3.5 h-3.5" /> WhatsApp
-                        </button>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenWhatsAppChat(inv)}
+                            className="h-9 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition-all hover:scale-105 whitespace-nowrap"
+                            title="Open WhatsApp Chat"
+                          >
+                            <Send className="w-3.5 h-3.5" /> WhatsApp
+                          </button>
 
-                        <button
-                          type="button"
-                          onClick={() => setDeleteModal({ isOpen: true, invoice: inv })}
-                          className="h-9 w-9 bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 rounded-xl flex items-center justify-center transition-colors"
-                          title="Delete payment record"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                          <button
+                            type="button"
+                            onClick={() => setDeleteModal({ isOpen: true, invoice: inv })}
+                            className="h-9 w-9 bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 rounded-xl flex items-center justify-center transition-colors"
+                            title="Delete payment record"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

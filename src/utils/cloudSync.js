@@ -1046,9 +1046,17 @@ export async function atomicFinishWorkshopJob({ finishedJob, invoice, khataDebit
   });
 }
 
-export async function atomicRecordPayment({ updatedInvoice, updatedJob, creditKhataEntry, paymentAmount, targetId, vehicleNumber }) {
+export const atomicRecordPayment = async ({
+  updatedInvoice,
+  updatedJob,
+  creditKhataEntry,
+  paymentAmount,
+  targetId,
+  vehicleNumber
+}) => {
   const store = await fetchMasterStore();
   const vNorm = (vehicleNumber || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+  const rawTargetId = String(targetId || '').replace(/^inv_/, '').replace(/^job_/, '').replace(/^khata_/, '').replace(/^booking_/, '');
   const numAmt = parseFloat(paymentAmount) || 0;
 
   // 1. Invoices
@@ -1056,14 +1064,18 @@ export async function atomicRecordPayment({ updatedInvoice, updatedJob, creditKh
     if (!inv) return inv;
     const invId = String(inv.id || '');
     const invJobId = String(inv.job_id || '');
+    const rawInvId = invId.replace(/^inv_/, '').replace(/^job_/, '').replace(/^khata_/, '').replace(/^booking_/, '');
     const invVeh = (inv.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-    const isTarget = (invId === targetId || invJobId === targetId);
-    const isMatchingPendingVeh = (vNorm && invVeh === vNorm && parseFloat(inv.pending_amount || 0) > 0);
+    const curTotal = parseFloat(inv.grand_total || inv.total_amount || 0);
+    const curPaidOld = parseFloat(inv.paid_amount || 0);
+    const curPendingOld = Math.max(0, curTotal - curPaidOld);
+
+    const isTarget = (invId === targetId || invJobId === targetId || (rawTargetId && (rawInvId === rawTargetId || invJobId === rawTargetId)));
+    const isMatchingPendingVeh = (vNorm && invVeh === vNorm && curPendingOld > 0);
 
     if (isTarget || isMatchingPendingVeh) {
       if (updatedInvoice && isTarget) return { ...inv, ...updatedInvoice };
-      const curTotal = parseFloat(inv.grand_total || inv.total_amount || 0);
-      const curPaid = Math.min(curTotal, parseFloat(inv.paid_amount || 0) + numAmt);
+      const curPaid = Math.min(curTotal, curPaidOld + numAmt);
       const curPending = Math.max(0, curTotal - curPaid);
       return {
         ...inv,
@@ -1079,14 +1091,18 @@ export async function atomicRecordPayment({ updatedInvoice, updatedJob, creditKh
   let storeJobs = (store.jobs || []).map(j => {
     if (!j) return j;
     const jId = String(j.id || '');
+    const rawJId = jId.replace(/^inv_/, '').replace(/^job_/, '').replace(/^khata_/, '').replace(/^booking_/, '');
     const jVeh = (j.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-    const isTarget = (jId === targetId);
-    const isMatchingPendingVeh = (vNorm && jVeh === vNorm && (j.status === 'FINISHED' || j.status === 'COMPLETED') && parseFloat(j.pending_amount || 0) > 0);
+    const curTotal = parseFloat(j.grand_total || j.live_total || 0);
+    const curPaidOld = parseFloat(j.paid_amount || 0);
+    const curPendingOld = Math.max(0, curTotal - curPaidOld);
+
+    const isTarget = (jId === targetId || (rawTargetId && rawJId === rawTargetId));
+    const isMatchingPendingVeh = (vNorm && jVeh === vNorm && (j.status === 'FINISHED' || j.status === 'COMPLETED') && curPendingOld > 0);
 
     if (isTarget || isMatchingPendingVeh) {
       if (updatedJob && isTarget) return { ...j, ...updatedJob };
-      const curTotal = parseFloat(j.grand_total || j.live_total || 0);
-      const curPaid = Math.min(curTotal, parseFloat(j.paid_amount || 0) + numAmt);
+      const curPaid = Math.min(curTotal, curPaidOld + numAmt);
       const curPending = Math.max(0, curTotal - curPaid);
       return {
         ...j,
@@ -1103,8 +1119,9 @@ export async function atomicRecordPayment({ updatedInvoice, updatedJob, creditKh
     if (!k) return k;
     const kId = String(k.id || '');
     const kJobId = String(k.job_id || '');
+    const rawKId = kId.replace(/^inv_/, '').replace(/^job_/, '').replace(/^khata_/, '').replace(/^booking_/, '');
     const kVeh = (k.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-    if ((kId === targetId || kJobId === targetId || (vNorm && kVeh === vNorm && k.type === 'DEBIT'))) {
+    if ((kId === targetId || kJobId === targetId || (rawTargetId && (rawKId === rawTargetId || kJobId === rawTargetId)) || (vNorm && kVeh === vNorm && k.type === 'DEBIT'))) {
       const curAmt = parseFloat(k.amount || 0);
       const newAmt = Math.max(0, curAmt - numAmt);
       return { ...k, amount: newAmt };

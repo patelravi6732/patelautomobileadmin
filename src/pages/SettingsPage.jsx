@@ -194,7 +194,7 @@ export default function SettingsPage() {
         safety_message: garageInfo.safety_message || 'Thank you for choosing us! Wish you a safe & smooth ride. 🛵⛑️',
         mechanics_list: garageInfo.mechanics_list || 'Unassigned, Amitbhai Mechanic, Vishalbhai Mechanic, Manojbhai Mechanic',
         default_labour_charge: garageInfo.default_labour_charge || 100.00,
-        default_min_stock: garageInfo.default_min_stock !== undefined ? garageInfo.default_min_stock : '',
+        default_min_stock: (garageInfo.default_min_stock !== undefined && garageInfo.default_min_stock !== '') ? garageInfo.default_min_stock : 5,
         upi_qr_code: garageInfo.upi_qr_code || '/upi_qr.jpg',
         upi_id: garageInfo.upi_id || 'pritpatel9397@oksbi',
         upi_payee_name: garageInfo.upi_payee_name || 'Prit Patel'
@@ -749,13 +749,14 @@ export default function SettingsPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Low Stock Threshold</label>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Low Stock Alert Threshold (Units)</label>
                 <input
                   type="number"
-                  required
+                  min="0"
+                  placeholder="5"
                   value={formData.default_min_stock}
                   onChange={(e) => setFormData({ ...formData, default_min_stock: e.target.value })}
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm font-mono focus:outline-none"
+                  className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 />
               </div>
             </div>

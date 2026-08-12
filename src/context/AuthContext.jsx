@@ -52,9 +52,11 @@ export const AuthProvider = ({ children }) => {
 
     if (localSaved?.timing_text) merged.timing_text = localSaved.timing_text;
     if (localSaved?.phone) merged.phone = localSaved.phone;
-    if (localSaved?.upi_id !== undefined) merged.upi_id = localSaved.upi_id;
-    if (localSaved?.upi_qr_code !== undefined) merged.upi_qr_code = localSaved.upi_qr_code;
-    if (localSaved?.upi_payee_name !== undefined) merged.upi_payee_name = localSaved.upi_payee_name;
+    if (localSaved?.upi_id !== undefined && localSaved.upi_id !== '') merged.upi_id = localSaved.upi_id;
+    if (localSaved?.upi_qr_code !== undefined && localSaved.upi_qr_code !== '') merged.upi_qr_code = localSaved.upi_qr_code;
+    if (localSaved?.upi_payee_name !== undefined && localSaved.upi_payee_name !== '') merged.upi_payee_name = localSaved.upi_payee_name;
+    if (localSaved?.default_min_stock !== undefined && localSaved.default_min_stock !== '') merged.default_min_stock = localSaved.default_min_stock;
+    if (localSaved?.safety_message !== undefined && localSaved.safety_message !== '') merged.safety_message = localSaved.safety_message;
 
     setGarageInfo(merged);
     localStorage.setItem('garage_info', JSON.stringify(merged));

@@ -275,21 +275,30 @@ export default function BillingPage() {
     }
   };
 
-  // Direct WhatsApp Chat Launcher with Thank You Message
-  const handleOpenWhatsAppChat = (inv) => {
-    const custPhone = inv.customer_mobile || inv.mobile_number || inv.service_job?.mobile_number || '8140371414';
-    let phoneClean = ''.concat(custPhone || '').replace(/\D/g, '');
-    if (!phoneClean.startsWith('91') && phoneClean.length === 10) phoneClean = '91' + phoneClean;
+  // Direct WhatsApp Chat & Bill Photo Sharer with Custom Safety Greeting
+  const handleOpenWhatsAppChat = async (inv) => {
+    const targetInv = inv || selectedInvoice;
+    if (!targetInv) return;
 
-    const contactPhone = garageInfo?.phone || '+91 81403 71414';
-    const garageName = garageInfo?.garage_name || 'Patel Automobiles';
-    const safetyMsg = garageInfo?.safety_message || 'Thank you for choosing us! Wish you a safe & smooth ride. 🛵⛑️';
+    try {
+      showToast('📲 Preparing WhatsApp Share...', 'Generating Bill Photo Card & Safety Greeting...');
+      await sharePhotoToWhatsApp(targetInv, garageInfo);
+    } catch (err) {
+      console.warn('WhatsApp photo share notice, launching text link fallback:', err);
+      const custPhone = targetInv.customer_mobile || targetInv.mobile_number || targetInv.service_job?.mobile_number || '8140371414';
+      let phoneClean = ''.concat(custPhone || '').replace(/\D/g, '');
+      if (!phoneClean.startsWith('91') && phoneClean.length === 10) phoneClean = '91' + phoneClean;
 
-    let customMsg = `${safetyMsg}\n\n📞 Contact: ${contactPhone}\n— ${garageName}`;
-    const encodedMsg = encodeURIComponent(customMsg);
-    const targetUrl = `https://wa.me/${phoneClean}?text=${encodedMsg}`;
+      const contactPhone = garageInfo?.phone || '+91 81403 71414';
+      const garageName = garageInfo?.garage_name || 'Patel Automobiles';
+      const safetyMsg = garageInfo?.safety_message || 'Thank you for choosing us! Wish you a safe & smooth ride. 🛵⛑️';
 
-    window.open(targetUrl, '_blank');
+      let customMsg = `${safetyMsg}\n\n📞 Contact: ${contactPhone}\n— ${garageName}`;
+      const encodedMsg = encodeURIComponent(customMsg);
+      const targetUrl = `https://wa.me/${phoneClean}?text=${encodedMsg}`;
+
+      window.open(targetUrl, '_blank');
+    }
   };
 
   const handleDeleteWithPassword = async (adminPassword) => {

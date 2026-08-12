@@ -442,8 +442,20 @@ export default function WorkshopPage() {
       return;
     }
 
-    const unitPrice = parseFloat(partObj.price || 0);
+    const availableStock = parseInt(partObj.current_stock !== undefined ? partObj.current_stock : (partObj.stock_quantity !== undefined ? partObj.stock_quantity : (partObj.quantity !== undefined ? partObj.quantity : 0)), 10);
     const qty = parseInt(partQty || 1, 10);
+
+    if (availableStock <= 0) {
+      alert(`⚠️ Out of Stock!\n\n'${partObj.part_name || partObj.name}' has 0 units available in Inventory.`);
+      return;
+    }
+
+    if (qty > availableStock) {
+      alert(`⚠️ Insufficient Stock!\n\nOnly ${availableStock} unit(s) of '${partObj.part_name || partObj.name}' available in Inventory.`);
+      return;
+    }
+
+    const unitPrice = parseFloat(partObj.price || 0);
 
     const targetPartNorm = String(partObj.part_name || partObj.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
     const targetPartId = String(partObj.id || '');

@@ -156,16 +156,44 @@ export default function WorkshopPage() {
             const existing = allMap.get(existingKey);
             const existingParts = Array.isArray(existing.parts) ? existing.parts : [];
             const currentParts = Array.isArray(sanitizedJob.parts) ? sanitizedJob.parts : [];
-            const existingQtySum = existingParts.reduce((sum, p) => sum + parseInt(p.quantity || 1, 10), 0);
-            const currentQtySum = currentParts.reduce((sum, p) => sum + parseInt(p.quantity || 1, 10), 0);
-            const finalParts = currentQtySum >= existingQtySum ? currentParts : existingParts;
+
+            // Smart Union Merging of Parts by Part ID or Normalized Name
+            const mergedPartsMap = new Map();
+            [...existingParts, ...currentParts].forEach(p => {
+              if (p && (p.id || p.part_name || p.name)) {
+                const pKey = String(p.inventory_id || p.part_id || p.id || p.part_name || p.name).toLowerCase().replace(/[^a-z0-9]/g, '');
+                if (!mergedPartsMap.has(pKey)) {
+                  mergedPartsMap.set(pKey, p);
+                } else {
+                  const exP = mergedPartsMap.get(pKey);
+                  const exQty = parseInt(exP.quantity || 1, 10);
+                  const curQty = parseInt(p.quantity || 1, 10);
+                  const finalQty = Math.max(exQty, curQty);
+                  const unitPrice = parseFloat(p.price || p.unit_price || exP.price || exP.unit_price || 0);
+                  mergedPartsMap.set(pKey, {
+                    ...exP,
+                    ...p,
+                    quantity: finalQty,
+                    staged_total: finalQty * unitPrice,
+                    status: (p.status === 'CONFIRMED' || exP.status === 'CONFIRMED') ? 'CONFIRMED' : (p.status || exP.status || 'STAGED'),
+                    is_confirmed: Boolean(p.is_confirmed || exP.is_confirmed),
+                    is_deducted: Boolean(p.is_deducted || exP.is_deducted)
+                  });
+                }
+              }
+            });
+
+            const finalParts = Array.from(mergedPartsMap.values());
             const finalPartsTotal = finalParts.reduce((acc, p) => acc + parseFloat(p.staged_total || (parseFloat(p.price || p.unit_price || 0) * parseInt(p.quantity || 1, 10))), 0);
+            const finalLabour = parseFloat(sanitizedJob.labour_charge !== undefined ? sanitizedJob.labour_charge : (existing.labour_charge || 0));
+
             allMap.set(existingKey, {
               ...existing,
               ...sanitizedJob,
               parts: finalParts,
               parts_total: finalPartsTotal,
-              live_total: finalPartsTotal + parseFloat(existing.labour_charge || sanitizedJob.labour_charge || 0)
+              labour_charge: finalLabour,
+              live_total: finalPartsTotal + finalLabour
             });
           }
         }

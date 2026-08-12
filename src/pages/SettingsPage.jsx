@@ -23,14 +23,16 @@ export default function SettingsPage() {
     phone: '+91 81403 71414',
     whatsapp_number: '+91 81403 71414',
     email: 'contact@patelautomobiles.com',
-    timing_text: 'Mon - Sat: 09:00 AM - 08:30 PM, Sun: 09:00 AM - 02:00 PM',
+    timing_text: 'Mon - Sat: 08:30 AM - 06:30 PM, Sun: 09:00 AM - 02:00 PM',
+    safety_message: 'Thank you for choosing us! Wish you a safe & smooth ride. 🛵⛑️',
     mechanics_list: 'Unassigned, Amitbhai Mechanic, Vishalbhai Mechanic, Manojbhai Mechanic',
     default_labour_charge: 100.00,
-    default_min_stock: '',
-    upi_qr_code: '',
-    upi_id: '',
+    default_min_stock: 5,
+    upi_qr_code: '/upi_qr.jpg',
+    upi_id: 'paytmqr5hlpsp@ptys',
     upi_payee_name: 'Patel Automobiles'
   });
+  const [isFormDirty, setIsFormDirty] = useState(false);
 
   // Multi-Admin State
   const [adminProfiles, setAdminProfiles] = useState([]);
@@ -143,7 +145,7 @@ export default function SettingsPage() {
         if (!map.has(key)) {
           map.set(key, {
             id: adm.id || key,
-            user_name: adm.user_name || adm.username,
+            user_name: (adm.user_name === 'Patel Owner (Admin)' || adm.user_name === 'Patel Owner') ? 'Patel Automobiles' : (adm.user_name || adm.username),
             username: adm.username || adm.user_name,
             phone: adm.phone || '+91 81403 71414',
             email: adm.email || 'contact@patelautomobiles.com',
@@ -182,7 +184,7 @@ export default function SettingsPage() {
   };
 
   useEffect(() => {
-    if (garageInfo) {
+    if (garageInfo && !isFormDirty) {
       setFormData({
         garage_name: garageInfo.garage_name || 'Patel Automobiles',
         logo: garageInfo.logo || '/logo.png',
@@ -197,13 +199,13 @@ export default function SettingsPage() {
         default_min_stock: (garageInfo.default_min_stock !== undefined && garageInfo.default_min_stock !== '') ? garageInfo.default_min_stock : 5,
         upi_qr_code: garageInfo.upi_qr_code || '/upi_qr.jpg',
         upi_id: garageInfo.upi_id || 'paytmqr5hlpsp@ptys',
-        upi_payee_name: garageInfo.upi_payee_name || 'Patel Automobile'
+        upi_payee_name: garageInfo.upi_payee_name || 'Patel Automobiles'
       });
     }
 
     fetchAdminProfiles();
     fetchAuditLogs(auditMonth, auditYear);
-  }, [garageInfo, auditMonth, auditYear]);
+  }, [garageInfo, auditMonth, auditYear, isFormDirty]);
 
   // Open Add Admin Modal
   const handleOpenAddAdmin = () => {

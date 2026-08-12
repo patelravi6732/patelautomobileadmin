@@ -81,9 +81,9 @@ export default function DashboardLayout() {
   const isActive = (path) => location.pathname === path;
 
   // Active Admin Details
-  const displayName = adminProfile?.user_name || user?.admin_profile?.user_name || user?.user_name || user?.username || 'Garage Owner (Admin)';
+  const displayName = (adminProfile?.user_name && adminProfile.user_name !== 'Patel Owner (Admin)' && adminProfile.user_name !== 'Patel Owner') ? adminProfile.user_name : (garageInfo?.garage_name || 'Patel Automobiles');
   const displayPhoto = adminProfile?.profile_photo || user?.admin_profile?.profile_photo || garageInfo?.logo || '/logo.png';
-  const displayUsername = (adminProfile?.username || user?.username || displayName || 'admin').replace(/^@+/, '');
+  const displayUsername = (adminProfile?.username || user?.username || 'patelautomobile').replace(/^@+/, '');
 
   return (
     <div className="min-h-screen bg-slate-50 flex">

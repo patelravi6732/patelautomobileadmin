@@ -225,7 +225,33 @@ async function saveMasterStore(storeData) {
       if (localJob) {
         const localParts = Array.isArray(localJob.parts) ? localJob.parts : [];
         const cloudParts = Array.isArray(cloudJob.parts) ? cloudJob.parts : [];
-        const finalParts = cloudParts.length >= localParts.length ? localParts : cloudParts;
+        
+        const mergedPartsMap = new Map();
+        [...cloudParts, ...localParts].forEach(p => {
+          if (p && (p.id || p.part_name || p.name)) {
+            const rawName = String(p.part_name || p.name || '').trim();
+            const pKey = rawName ? rawName.toLowerCase().replace(/[^a-z0-9]/g, '') : String(p.inventory_id || p.part_id || p.id || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (pKey) {
+              if (!mergedPartsMap.has(pKey)) {
+                mergedPartsMap.set(pKey, p);
+              } else {
+                const exP = mergedPartsMap.get(pKey);
+                const exQty = parseInt(exP.quantity || 1, 10);
+                const curQty = parseInt(p.quantity || 1, 10);
+                const finalQty = Math.max(exQty, curQty);
+                const unitPrice = parseFloat(p.price || p.unit_price || exP.price || exP.unit_price || 0);
+                mergedPartsMap.set(pKey, {
+                  ...exP,
+                  ...p,
+                  quantity: finalQty,
+                  staged_total: finalQty * unitPrice
+                });
+              }
+            }
+          }
+        });
+
+        const finalParts = Array.from(mergedPartsMap.values());
         const finalPartsTotal = finalParts.reduce((acc, p) => acc + parseFloat(p.staged_total || (parseFloat(p.price || p.unit_price || 0) * parseInt(p.quantity || 1, 10))), 0);
         return {
           ...localJob,

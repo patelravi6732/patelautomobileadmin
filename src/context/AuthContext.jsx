@@ -5,15 +5,17 @@ import { fetchCloudGarageInfo, pushCloudGarageInfo, fetchCloudAdminProfiles, fet
 export const DEFAULT_GARAGE_INFO = {
   garage_name: 'Patel Automobiles',
   address: 'Near Dandi Pond, Dandi, Valsad, Gujarat - 396385',
-  phone: '+91 81403 71414',
-  whatsapp_number: '+91 81403 71414',
+  phone: '+91 98987 05544',
+  whatsapp_number: '+91 98987 05544',
   logo: '/logo.png',
-  upi_id: '',
-  upi_payee_name: 'Patel Automobiles',
-  upi_qr_code: '',
+  upi_id: 'paytmqr5hlpsp@ptys',
+  upi_payee_name: 'Patel Automobile',
+  upi_qr_code: '/upi_qr.jpg',
   timing_text: 'Mon - Sat: 08:30 AM - 06:30 PM, Sun: 09:00 AM - 02:00 PM',
+  safety_message: 'Thank you for choosing us! Wish you a safe & smooth ride. 🛵⛑️',
   mechanics_list: 'Unassigned, Amitbhai Mechanic, Vishalbhai Mechanic, Manojbhai Mechanic',
-  default_labour_charge: 100.00
+  default_labour_charge: 100.00,
+  default_min_stock: 5
 };
 
 const AuthContext = createContext();

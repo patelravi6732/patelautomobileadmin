@@ -196,8 +196,8 @@ export default function SettingsPage() {
         default_labour_charge: garageInfo.default_labour_charge || 100.00,
         default_min_stock: (garageInfo.default_min_stock !== undefined && garageInfo.default_min_stock !== '') ? garageInfo.default_min_stock : 5,
         upi_qr_code: garageInfo.upi_qr_code || '/upi_qr.jpg',
-        upi_id: garageInfo.upi_id || 'pritpatel9397@oksbi',
-        upi_payee_name: garageInfo.upi_payee_name || 'Prit Patel'
+        upi_id: garageInfo.upi_id || 'paytmqr5hlpsp@ptys',
+        upi_payee_name: garageInfo.upi_payee_name || 'Patel Automobile'
       });
     }
 

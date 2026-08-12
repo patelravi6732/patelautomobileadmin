@@ -89,9 +89,9 @@ export async function fetchMasterStore(forceFresh = false) {
     let activeUrl = getActiveBinUrl();
 
     try {
-      const res = await axios.get(activeUrl + '?t=' + Date.now(), {
+      const res = await axios.get('/api/public/master_store/?t=' + Date.now(), {
         headers: { 'Accept': 'application/json', 'Cache-Control': 'no-cache' },
-        timeout: 2000
+        timeout: 2500
       });
       if (res.data) {
         freshStore = {
@@ -111,13 +111,7 @@ export async function fetchMasterStore(forceFresh = false) {
         };
       }
     } catch (e1) {
-      if (e1?.response?.status === 404) {
-        console.warn('Cloud bin expired (404), triggering auto-recovery...');
-        const newUrl = await createFreshCloudBin(localCache);
-        if (newUrl) {
-          freshStore = localCache;
-        }
-      }
+      console.warn('Primary MongoDB Atlas GET notice, trying fallback bin:', e1);
     }
 
     if (freshStore) {
@@ -329,24 +323,14 @@ async function saveMasterStore(storeData) {
     console.warn('Error writing local master_cloud_cache:', e);
   }
 
-  let activeUrl = getActiveBinUrl();
   try {
-    await axios.put(activeUrl, storeData, {
+    await axios.post('/api/public/master_store/', storeData, {
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
       timeout: 3000
     });
   } catch (err) {
-    if (err?.response?.status === 404) {
-      console.warn('Cloud bin 404, creating fresh recovery bin...');
-      await createFreshCloudBin(storeData);
-    } else {
-      console.warn('Cloud store update warning:', err);
-    }
+    console.warn('Direct MongoDB Atlas store update notice:', err);
   }
-
-  try {
-    axios.post('/api/sync', storeData, { timeout: 4000 }).catch(() => {});
-  } catch (e) {}
 }
 
 export async function fetchCloudBookings() {

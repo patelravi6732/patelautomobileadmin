@@ -172,6 +172,7 @@ export default function KhataBookPage() {
 
           const itemDate = inv.created_at || inv.date || new Date().toISOString();
           const formattedDate = new Date(itemDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+          const grossVal = (partsVal + labourVal > 0) ? (partsVal + labourVal) : (totalVal + discountVal);
           khataList.push({
             id: String(inv.id),
             invoice_id: inv.id,
@@ -181,14 +182,17 @@ export default function KhataBookPage() {
             mobile_number: inv.mobile_number || inv.phone || 'N/A',
             vehicle_number: inv.vehicle_number || 'GJ-15',
             bike_model: inv.bike_model || 'Two Wheeler',
+            parts_total: partsVal,
+            labour_charge: labourVal,
+            discount_amount: discountVal,
+            gross_total: grossVal,
             total_billed: totalVal,
             total_paid: paidVal,
             pending_amount: actualPending > 0 ? actualPending : Math.max(0, totalVal - paidVal),
             balance: actualPending > 0 ? actualPending : Math.max(0, totalVal - paidVal),
             visit_date: formattedDate,
             raw_date: itemDate,
-            parts: inv.parts || [],
-            labour_charge: labourVal
+            parts: inv.parts || []
           });
         }
       });
@@ -211,6 +215,7 @@ export default function KhataBookPage() {
         if (pendingVal > 0) {
           const itemDate = job.finished_at || job.completed_at || job.created_at || new Date().toISOString();
           const formattedDate = new Date(itemDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+          const grossVal = (partsVal + labourVal > 0) ? (partsVal + labourVal) : (totalVal + discountVal);
           khataList.push({
             id: String(job.id),
             invoice_id: job.id,
@@ -220,14 +225,17 @@ export default function KhataBookPage() {
             mobile_number: job.mobile_number || job.phone || 'N/A',
             vehicle_number: job.vehicle_number || 'GJ-15',
             bike_model: job.bike_model || 'Two Wheeler',
+            parts_total: partsVal,
+            labour_charge: labourVal,
+            discount_amount: discountVal,
+            gross_total: grossVal,
             total_billed: totalVal,
             total_paid: paidVal,
             pending_amount: pendingVal,
             balance: pendingVal,
             visit_date: formattedDate,
             raw_date: itemDate,
-            parts: job.parts || [],
-            labour_charge: labourVal
+            parts: job.parts || []
           });
         }
       });
@@ -238,27 +246,34 @@ export default function KhataBookPage() {
         const alreadyInList = khataList.some(item => String(item.id) === String(k.id) || (k.job_id && String(item.id) === String(k.job_id)));
         if (alreadyInList) return;
 
-        const amt = parseFloat(k.amount || 0);
-        if (amt > 0 && k.type === 'DEBIT') {
-          const itemDate = k.date || new Date().toISOString();
+        const billed = parseFloat(k.total_billed !== undefined ? k.total_billed : (k.amount || k.grand_total || k.total_amount || 0));
+        const paid = parseFloat(k.total_paid !== undefined ? k.total_paid : (k.paid_amount || 0));
+        const pending = parseFloat(k.pending_amount !== undefined ? k.pending_amount : (k.balance !== undefined ? k.balance : Math.max(0, billed - paid)));
+        const discountVal = parseFloat(k.discount_amount || k.discount || 0);
+
+        if (pending > 0) {
+          const itemDate = k.created_at || k.date || k.last_visit || new Date().toISOString();
           const formattedDate = new Date(itemDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
           khataList.push({
             id: String(k.id),
-            invoice_id: k.job_id || k.id,
-            invoice_number: k.job_id ? `INV-${String(k.job_id).slice(-4)}` : `KHATA-${String(k.id).slice(-4)}`,
-            customer_name: k.customer_name || 'Valued Customer',
-            phone: k.mobile_number || k.phone || 'N/A',
+            invoice_id: k.id,
+            invoice_number: k.invoice_number || `KHATA-${String(k.id).slice(-4)}`,
+            customer_name: k.customer_name || 'Debtor',
+            phone: k.phone || k.mobile_number || 'N/A',
             mobile_number: k.mobile_number || k.phone || 'N/A',
             vehicle_number: k.vehicle_number || 'GJ-15',
             bike_model: k.bike_model || 'Two Wheeler',
-            total_billed: amt,
-            total_paid: 0,
-            pending_amount: amt,
-            balance: amt,
+            parts_total: parseFloat(k.parts_total || 0),
+            labour_charge: parseFloat(k.labour_charge || 0),
+            discount_amount: discountVal,
+            gross_total: billed + discountVal,
+            total_billed: billed,
+            total_paid: paid,
+            pending_amount: pending,
+            balance: pending,
             visit_date: formattedDate,
             raw_date: itemDate,
-            parts: [],
-            labour_charge: 0
+            parts: k.parts || []
           });
         }
       });
@@ -712,12 +727,14 @@ export default function KhataBookPage() {
           <div className="p-12 text-center text-slate-400 font-medium">No matching debtors found for the selected filter.</div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs sm:text-sm">
+            <table className="w-full min-w-[980px] text-left text-xs sm:text-sm">
               <thead className="bg-slate-50/90 text-slate-600 font-extrabold uppercase tracking-wider text-[11px] border-b border-slate-200/80">
                 <tr>
                   <th className="p-4 sm:p-5">Debtor Details</th>
                   <th className="p-4 sm:p-5">Vehicle</th>
-                  <th className="p-4 sm:p-5">Total Billed</th>
+                  <th className="p-4 sm:p-5">Service Total</th>
+                  <th className="p-4 sm:p-5">Discount</th>
+                  <th className="p-4 sm:p-5">Net Total</th>
                   <th className="p-4 sm:p-5">Paid</th>
                   <th className="p-4 sm:p-5">Pending Dues</th>
                   <th className="p-4 sm:p-5">Visit Date</th>
@@ -725,69 +742,89 @@ export default function KhataBookPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
-                {filtered.map((d) => (
-                  <tr key={d.id} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="p-4 sm:p-5">
-                      <span className="font-extrabold text-slate-900 text-sm block">{d.customer_name}</span>
-                      <span className="text-xs text-slate-500 font-mono font-semibold block mt-0.5">📞 {d.phone || d.mobile_number || 'N/A'}</span>
-                    </td>
-                    <td className="p-4 sm:p-5">
-                      <span className="font-black font-mono text-slate-900 block">{d.vehicle_number}</span>
-                      {d.bike_model && <span className="text-xs text-slate-500 block">{d.bike_model}</span>}
-                    </td>
-                    <td className="p-4 sm:p-5 font-bold text-slate-900 font-poppins">
-                      ₹{parseFloat(d.total_billed || 0).toFixed(2)}
-                    </td>
-                    <td className="p-4 sm:p-5 font-bold text-emerald-600 font-poppins">
-                      ₹{parseFloat(d.total_paid || 0).toFixed(2)}
-                    </td>
-                    <td className="p-4 sm:p-5 font-extrabold text-rose-600 font-poppins text-base">
-                      ₹{parseFloat(d.pending_amount || 0).toFixed(2)}
-                    </td>
-                    <td className="p-4 sm:p-5 text-slate-600 text-xs font-medium whitespace-nowrap">
-                      📅 {d.visit_date || (d.last_visit ? new Date(d.last_visit).toLocaleString('en-IN') : 'N/A')}
-                    </td>
-                    <td className="p-4 sm:p-5 text-right">
-                      <div className="flex flex-wrap items-center justify-end gap-1.5 max-w-[280px] ml-auto">
-                        <button
-                          type="button"
-                          onClick={() => handleDownloadStatementPhoto(d)}
-                          disabled={sharingPhoto}
-                          className="h-8 px-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[11px] rounded-lg flex items-center justify-center gap-1 shadow-sm transition-all hover:scale-105 cursor-pointer"
-                          title="Download Statement Photo Card"
-                        >
-                          <Download className="w-3.5 h-3.5" /> Download
-                        </button>
+                {filtered.map((d) => {
+                  const grossVal = parseFloat(d.gross_total || (parseFloat(d.total_billed || 0) + parseFloat(d.discount_amount || 0)));
+                  const discountVal = parseFloat(d.discount_amount || 0);
+                  const netVal = parseFloat(d.total_billed || Math.max(0, grossVal - discountVal));
+                  const paidVal = parseFloat(d.total_paid || 0);
+                  const pendingVal = parseFloat(d.pending_amount || 0);
 
-                        <button
-                          type="button"
-                          onClick={() => handleOpenWhatsAppChat(d)}
-                          className="h-8 px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] rounded-lg flex items-center justify-center gap-1 shadow-sm transition-all hover:scale-105"
-                          title="Open WhatsApp Chat"
-                        >
-                          <Send className="w-3 h-3" /> WhatsApp
-                        </button>
+                  return (
+                    <tr key={d.id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="p-4 sm:p-5">
+                        <span className="font-extrabold text-slate-900 text-sm block">{d.customer_name}</span>
+                        <span className="text-xs text-slate-500 font-mono font-semibold block mt-0.5">📞 {d.phone || d.mobile_number || 'N/A'}</span>
+                      </td>
+                      <td className="p-4 sm:p-5">
+                        <span className="font-black font-mono text-slate-900 block">{d.vehicle_number}</span>
+                        {d.bike_model && <span className="text-xs text-slate-500 block">{d.bike_model}</span>}
+                      </td>
+                      <td className="p-4 sm:p-5 font-bold text-slate-800 font-poppins">
+                        ₹{grossVal.toFixed(2)}
+                      </td>
+                      <td className="p-4 sm:p-5 whitespace-nowrap">
+                        {discountVal > 0 ? (
+                          <span className="px-2.5 py-1 rounded-lg text-xs font-black bg-amber-100 text-amber-800 border border-amber-200">
+                            -₹{discountVal.toFixed(2)}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-slate-400 font-semibold">—</span>
+                        )}
+                      </td>
+                      <td className="p-4 sm:p-5 font-black text-slate-900 font-poppins">
+                        ₹{netVal.toFixed(2)}
+                      </td>
+                      <td className="p-4 sm:p-5 font-bold text-emerald-600 font-poppins">
+                        ₹{paidVal.toFixed(2)}
+                      </td>
+                      <td className="p-4 sm:p-5 font-extrabold text-rose-600 font-poppins text-base">
+                        ₹{pendingVal.toFixed(2)}
+                      </td>
+                      <td className="p-4 sm:p-5 text-slate-600 text-xs font-medium whitespace-nowrap">
+                        📅 {d.visit_date || (d.last_visit ? new Date(d.last_visit).toLocaleString('en-IN') : 'N/A')}
+                      </td>
+                      <td className="p-4 sm:p-5 text-right">
+                        <div className="flex flex-wrap items-center justify-end gap-1.5 max-w-[280px] ml-auto">
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadStatementPhoto(d)}
+                            disabled={sharingPhoto}
+                            className="h-8 px-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[11px] rounded-lg flex items-center justify-center gap-1 shadow-sm transition-all hover:scale-105 cursor-pointer"
+                            title="Download Statement Photo Card"
+                          >
+                            <Download className="w-3.5 h-3.5" /> Download
+                          </button>
 
-                        <button
-                          type="button"
-                          onClick={() => openPaymentModal(d)}
-                          className="h-8 px-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold text-[11px] rounded-lg flex items-center justify-center gap-1 shadow-sm transition-all hover:scale-105"
-                        >
-                          + Payment
-                        </button>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenWhatsAppChat(d)}
+                            className="h-8 px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] rounded-lg flex items-center justify-center gap-1 shadow-sm transition-all hover:scale-105"
+                            title="Open WhatsApp Chat"
+                          >
+                            <Send className="w-3 h-3" /> WhatsApp
+                          </button>
 
-                        <button
-                          type="button"
-                          onClick={() => setDeleteModal({ isOpen: true, debtor: d })}
-                          className="h-8 px-2 bg-red-50 hover:bg-red-100 text-red-600 font-bold text-[11px] rounded-lg border border-red-200 flex items-center justify-center gap-1 transition-all hover:scale-105"
-                          title="Delete Khata Account (Password Protected)"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                          <button
+                            type="button"
+                            onClick={() => openPaymentModal(d)}
+                            className="h-8 px-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold text-[11px] rounded-lg flex items-center justify-center gap-1 shadow-sm transition-all hover:scale-105"
+                          >
+                            + Payment
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setDeleteModal({ isOpen: true, debtor: d })}
+                            className="h-8 px-2 bg-red-50 hover:bg-red-100 text-red-600 font-bold text-[11px] rounded-lg border border-red-200 flex items-center justify-center gap-1 transition-all hover:scale-105"
+                            title="Delete Khata Account (Password Protected)"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -1020,7 +1057,17 @@ export default function KhataBookPage() {
 
                     <div className="space-y-2 text-xs font-bold">
                       <div className="flex justify-between text-slate-700">
-                        <span>Total Billed:</span>
+                        <span>Service Total:</span>
+                        <span className="font-mono text-slate-900">₹{parseFloat(statementCustomer.gross_total || (parseFloat(statementCustomer.total_billed || 0) + parseFloat(statementCustomer.discount_amount || 0))).toFixed(2)}</span>
+                      </div>
+                      {parseFloat(statementCustomer.discount_amount || 0) > 0 && (
+                        <div className="flex justify-between text-amber-700">
+                          <span>Discount Given (-):</span>
+                          <span className="font-mono text-amber-700 font-extrabold">- ₹{parseFloat(statementCustomer.discount_amount).toFixed(2)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between text-slate-900">
+                        <span>Net Total Billed:</span>
                         <span className="font-mono text-slate-900">₹{parseFloat(statementCustomer.total_billed || 0).toFixed(2)}</span>
                       </div>
                       <div className="flex justify-between text-emerald-700">

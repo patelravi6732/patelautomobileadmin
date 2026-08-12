@@ -584,9 +584,9 @@ export async function moveToRecycleBin(trashObj, inventoryItem) {
   const updatedTrash = [trashObj, ...existingTrash];
   localStorage.setItem('recycle_bin_items', JSON.stringify(updatedTrash));
 
-  // 2. Prepare deletion IDs
+  // 2. Prepare deletion IDs (store exact item ID only)
   const localDeleted = JSON.parse(localStorage.getItem('deleted_ids') || '[]');
-  const newDeletedIds = Array.from(new Set([...localDeleted, itId, itName, itNorm].filter(Boolean)));
+  const newDeletedIds = Array.from(new Set([...localDeleted, itId].filter(d => d && String(d).startsWith('inv_'))));
   localStorage.setItem('deleted_ids', JSON.stringify(newDeletedIds));
 
   // 3. Remove from local inventory

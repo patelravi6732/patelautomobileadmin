@@ -14,6 +14,12 @@ import {
 } from '../utils/cloudSync';
 import { generateCounterSaleCardPhotoAsync } from '../utils/billCardGenerator';
 
+const INVENTORY_CATEGORIES = [
+  'General', 'Engine Oil', 'Air Filter', 'Oil Filter', 'Spark Plug', 
+  'Brake Shoe', 'Brake Pad', 'Chain Kit', 'Clutch Plate', 'Clutch Cable', 
+  'Accelerator Cable', 'Bulbs', 'Battery', 'Tyres'
+];
+
 export default function CounterSalePage() {
   const { garageInfo, user } = useAuth();
   const [activeTab, setActiveTab] = useState('NEW_SALE'); // NEW_SALE | INVOICES | KHATA
@@ -31,7 +37,7 @@ export default function CounterSalePage() {
   const [cartItems, setCartItems] = useState([]);
   const [discountAmount, setDiscountAmount] = useState(0);
   const [paidAmount, setPaidAmount] = useState('');
-  const [paymentMode, setPaymentMode] = useState('CASH'); // CASH | UPI | CARD | ONLINE
+  const [paymentMode, setPaymentMode] = useState('CASH'); // CASH | UPI
   const [submittingSale, setSubmittingSale] = useState(false);
 
   // Success Modal
@@ -41,15 +47,13 @@ export default function CounterSalePage() {
     photoUrl: null
   });
 
-  // Add New Spare Part Modal
+  // Add New Spare Part Modal (Exact match to Inventory Modal)
   const [showAddPartModal, setShowAddPartModal] = useState(false);
   const [newPartForm, setNewPartForm] = useState({
-    item_name: '',
-    part_number: '',
-    category: 'Spare Parts',
-    cost_price: '',
-    selling_price: '',
-    stock_quantity: '10',
+    part_name: '',
+    category: 'General',
+    price: '',
+    current_stock: '',
     min_stock_alert: '5'
   });
   const [addingPart, setAddingPart] = useState(false);
@@ -119,18 +123,17 @@ export default function CounterSalePage() {
   // Filtered Inventory Catalog
   const filteredCatalog = useMemo(() => {
     return inventory.filter(item => {
-      const name = (item.item_name || item.name || '').toLowerCase();
-      const partNo = (item.part_number || '').toLowerCase();
+      const name = (item.part_name || item.item_name || item.name || '').toLowerCase();
       const query = invSearch.toLowerCase().trim();
-      const matchesSearch = !query || name.includes(query) || partNo.includes(query);
+      const matchesSearch = !query || name.includes(query);
       const matchesCat = invCategory === 'ALL' || (item.category || '').toLowerCase() === invCategory.toLowerCase();
       return matchesSearch && matchesCat;
     });
   }, [inventory, invSearch, invCategory]);
 
-  // Categories list
-  const categories = useMemo(() => {
-    const set = new Set(['ALL']);
+  // Categories list for pills
+  const categoriesList = useMemo(() => {
+    const set = new Set(['ALL', ...INVENTORY_CATEGORIES]);
     inventory.forEach(i => {
       if (i.category) set.add(i.category);
     });
@@ -168,7 +171,7 @@ export default function CounterSalePage() {
   const handleAddToCart = (item) => {
     const curStock = parseInt(item.current_stock || item.stock_quantity || item.quantity || 0, 10);
     if (curStock <= 0) {
-      alert(`⚠️ '${item.item_name || item.name}' is currently Out of Stock!`);
+      alert(`⚠️ '${item.part_name || item.item_name || item.name}' is currently Out of Stock!`);
       return;
     }
 
@@ -176,7 +179,7 @@ export default function CounterSalePage() {
     if (existingIndex >= 0) {
       const currentQty = cartItems[existingIndex].quantity;
       if (currentQty + 1 > curStock) {
-        alert(`⚠️ Maximum available stock for '${item.item_name || item.name}' is ${curStock} units.`);
+        alert(`⚠️ Maximum available stock for '${item.part_name || item.item_name || item.name}' is ${curStock} units.`);
         return;
       }
       const updated = [...cartItems];
@@ -185,10 +188,10 @@ export default function CounterSalePage() {
     } else {
       setCartItems([...cartItems, {
         id: item.id,
-        item_name: item.item_name || item.name || 'Spare Part',
-        part_number: item.part_number || '',
-        selling_price: parseFloat(item.selling_price || item.unit_price || item.price || 0),
-        unit_price: parseFloat(item.selling_price || item.unit_price || item.price || 0),
+        item_name: item.part_name || item.item_name || item.name || 'Spare Part',
+        part_name: item.part_name || item.item_name || item.name || 'Spare Part',
+        selling_price: parseFloat(item.price || item.selling_price || item.unit_price || 0),
+        unit_price: parseFloat(item.price || item.selling_price || item.unit_price || 0),
         quantity: 1,
         available_stock: curStock
       }]);
@@ -242,8 +245,8 @@ export default function CounterSalePage() {
       vehicle_number: vehicleNumber.trim(),
       items: cartItems.map(it => ({
         id: it.id,
-        item_name: it.item_name,
-        part_number: it.part_number || '',
+        item_name: it.item_name || it.part_name,
+        part_name: it.part_name || it.item_name,
         quantity: it.quantity,
         unit_price: it.selling_price,
         total: it.selling_price * it.quantity
@@ -281,7 +284,7 @@ export default function CounterSalePage() {
           paid_amount: finalPaid,
           pending_amount: finalPending,
           status: 'PENDING',
-          items_summary: saleInvoice.items.map(i => `${i.item_name} (x${i.quantity})`).join(', '),
+          items_summary: saleInvoice.items.map(i => `${i.item_name || i.part_name} (x${i.quantity})`).join(', '),
           payments: finalPaid > 0 ? [{
             id: `cpay_init_${Date.now()}`,
             amount: finalPaid,
@@ -325,45 +328,47 @@ export default function CounterSalePage() {
     }
   };
 
-  // Handle Quick Add New Spare Part Modal Submit
+  // Handle Save New Part (Exact structure matching screenshot)
   const handleSaveNewPart = async (e) => {
     e.preventDefault();
-    if (!newPartForm.item_name.trim()) {
-      alert('Please enter item name!');
+    if (!newPartForm.part_name.trim()) {
+      alert('Please enter part name!');
       return;
     }
-    if (!newPartForm.selling_price) {
+    if (!newPartForm.price) {
       alert('Please enter selling price!');
+      return;
+    }
+    if (!newPartForm.current_stock) {
+      alert('Please enter current stock!');
       return;
     }
 
     setAddingPart(true);
     try {
       const createdItem = await atomicAddInventoryItem({
-        name: newPartForm.item_name.trim(),
-        item_name: newPartForm.item_name.trim(),
-        part_number: newPartForm.part_number.trim(),
-        category: newPartForm.category || 'Spare Parts',
-        cost_price: parseFloat(newPartForm.cost_price || 0),
-        unit_price: parseFloat(newPartForm.selling_price),
-        selling_price: parseFloat(newPartForm.selling_price),
-        current_stock: parseInt(newPartForm.stock_quantity || 10, 10),
-        stock_quantity: parseInt(newPartForm.stock_quantity || 10, 10),
+        name: newPartForm.part_name.trim(),
+        part_name: newPartForm.part_name.trim(),
+        item_name: newPartForm.part_name.trim(),
+        category: newPartForm.category || 'General',
+        price: parseFloat(newPartForm.price),
+        unit_price: parseFloat(newPartForm.price),
+        selling_price: parseFloat(newPartForm.price),
+        current_stock: parseInt(newPartForm.current_stock, 10),
+        stock_quantity: parseInt(newPartForm.current_stock, 10),
         min_stock_alert: parseInt(newPartForm.min_stock_alert || 5, 10)
       });
 
       // Add directly to cart
       handleAddToCart(createdItem);
 
-      alert(`✅ '${createdItem.item_name}' added to Main Inventory and added to active cart!`);
+      alert(`✅ '${createdItem.part_name || createdItem.name}' added to Inventory and added to cart!`);
       setShowAddPartModal(false);
       setNewPartForm({
-        item_name: '',
-        part_number: '',
-        category: 'Spare Parts',
-        cost_price: '',
-        selling_price: '',
-        stock_quantity: '10',
+        part_name: '',
+        category: 'General',
+        price: '',
+        current_stock: '',
         min_stock_alert: '5'
       });
       loadInventory();
@@ -414,7 +419,7 @@ export default function CounterSalePage() {
     const cleanPhone = sale.customer_phone.replace(/[^0-9]/g, '');
     const phoneWithCountry = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
     
-    const itemsList = (sale.items || []).map((it, i) => `${i + 1}. ${it.item_name} (x${it.quantity}) - ₹${parseFloat(it.total).toFixed(2)}`).join('\n');
+    const itemsList = (sale.items || []).map((it, i) => `${i + 1}. ${it.part_name || it.item_name} (x${it.quantity}) - ₹${parseFloat(it.total).toFixed(2)}`).join('\n');
     const msg = `*PATEL AUTOMOBILES - SPARE PARTS CASH MEMO* 🛵🔧
 ━━━━━━━━━━━━━━━━━━━━
 📄 *Bill No:* ${sale.invoice_number}
@@ -585,9 +590,9 @@ Kindly clear your pending balance at your earliest convenience.
               </div>
 
               {/* Categories Pills */}
-              {categories.length > 1 && (
+              {categoriesList.length > 1 && (
                 <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
-                  {categories.map(cat => (
+                  {categoriesList.map(cat => (
                     <button
                       key={cat}
                       type="button"
@@ -623,7 +628,7 @@ Kindly clear your pending balance at your earliest convenience.
                     const stock = parseInt(item.current_stock || item.stock_quantity || item.quantity || 0, 10);
                     const isLow = stock <= (parseInt(item.min_stock_alert, 10) || 5);
                     const isOut = stock <= 0;
-                    const price = parseFloat(item.selling_price || item.unit_price || item.price || 0);
+                    const price = parseFloat(item.price || item.selling_price || item.unit_price || 0);
 
                     return (
                       <div
@@ -638,7 +643,7 @@ Kindly clear your pending balance at your earliest convenience.
                         <div>
                           <div className="flex justify-between items-start gap-2">
                             <h4 className="font-bold text-sm text-slate-900 font-poppins group-hover:text-blue-600 transition-colors line-clamp-1">
-                              {item.item_name || item.name}
+                              {item.part_name || item.item_name || item.name}
                             </h4>
                             <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase shrink-0 ${
                               isOut 
@@ -651,9 +656,9 @@ Kindly clear your pending balance at your earliest convenience.
                             </span>
                           </div>
 
-                          {item.part_number && (
-                            <span className="text-[11px] font-mono text-slate-400 block mt-0.5">
-                              #{item.part_number}
+                          {item.category && (
+                            <span className="text-[11px] text-slate-400 block mt-0.5">
+                              {item.category}
                             </span>
                           )}
                         </div>
@@ -755,7 +760,7 @@ Kindly clear your pending balance at your earliest convenience.
                     {cartItems.map((item) => (
                       <div key={item.id} className="p-3 bg-slate-50 rounded-2xl border border-slate-200/80 flex items-center justify-between gap-3">
                         <div className="flex-1 min-w-0">
-                          <h5 className="text-xs font-bold text-slate-900 truncate">{item.item_name}</h5>
+                          <h5 className="text-xs font-bold text-slate-900 truncate">{item.part_name || item.item_name}</h5>
                           <span className="text-[11px] font-mono text-slate-500">₹{item.selling_price.toFixed(2)} / unit</span>
                         </div>
 
@@ -854,7 +859,7 @@ Kindly clear your pending balance at your earliest convenience.
                   </div>
                 )}
 
-                {/* PAYMENT MODE SELECTOR */}
+                {/* PAYMENT METHOD (ONLY CASH & UPI / GPAY) */}
                 <div>
                   <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
                     Payment Method
@@ -865,9 +870,7 @@ Kindly clear your pending balance at your earliest convenience.
                     className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none"
                   >
                     <option value="CASH">Cash 💵</option>
-                    <option value="UPI">UPI / GPay / PhonePe 📱</option>
-                    <option value="CARD">Debit / Credit Card 💳</option>
-                    <option value="ONLINE">Bank Transfer 🏦</option>
+                    <option value="UPI">UPI / GPay 📱</option>
                   </select>
                 </div>
               </div>
@@ -952,7 +955,7 @@ Kindly clear your pending balance at your earliest convenience.
                           <span className="font-mono text-slate-400 text-[11px]">{inv.customer_phone}</span>
                         </td>
                         <td className="py-3 px-4 text-slate-600 max-w-[200px] truncate">
-                          {(inv.items || []).map(i => `${i.item_name} (x${i.quantity})`).join(', ')}
+                          {(inv.items || []).map(i => `${i.part_name || i.item_name} (x${i.quantity})`).join(', ')}
                         </td>
                         <td className="py-3 px-4 text-right font-mono font-bold text-slate-900">₹{parseFloat(inv.net_total || 0).toFixed(2)}</td>
                         <td className="py-3 px-4 text-right font-mono text-emerald-600 font-bold">₹{parseFloat(inv.paid_amount || 0).toFixed(2)}</td>
@@ -1096,111 +1099,100 @@ Kindly clear your pending balance at your earliest convenience.
         </div>
       )}
 
-      {/* MODAL 1: ADD NEW SPARE PART (IN-LINE CREATOR) */}
+      {/* MODAL 1: ADD NEW SPARE PART (EXACT REPLICA OF INVENTORY PAGE MODAL) */}
       {showAddPartModal && (
         <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full space-y-5 shadow-2xl border border-slate-100 relative animate-in fade-in zoom-in duration-150">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full space-y-6 shadow-2xl border border-slate-200">
             
-            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <div>
-                <h3 className="font-bold text-slate-900 font-poppins text-lg flex items-center gap-2">
-                  <Package className="w-5 h-5 text-blue-600" /> + Add New Spare Part
-                </h3>
-                <p className="text-xs text-slate-500">Syncs immediately with Main Inventory & active cart.</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowAddPartModal(false)}
-                className="text-slate-400 hover:text-slate-600 p-1"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+            <h2 className="text-xl font-bold text-slate-900 font-poppins">
+              Add New Spare Part
+            </h2>
 
             <form onSubmit={handleSaveNewPart} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  Spare Part Name *
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  PART NAME *
                 </label>
                 <input
                   type="text"
                   required
-                  value={newPartForm.item_name}
-                  onChange={(e) => setNewPartForm({ ...newPartForm, item_name: e.target.value })}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  value={newPartForm.part_name}
+                  onChange={(e) => setNewPartForm({ ...newPartForm, part_name: e.target.value })}
+                  className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  CATEGORY *
+                </label>
+                <select
+                  value={newPartForm.category}
+                  onChange={(e) => setNewPartForm({ ...newPartForm, category: e.target.value })}
+                  className="w-full px-4 py-3 rounded-xl border border-slate-200 text-xs font-bold bg-slate-50 focus:outline-none"
+                >
+                  {INVENTORY_CATEGORIES.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                    Part Number
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    SELLING PRICE (₹) *
                   </label>
                   <input
-                    type="text"
-                    value={newPartForm.part_number}
-                    onChange={(e) => setNewPartForm({ ...newPartForm, part_number: e.target.value })}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-mono focus:outline-none"
+                    type="number"
+                    step="0.01"
+                    required
+                    value={newPartForm.price}
+                    onChange={(e) => setNewPartForm({ ...newPartForm, price: e.target.value })}
+                    className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm font-mono font-bold focus:outline-none"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                    Category
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    CURRENT STOCK *
                   </label>
                   <input
-                    type="text"
-                    value={newPartForm.category}
-                    onChange={(e) => setNewPartForm({ ...newPartForm, category: e.target.value })}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none"
+                    type="number"
+                    required
+                    value={newPartForm.current_stock}
+                    onChange={(e) => setNewPartForm({ ...newPartForm, current_stock: e.target.value })}
+                    className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm font-mono font-bold focus:outline-none"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                    Selling Price (₹) *
-                  </label>
-                  <input
-                    type="number"
-                    step="0.5"
-                    required
-                    value={newPartForm.selling_price}
-                    onChange={(e) => setNewPartForm({ ...newPartForm, selling_price: e.target.value })}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-mono font-bold focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                    Initial Stock (Qty) *
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    required
-                    value={newPartForm.stock_quantity}
-                    onChange={(e) => setNewPartForm({ ...newPartForm, stock_quantity: e.target.value })}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-mono focus:outline-none"
-                  />
-                </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  LOW STOCK ALERT THRESHOLD
+                </label>
+                <input
+                  type="number"
+                  required
+                  value={newPartForm.min_stock_alert}
+                  onChange={(e) => setNewPartForm({ ...newPartForm, min_stock_alert: e.target.value })}
+                  className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm font-mono focus:outline-none"
+                />
               </div>
 
-              <div className="flex gap-3 pt-2">
+              <div className="flex gap-3 pt-4">
                 <button
                   type="button"
                   onClick={() => setShowAddPartModal(false)}
-                  className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs rounded-xl"
+                  className="flex-1 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-all"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={addingPart}
-                  className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md disabled:opacity-50"
+                  className="flex-1 py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md transition-all disabled:opacity-50"
                 >
-                  {addingPart ? 'Saving...' : 'Add & Select'}
+                  {addingPart ? 'Saving...' : 'Save Part'}
                 </button>
               </div>
             </form>
@@ -1293,7 +1285,7 @@ Kindly clear your pending balance at your earliest convenience.
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  Payment Amount (₹) *
+                  PAYMENT AMOUNT (₹) *
                 </label>
                 <input
                   type="number"
@@ -1307,7 +1299,7 @@ Kindly clear your pending balance at your earliest convenience.
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  Payment Mode
+                  PAYMENT METHOD
                 </label>
                 <select
                   value={paymentModal.paymentMode}
@@ -1315,9 +1307,7 @@ Kindly clear your pending balance at your earliest convenience.
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-bold bg-slate-50 focus:outline-none"
                 >
                   <option value="CASH">Cash 💵</option>
-                  <option value="UPI">UPI / GPay / PhonePe 📱</option>
-                  <option value="CARD">Debit / Credit Card 💳</option>
-                  <option value="ONLINE">Bank Transfer 🏦</option>
+                  <option value="UPI">UPI / GPay 📱</option>
                 </select>
               </div>
 

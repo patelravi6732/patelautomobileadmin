@@ -296,18 +296,17 @@ export default function CounterSalePage() {
       return (i.id && item.id && String(i.id) === String(item.id)) || (iNorm && itemNorm && iNorm === itemNorm);
     });
 
+    let nextCart = [];
     if (existingIndex >= 0) {
       const currentQty = cartItems[existingIndex].quantity;
       if (currentQty + 1 > curStock) {
         alert(`⚠️ Maximum available stock for '${item.part_name || item.item_name || item.name}' is ${curStock} units.`);
         return;
       }
-      const updated = [...cartItems];
-      updated[existingIndex].quantity += 1;
-      setCartItems(updated);
+      nextCart = cartItems.map((cItem, idx) => idx === existingIndex ? { ...cItem, quantity: cItem.quantity + 1 } : cItem);
     } else {
       const rawName = item.part_name || item.item_name || item.name || 'Spare Part';
-      setCartItems([...cartItems, {
+      nextCart = [...cartItems, {
         id: item.id || `cart_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
         item_name: rawName,
         part_name: rawName,
@@ -315,8 +314,23 @@ export default function CounterSalePage() {
         unit_price: parseFloat(item.price || item.selling_price || item.unit_price || 0),
         quantity: 1,
         available_stock: curStock
-      }]);
+      }];
     }
+
+    setCartItems(nextCart);
+
+    const draft = {
+      customerName,
+      customerPhone,
+      vehicleNumber,
+      cartItems: nextCart,
+      discountAmount,
+      paidAmount,
+      paymentMode,
+      updated_at: new Date().toISOString()
+    };
+    localStorage.setItem('counter_sale_draft', JSON.stringify(draft));
+    pushCloudActiveCounterCart(draft).catch(() => null);
   };
 
   // Update Cart Item Quantity

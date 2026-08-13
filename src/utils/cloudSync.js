@@ -189,7 +189,7 @@ export async function fetchMasterStore(forceFresh = false) {
   return _masterFetchPromise;
 }
 
-async function saveMasterStore(storeData) {
+export async function saveMasterStore(storeData) {
   try {
     const curCache = _cachedMasterStore || {};
     const localBookings = JSON.parse(localStorage.getItem('local_bookings') || '[]');

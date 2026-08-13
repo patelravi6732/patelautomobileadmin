@@ -4,13 +4,14 @@ import {
   Receipt, BookOpen, Download, Share2, Phone, User, Calendar, 
   DollarSign, Package, Tag, ArrowRight, RefreshCw, X, ShieldAlert,
   CreditCard, Smartphone, Check, Sparkles, Filter, ChevronRight,
-  IndianRupee, Wrench
+  IndianRupee, Wrench, ShieldCheck
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { 
   fetchCloudCounterSales, pushCloudCounterSale, deleteCloudCounterSale,
   fetchCloudCounterKhata, pushCloudCounterKhata, atomicRecordCounterPayment,
-  atomicDeductInventoryForSale, atomicAddInventoryItem, fetchMasterStore
+  atomicDeductInventoryForSale, atomicAddInventoryItem, fetchMasterStore,
+  saveMasterStore
 } from '../utils/cloudSync';
 import { generateCounterSaleCardPhotoAsync } from '../utils/billCardGenerator';
 
@@ -30,15 +31,41 @@ export default function CounterSalePage() {
   const [invSearch, setInvSearch] = useState('');
   const [invCategory, setInvCategory] = useState('ALL');
 
-  // New Sale POS Form State
-  const [customerName, setCustomerName] = useState('');
-  const [customerPhone, setCustomerPhone] = useState('');
-  const [vehicleNumber, setVehicleNumber] = useState('');
-  const [cartItems, setCartItems] = useState([]);
-  const [discountAmount, setDiscountAmount] = useState(0);
-  const [paidAmount, setPaidAmount] = useState('');
-  const [paymentMode, setPaymentMode] = useState('CASH'); // CASH | UPI
+  // Load draft from localStorage if available
+  const loadDraft = () => {
+    try {
+      const raw = localStorage.getItem('counter_sale_draft');
+      if (raw) return JSON.parse(raw);
+    } catch (e) {}
+    return null;
+  };
+
+  const initialDraft = loadDraft();
+
+  // New Sale POS Form State (Persistent across refreshes)
+  const [customerName, setCustomerName] = useState(initialDraft?.customerName || '');
+  const [customerPhone, setCustomerPhone] = useState(initialDraft?.customerPhone || '');
+  const [vehicleNumber, setVehicleNumber] = useState(initialDraft?.vehicleNumber || '');
+  const [cartItems, setCartItems] = useState(initialDraft?.cartItems || []);
+  const [discountAmount, setDiscountAmount] = useState(initialDraft?.discountAmount || 0);
+  const [paidAmount, setPaidAmount] = useState(initialDraft?.paidAmount !== undefined ? initialDraft.paidAmount : '');
+  const [paymentMode, setPaymentMode] = useState(initialDraft?.paymentMode || 'CASH'); // CASH | UPI
   const [submittingSale, setSubmittingSale] = useState(false);
+  const [confirmingParts, setConfirmingParts] = useState(false);
+
+  // Auto-save draft on every change
+  useEffect(() => {
+    const draft = {
+      customerName,
+      customerPhone,
+      vehicleNumber,
+      cartItems,
+      discountAmount,
+      paidAmount,
+      paymentMode
+    };
+    localStorage.setItem('counter_sale_draft', JSON.stringify(draft));
+  }, [customerName, customerPhone, vehicleNumber, cartItems, discountAmount, paidAmount, paymentMode]);
 
   // Success Modal
   const [successModal, setSuccessModal] = useState({
@@ -172,7 +199,9 @@ export default function CounterSalePage() {
 
   // Keep paidAmount in sync with net total by default when cart or discount changes
   useEffect(() => {
-    setPaidAmount(cartNetTotal);
+    if (paidAmount === '' || paidAmount === cartSubtotal || initialDraft?.paidAmount === undefined) {
+      setPaidAmount(cartNetTotal);
+    }
   }, [cartNetTotal]);
 
   const effectivePaid = useMemo(() => {
@@ -184,7 +213,11 @@ export default function CounterSalePage() {
     return Math.max(0, cartNetTotal - effectivePaid);
   }, [cartNetTotal, effectivePaid]);
 
-  // Handle Add Item to Cart
+  const hasUnconfirmedParts = useMemo(() => {
+    return cartItems.some(p => p.status !== 'CONFIRMED');
+  }, [cartItems]);
+
+  // Handle Add Item to Cart (Adds as STAGED by default)
   const handleAddToCart = (item) => {
     const curStock = parseInt(item.current_stock || item.stock_quantity || item.quantity || 0, 10);
     if (curStock <= 0) {
@@ -201,6 +234,7 @@ export default function CounterSalePage() {
       }
       const updated = [...cartItems];
       updated[existingIndex].quantity += 1;
+      updated[existingIndex].status = 'STAGED'; // Mark staged so user can confirm
       setCartItems(updated);
     } else {
       setCartItems([...cartItems, {
@@ -210,8 +244,34 @@ export default function CounterSalePage() {
         selling_price: parseFloat(item.price || item.selling_price || item.unit_price || 0),
         unit_price: parseFloat(item.price || item.selling_price || item.unit_price || 0),
         quantity: 1,
-        available_stock: curStock
+        available_stock: curStock,
+        status: 'STAGED' // Staged until confirmed like workshop
       }]);
+    }
+  };
+
+  // Explicit Confirm Parts Button Action (Exact same as Workshop)
+  const handleConfirmCartParts = async () => {
+    const stagedParts = cartItems.filter(p => p.status !== 'CONFIRMED');
+    if (stagedParts.length === 0) {
+      alert('ℹ️ All spare parts in cart are already confirmed!');
+      return;
+    }
+
+    setConfirmingParts(true);
+    try {
+      // Deduct stock in real-time from Main Inventory & Cloud
+      await atomicDeductInventoryForSale(stagedParts);
+
+      const updated = cartItems.map(p => ({ ...p, status: 'CONFIRMED' }));
+      setCartItems(updated);
+      alert(`✅ Spare Parts Confirmed!\n\n${stagedParts.length} item(s) confirmed and stock deducted from Inventory successfully.`);
+      loadInventory();
+    } catch (e) {
+      console.error(e);
+      alert('⚠️ Error confirming spare parts stock.');
+    } finally {
+      setConfirmingParts(false);
     }
   };
 
@@ -224,12 +284,73 @@ export default function CounterSalePage() {
       alert(`⚠️ Only ${target.available_stock} units available in stock!`);
       return;
     }
-    setCartItems(cartItems.map(i => String(i.id) === String(itemId) ? { ...i, quantity: qty } : i));
+    setCartItems(cartItems.map(i => String(i.id) === String(itemId) ? { ...i, quantity: qty, status: 'STAGED' } : i));
   };
 
-  // Remove Item from Cart
-  const handleRemoveFromCart = (itemId) => {
+  // Remove Item from Cart (Restores stock if was confirmed)
+  const handleRemoveFromCart = async (itemId) => {
+    const target = cartItems.find(i => String(i.id) === String(itemId));
+    if (!target) return;
+
+    if (target.status === 'CONFIRMED') {
+      try {
+        const store = await fetchMasterStore();
+        const existingInv = (store.inventory || []).filter(i => i && typeof i === 'object');
+        const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
+        const allMap = new Map();
+        [...existingInv, ...localInv].forEach(it => {
+          if (it && (it.id || it.part_name || it.item_name || it.name)) {
+            allMap.set(String(it.id || it.part_name || it.item_name || it.name), it);
+          }
+        });
+
+        const baseInv = Array.from(allMap.values());
+        const targetNorm = String(target.part_name || target.item_name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        const targetId = String(target.id || '').toLowerCase();
+
+        const updatedInv = baseInv.map(invItem => {
+          if (!invItem) return invItem;
+          const invId = String(invItem.id || '').toLowerCase();
+          const invNorm = String(invItem.part_name || invItem.item_name || invItem.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+          if ((targetId && invId && targetId === invId) || (targetNorm && invNorm && targetNorm === invNorm)) {
+            const curStock = parseInt(invItem.current_stock || invItem.stock_quantity || invItem.quantity || 0, 10);
+            const newStock = curStock + parseInt(target.quantity || 1, 10);
+            return { ...invItem, current_stock: newStock, stock_quantity: newStock, quantity: newStock };
+          }
+          return invItem;
+        });
+
+        localStorage.setItem('inventory_items', JSON.stringify(updatedInv));
+        localStorage.setItem('spare_parts', JSON.stringify(updatedInv));
+        localStorage.setItem('local_inventory', JSON.stringify(updatedInv));
+        await saveMasterStore({ ...store, inventory: updatedInv });
+
+        try {
+          window.dispatchEvent(new Event('storage'));
+          window.dispatchEvent(new Event('master_store_updated'));
+          window.dispatchEvent(new Event('inventory_updated'));
+        } catch (e) {}
+      } catch (e) {
+        console.warn('Error restoring stock on remove:', e);
+      }
+    }
+
     setCartItems(cartItems.filter(i => String(i.id) !== String(itemId)));
+  };
+
+  // Clear Cart Completely
+  const handleClearCart = async () => {
+    if (!window.confirm('Are you sure you want to clear the active cart?')) return;
+    
+    // Restore any confirmed items
+    const confirmedItems = cartItems.filter(p => p.status === 'CONFIRMED');
+    for (const it of confirmedItems) {
+      await handleRemoveFromCart(it.id);
+    }
+
+    setCartItems([]);
+    localStorage.removeItem('counter_sale_draft');
+    loadInventory();
   };
 
   // Submit Counter Sale
@@ -282,8 +403,11 @@ export default function CounterSalePage() {
     };
 
     try {
-      // 1. Deduct from Main Inventory
-      await atomicDeductInventoryForSale(saleInvoice.items);
+      // 1. If any parts were unconfirmed, deduct now
+      const unconfirmedParts = cartItems.filter(p => p.status !== 'CONFIRMED');
+      if (unconfirmedParts.length > 0) {
+        await atomicDeductInventoryForSale(unconfirmedParts);
+      }
 
       // 2. Save Counter Sale Invoice
       await pushCloudCounterSale(saleInvoice);
@@ -325,13 +449,14 @@ export default function CounterSalePage() {
         photoUrl: photoUrl
       });
 
-      // 6. Reset POS Form
+      // 6. Reset POS Form & Clear Draft
       setCustomerName('');
       setCustomerPhone('');
       setVehicleNumber('');
       setCartItems([]);
       setDiscountAmount(0);
       setPaidAmount(0);
+      localStorage.removeItem('counter_sale_draft');
 
       // Reload Data
       loadInventory();
@@ -713,9 +838,20 @@ Kindly clear your pending balance at your earliest convenience.
                 <h3 className="font-bold text-slate-900 font-poppins flex items-center gap-2">
                   <Receipt className="w-5 h-5 text-blue-600" /> Customer & Billing Cart
                 </h3>
-                <span className="px-2.5 py-1 bg-blue-50 text-blue-700 font-bold text-xs rounded-xl font-mono">
-                  {cartItems.length} {cartItems.length === 1 ? 'Item' : 'Items'}
-                </span>
+                <div className="flex items-center gap-2">
+                  {cartItems.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleClearCart}
+                      className="text-[11px] text-rose-500 hover:text-rose-700 font-bold hover:underline"
+                    >
+                      Clear
+                    </button>
+                  )}
+                  <span className="px-2.5 py-1 bg-blue-50 text-blue-700 font-bold text-xs rounded-xl font-mono">
+                    {cartItems.length} {cartItems.length === 1 ? 'Item' : 'Items'}
+                  </span>
+                </div>
               </div>
 
               {/* CUSTOMER DETAILS */}
@@ -761,7 +897,7 @@ Kindly clear your pending balance at your earliest convenience.
                 </div>
               </div>
 
-              {/* CART ITEMS LIST */}
+              {/* CART ITEMS LIST WITH STAGED & CONFIRM STATUS */}
               <div className="space-y-2">
                 <div className="flex justify-between items-center">
                   <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider">
@@ -769,7 +905,7 @@ Kindly clear your pending balance at your earliest convenience.
                   </label>
                   {cartItems.length > 0 && (
                     <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-100 flex items-center gap-1">
-                      <Check className="w-3 h-3" /> Auto-Deducts from Stock
+                      {hasUnconfirmedParts ? '⏳ Unconfirmed in Cart' : '✓ All Confirmed & Locked'}
                     </span>
                   )}
                 </div>
@@ -781,53 +917,73 @@ Kindly clear your pending balance at your earliest convenience.
                   </div>
                 ) : (
                   <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
-                    {cartItems.map((item) => (
-                      <div key={item.id} className="p-3 bg-slate-50 rounded-2xl border border-slate-200/80 flex items-center justify-between gap-3">
-                        <div className="flex-1 min-w-0">
-                          <h5 className="text-xs font-bold text-slate-900 truncate">{item.part_name || item.item_name}</h5>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <span className="text-[11px] font-mono text-slate-500">₹{item.selling_price.toFixed(2)} / unit</span>
-                            <span className="text-[10px] font-bold text-emerald-600 bg-emerald-100/60 px-1.5 py-0.2 rounded font-mono">
-                              ✓ Confirmed
-                            </span>
+                    {cartItems.map((item) => {
+                      const isConfirmed = item.status === 'CONFIRMED';
+                      return (
+                        <div key={item.id} className="p-3 bg-slate-50 rounded-2xl border border-slate-200/80 flex items-center justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <h5 className="text-xs font-bold text-slate-900 truncate">{item.part_name || item.item_name}</h5>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <span className="text-[11px] font-mono text-slate-500">₹{item.selling_price.toFixed(2)} / unit</span>
+                              <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded font-mono ${
+                                isConfirmed 
+                                  ? 'text-emerald-700 bg-emerald-100' 
+                                  : 'text-amber-700 bg-amber-100 animate-pulse'
+                              }`}>
+                                {isConfirmed ? '✓ Confirmed' : '⏳ Staged'}
+                              </span>
+                            </div>
                           </div>
-                        </div>
 
-                        {/* Qty Counter */}
-                        <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-xl px-2 py-1">
+                          {/* Qty Counter */}
+                          <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-xl px-2 py-1">
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateQty(item.id, item.quantity - 1)}
+                              className="text-slate-500 hover:text-rose-600 font-bold px-1"
+                            >
+                              -
+                            </button>
+                            <span className="text-xs font-mono font-bold w-6 text-center">{item.quantity}</span>
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateQty(item.id, item.quantity + 1)}
+                              className="text-slate-500 hover:text-emerald-600 font-bold px-1"
+                            >
+                              +
+                            </button>
+                          </div>
+
+                          <span className="text-xs font-black font-mono text-slate-900 w-16 text-right">
+                            ₹{(item.selling_price * item.quantity).toFixed(2)}
+                          </span>
+
                           <button
                             type="button"
-                            onClick={() => handleUpdateQty(item.id, item.quantity - 1)}
-                            className="text-slate-500 hover:text-rose-600 font-bold px-1"
+                            onClick={() => handleRemoveFromCart(item.id)}
+                            className="text-slate-400 hover:text-rose-600 p-1 transition-colors"
                           >
-                            -
-                          </button>
-                          <span className="text-xs font-mono font-bold w-6 text-center">{item.quantity}</span>
-                          <button
-                            type="button"
-                            onClick={() => handleUpdateQty(item.id, item.quantity + 1)}
-                            className="text-slate-500 hover:text-emerald-600 font-bold px-1"
-                          >
-                            +
+                            <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
-
-                        <span className="text-xs font-black font-mono text-slate-900 w-16 text-right">
-                          ₹{(item.selling_price * item.quantity).toFixed(2)}
-                        </span>
-
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveFromCart(item.id)}
-                          className="text-slate-400 hover:text-rose-600 p-1 transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
+
+              {/* EXPLICIT CONFIRM PARTS BUTTON (JUST LIKE WORKSHOP) */}
+              {cartItems.length > 0 && hasUnconfirmedParts && (
+                <button
+                  type="button"
+                  onClick={handleConfirmCartParts}
+                  disabled={confirmingParts}
+                  className="w-full py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-xs rounded-xl shadow-xs flex items-center justify-center gap-1.5 transition-all"
+                >
+                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                  {confirmingParts ? 'Confirming Stock...' : `Confirm ${cartItems.filter(p => p.status !== 'CONFIRMED').length} Part(s) & Lock Stock`}
+                </button>
+              )}
 
               {/* DISCOUNT INPUT (SAME AS WORKSHOP) */}
               <div className="space-y-3 pt-2 border-t border-slate-100">

@@ -6,7 +6,7 @@ import {
   CreditCard, Smartphone, Check, Sparkles, Filter, ChevronRight,
   IndianRupee, Wrench, ShieldCheck, Layers, ShoppingCart, Send
 } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
+import { useAuth, DEFAULT_GARAGE_INFO } from '../context/AuthContext';
 import { 
   fetchCloudCounterSales, pushCloudCounterSale, deleteCloudCounterSale,
   fetchCloudCounterKhata, pushCloudCounterKhata, deleteCloudCounterKhata,
@@ -32,7 +32,9 @@ const WhatsAppIcon = ({ className = "w-4 h-4" }) => (
 );
 
 export default function CounterSalePage() {
-  const { garageInfo, user } = useAuth();
+  const auth = useAuth() || {};
+  const garageInfo = auth.garageInfo || DEFAULT_GARAGE_INFO;
+  const user = auth.user || null;
   const [activeTab, setActiveTab] = useState('NEW_SALE'); // NEW_SALE | INVOICES | KHATA
   const [mobilePosView, setMobilePosView] = useState('CATALOG'); // 'CATALOG' | 'CART' for mobile layout
 

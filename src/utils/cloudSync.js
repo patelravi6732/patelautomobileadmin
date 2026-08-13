@@ -795,9 +795,14 @@ export async function deleteJobToRecycleBin(targetJob) {
 
 export async function pushCloudRecycleBinItem(trashObj) {
   if (!trashObj || typeof trashObj !== 'object') return;
+  const targetKey = String(trashObj.id || (trashObj.payload ? trashObj.payload.id : ''));
   const store = await fetchMasterStore();
   const existing = (store.recycleBin || []).filter(r => r && typeof r === 'object');
-  const updated = [trashObj, ...existing];
+  const filtered = existing.filter(r => {
+    const rKey = String(r.id || (r.payload ? r.payload.id : ''));
+    return rKey !== targetKey;
+  });
+  const updated = [trashObj, ...filtered];
   await saveMasterStore({ ...store, recycleBin: updated });
 }
 
@@ -1440,13 +1445,21 @@ export async function fetchCloudAuditLogs() {
 
 // ---------------- COUNTER SALES & COUNTER KHATA ----------------
 export async function fetchCloudCounterSales() {
+  const deletedIds = await fetchCloudDeletedIds().catch(() => []);
+  const isDeleted = (id) => id && (deletedIds.includes(String(id)) || deletedIds.includes(String(id).replace(/^cs_/, '').replace(/^inv_/, '')));
+
   const store = await fetchMasterStore();
-  const cloudSales = (store.counterSales || []).filter(s => s && typeof s === 'object');
-  const localSales = JSON.parse(localStorage.getItem('local_counter_sales') || '[]');
+  const cloudSales = (store.counterSales || []).filter(s => s && typeof s === 'object' && !isDeleted(s.id));
+  const rawLocalSales = JSON.parse(localStorage.getItem('local_counter_sales') || '[]');
+  const localSales = rawLocalSales.filter(s => s && !isDeleted(s.id));
+
+  if (localSales.length !== rawLocalSales.length) {
+    localStorage.setItem('local_counter_sales', JSON.stringify(localSales));
+  }
 
   const map = new Map();
   [...cloudSales, ...localSales].forEach(s => {
-    if (s && s.id) {
+    if (s && s.id && !isDeleted(s.id)) {
       map.set(String(s.id), s);
     }
   });
@@ -1468,24 +1481,37 @@ export async function pushCloudCounterSale(saleObj) {
 export async function deleteCloudCounterSale(saleId) {
   if (!saleId) return;
   const strId = String(saleId);
+  const rawId = strId.replace(/^cs_/, '').replace(/^inv_/, '');
+
+  await markIdAsDeleted(strId).catch(console.warn);
+  if (rawId && rawId !== strId) await markIdAsDeleted(rawId).catch(console.warn);
+
   const localSales = JSON.parse(localStorage.getItem('local_counter_sales') || '[]');
-  const updatedLocal = localSales.filter(s => String(s.id) !== strId);
+  const updatedLocal = localSales.filter(s => String(s.id) !== strId && String(s.id).replace(/^cs_/, '') !== rawId);
   localStorage.setItem('local_counter_sales', JSON.stringify(updatedLocal));
 
   const store = await fetchMasterStore();
   const existing = (store.counterSales || []).filter(s => s && typeof s === 'object');
-  const updatedCloud = existing.filter(s => String(s.id) !== strId);
+  const updatedCloud = existing.filter(s => String(s.id) !== strId && String(s.id).replace(/^cs_/, '') !== rawId);
   await saveMasterStore({ ...store, counterSales: updatedCloud });
 }
 
 export async function fetchCloudCounterKhata() {
+  const deletedIds = await fetchCloudDeletedIds().catch(() => []);
+  const isDeleted = (id) => id && (deletedIds.includes(String(id)) || deletedIds.includes(String(id).replace(/^ckhata_/, '').replace(/^cs_/, '')));
+
   const store = await fetchMasterStore();
-  const cloudKhata = (store.counterKhata || []).filter(k => k && typeof k === 'object');
-  const localKhata = JSON.parse(localStorage.getItem('local_counter_khata') || '[]');
+  const cloudKhata = (store.counterKhata || []).filter(k => k && typeof k === 'object' && !isDeleted(k.id) && !isDeleted(k.sale_id));
+  const rawLocalKhata = JSON.parse(localStorage.getItem('local_counter_khata') || '[]');
+  const localKhata = rawLocalKhata.filter(k => k && !isDeleted(k.id) && !isDeleted(k.sale_id));
+
+  if (localKhata.length !== rawLocalKhata.length) {
+    localStorage.setItem('local_counter_khata', JSON.stringify(localKhata));
+  }
 
   const map = new Map();
   [...cloudKhata, ...localKhata].forEach(k => {
-    if (k && k.id) {
+    if (k && k.id && !isDeleted(k.id) && !isDeleted(k.sale_id)) {
       map.set(String(k.id), k);
     }
   });
@@ -1507,13 +1533,18 @@ export async function pushCloudCounterKhata(khataObj) {
 export async function deleteCloudCounterKhata(khataId) {
   if (!khataId) return;
   const strId = String(khataId);
+  const rawId = strId.replace(/^ckhata_/, '').replace(/^cs_/, '');
+
+  await markIdAsDeleted(strId).catch(console.warn);
+  if (rawId && rawId !== strId) await markIdAsDeleted(rawId).catch(console.warn);
+
   const localKhata = JSON.parse(localStorage.getItem('local_counter_khata') || '[]');
-  const updatedLocal = localKhata.filter(k => String(k.id) !== strId && String(k.sale_id) !== strId);
+  const updatedLocal = localKhata.filter(k => String(k.id) !== strId && String(k.sale_id) !== strId && String(k.id).replace(/^ckhata_/, '') !== rawId);
   localStorage.setItem('local_counter_khata', JSON.stringify(updatedLocal));
 
   const store = await fetchMasterStore();
   const existing = (store.counterKhata || []).filter(k => k && typeof k === 'object');
-  const updatedCloud = existing.filter(k => String(k.id) !== strId && String(k.sale_id) !== strId);
+  const updatedCloud = existing.filter(k => String(k.id) !== strId && String(k.sale_id) !== strId && String(k.id).replace(/^ckhata_/, '') !== rawId);
   await saveMasterStore({ ...store, counterKhata: updatedCloud });
 }
 

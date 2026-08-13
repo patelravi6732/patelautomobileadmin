@@ -735,8 +735,9 @@ export default function CounterSalePage() {
 
     try {
       // 1. Move to Recycle Bin (local & cloud)
+      const trashId = `trash_cs_${inv.id}`;
       const trashObj = {
-        id: `trash_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+        id: trashId,
         item_type: 'Counter Sale Invoice',
         title: `Counter Sale: ${inv.customer_name} (₹${inv.net_total || inv.total_amount || 0})`,
         deleted_by: user?.user_name || 'Patel Owner (Admin)',
@@ -745,7 +746,8 @@ export default function CounterSalePage() {
         payload: inv
       };
 
-      const existingTrash = JSON.parse(localStorage.getItem('recycle_bin_items') || '[]');
+      const existingTrash = JSON.parse(localStorage.getItem('recycle_bin_items') || '[]')
+        .filter(t => String(t.id) !== trashId && (!t.payload || String(t.payload.id) !== String(inv.id)));
       localStorage.setItem('recycle_bin_items', JSON.stringify([trashObj, ...existingTrash]));
       pushCloudRecycleBinItem(trashObj).catch(console.warn);
 
@@ -761,7 +763,8 @@ export default function CounterSalePage() {
       } catch (e) {}
 
       alert(`🗑️ Invoice for ${inv.customer_name} moved to Recycle Bin!`);
-      loadInvoices();
+      const updatedSales = await fetchCloudCounterSales();
+      setInvoices(updatedSales);
     } catch (err) {
       console.error('Error deleting counter sale invoice:', err);
       alert('⚠️ Error deleting invoice.');
@@ -777,8 +780,9 @@ export default function CounterSalePage() {
 
     try {
       // 1. Move to Recycle Bin (local & cloud)
+      const trashId = `trash_ckhata_${debtor.id}`;
       const trashObj = {
-        id: `trash_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+        id: trashId,
         item_type: 'Counter Khata Entry',
         title: `Counter Khata: ${debtor.customer_name} (Due: ₹${debtor.pending_amount || 0})`,
         deleted_by: user?.user_name || 'Patel Owner (Admin)',
@@ -787,7 +791,8 @@ export default function CounterSalePage() {
         payload: debtor
       };
 
-      const existingTrash = JSON.parse(localStorage.getItem('recycle_bin_items') || '[]');
+      const existingTrash = JSON.parse(localStorage.getItem('recycle_bin_items') || '[]')
+        .filter(t => String(t.id) !== trashId && (!t.payload || String(t.payload.id) !== String(debtor.id)));
       localStorage.setItem('recycle_bin_items', JSON.stringify([trashObj, ...existingTrash]));
       pushCloudRecycleBinItem(trashObj).catch(console.warn);
 
@@ -803,7 +808,8 @@ export default function CounterSalePage() {
       } catch (e) {}
 
       alert(`🗑️ Khata record for ${debtor.customer_name} moved to Recycle Bin!`);
-      loadKhata();
+      const updatedKhata = await fetchCloudCounterKhata();
+      setKhataDebtors(updatedKhata);
     } catch (err) {
       console.error('Error deleting Khata entry:', err);
       alert('⚠️ Error deleting Khata entry.');

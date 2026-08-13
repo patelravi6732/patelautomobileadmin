@@ -25,7 +25,8 @@ export default function RecycleBinPage() {
     const allMap = new Map();
     [...backendItems, ...localTrash, ...cloudTrash].forEach(r => {
       if (r && typeof r === 'object') {
-        const key = String(r.id || `${r.title}_${r.deleted_at}`);
+        const payloadKey = (r.payload && r.payload.id) ? String(r.payload.id) : null;
+        const key = payloadKey ? `payload_${payloadKey}` : String(r.id || r.title || 'unknown');
         if (!allMap.has(key)) {
           allMap.set(key, {
             ...r,

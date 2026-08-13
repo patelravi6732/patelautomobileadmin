@@ -267,22 +267,26 @@ export default function CounterSalePage() {
     };
   }, []);
 
-  // Filtered Inventory Catalog
+  // Filtered Inventory Catalog (100% Safe against non-array inventory)
   const filteredCatalog = useMemo(() => {
+    if (!Array.isArray(inventory)) return [];
     return inventory.filter(item => {
+      if (!item || typeof item !== 'object') return false;
       const name = (item.part_name || item.item_name || item.name || '').toLowerCase();
-      const query = invSearch.toLowerCase().trim();
+      const query = (invSearch || '').toLowerCase().trim();
       const matchesSearch = !query || name.includes(query);
-      const matchesCat = invCategory === 'ALL' || (item.category || '').toLowerCase() === invCategory.toLowerCase();
+      const matchesCat = !invCategory || invCategory === 'ALL' || (item.category || '').toLowerCase() === invCategory.toLowerCase();
       return matchesSearch && matchesCat;
     });
   }, [inventory, invSearch, invCategory]);
 
   const categoriesList = useMemo(() => {
     const set = new Set(['ALL', ...INVENTORY_CATEGORIES]);
-    inventory.forEach(i => {
-      if (i.category) set.add(i.category);
-    });
+    if (Array.isArray(inventory)) {
+      inventory.forEach(i => {
+        if (i && typeof i === 'object' && i.category) set.add(String(i.category));
+      });
+    }
     return Array.from(set);
   }, [inventory]);
 

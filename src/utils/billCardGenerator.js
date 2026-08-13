@@ -317,29 +317,10 @@ const renderCanvasInternal = (invoice, garageInfo, logoImg, qrImg) => {
     ctx.font = '600 11px Consolas, monospace';
     ctx.fillText(`${garageInfo?.upi_id || 'paytmqr5hlpsp@ptys'}`, pad + 10 + (qrBoxSize / 2), startY + qrBoxSize + 42);
     ctx.textAlign = 'left';
-  } else {
-    // PAID IN FULL GREEN BADGE
-    const paidBadgeW = 220;
-    const paidBadgeH = 95;
-    ctx.fillStyle = '#ecfdf5';
-    drawRoundedRect(ctx, pad, startY, paidBadgeW, paidBadgeH, 16);
-    ctx.fill();
-    ctx.strokeStyle = '#6ee7b7';
-    ctx.lineWidth = 2;
-    drawRoundedRect(ctx, pad, startY, paidBadgeW, paidBadgeH, 16);
-    ctx.stroke();
-
-    ctx.fillStyle = '#065f46';
-    ctx.font = 'bold 22px "Segoe UI", Roboto, system-ui, -apple-system, sans-serif';
-    ctx.fillText('✓ PAID IN FULL', pad + 24, startY + 44);
-
-    ctx.fillStyle = '#047857';
-    ctx.font = '600 12.5px "Segoe UI", Roboto, system-ui, -apple-system, sans-serif';
-    ctx.fillText('Thank you for prompt payment!', pad + 24, startY + 70);
   }
 
   // Right Side Totals Calculation
-  const totX = isPendingPayment ? (pad + qrBoxSize + 40) : (pad + 245);
+  const totX = isPendingPayment ? (pad + qrBoxSize + 40) : (pad + 260);
   const totW = width - pad - totX;
   let curTotY = startY + 10;
 

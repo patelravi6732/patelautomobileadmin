@@ -323,6 +323,14 @@ export default function CounterSalePage() {
     return Math.max(0, cartNetTotal - effectivePaid);
   }, [cartNetTotal, effectivePaid]);
 
+  const hasUnconfirmedParts = useMemo(() => {
+    return Array.isArray(cartItems) && cartItems.some(p => p && p.status !== 'CONFIRMED');
+  }, [cartItems]);
+
+  const handleConfirmCartParts = () => {
+    setCartItems(prev => prev.map(p => ({ ...p, status: 'CONFIRMED' })));
+  };
+
   // Handle Add Item to Cart (Workshop Style - No premature stock deduction)
   const handleAddToCart = (item) => {
     if (!item) return;

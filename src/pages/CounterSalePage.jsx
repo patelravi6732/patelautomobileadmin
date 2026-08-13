@@ -1502,8 +1502,17 @@ Kindly clear your pending balance at your earliest convenience.
                           <td className="py-3 px-3.5 text-right font-mono font-black text-slate-900 whitespace-nowrap">
                             ₹{netTot.toFixed(2)}
                           </td>
-                          <td className="py-3 px-3.5 text-right font-mono text-emerald-600 font-black whitespace-nowrap">
-                            ₹{paidAmt.toFixed(2)}
+                          <td className="py-3 px-3.5 text-right whitespace-nowrap">
+                            <span className="font-mono text-emerald-600 font-black block">₹{paidAmt.toFixed(2)}</span>
+                            {paidAmt > 0 && (
+                              <span className={`inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded mt-0.5 ${
+                                (inv.payment_mode || 'CASH').toUpperCase() === 'UPI'
+                                  ? 'bg-purple-100 text-purple-700'
+                                  : 'bg-emerald-100 text-emerald-700'
+                              }`}>
+                                {(inv.payment_mode || 'CASH').toUpperCase() === 'UPI' ? '📱 UPI' : '💵 Cash'}
+                              </span>
+                            )}
                           </td>
                           <td className="py-3 px-3.5 text-right font-mono text-rose-600 font-black whitespace-nowrap">
                             {pendingAmt > 0 ? `₹${pendingAmt.toFixed(2)}` : '₹0.00'}

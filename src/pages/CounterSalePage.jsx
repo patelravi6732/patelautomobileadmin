@@ -12,7 +12,7 @@ import {
   fetchCloudCounterKhata, pushCloudCounterKhata, deleteCloudCounterKhata,
   atomicRecordCounterPayment, syncCloudInventory, atomicAddInventoryItem,
   fetchMasterStore, saveMasterStore, pushCloudActiveCounterCart,
-  pushCloudRecycleBinItem
+  pushCloudRecycleBinItem, pushCloudInventoryItem, fetchCloudInventory
 } from '../utils/cloudSync';
 import { generateCounterSaleCardPhotoAsync, generateBillCanvasBlob } from '../utils/billCardGenerator';
 import { formatDateDMY } from '../utils/dateFormatter';
@@ -324,14 +324,95 @@ export default function CounterSalePage() {
   }, [cartNetTotal, effectivePaid]);
 
   const hasUnconfirmedParts = useMemo(() => {
-    return Array.isArray(cartItems) && cartItems.some(p => p && p.status !== 'CONFIRMED');
+    return Array.isArray(cartItems) && cartItems.some(p => p && (!p.is_deducted || p.status !== 'CONFIRMED'));
   }, [cartItems]);
 
-  const handleConfirmCartParts = () => {
-    setCartItems(prev => prev.map(p => ({ ...p, status: 'CONFIRMED' })));
+  // Handle Confirm & Lock Stock for Cart Parts
+  const handleConfirmCartParts = async () => {
+    const unconfirmed = cartItems.filter(p => p && (!p.is_deducted || p.status !== 'CONFIRMED'));
+    if (unconfirmed.length === 0) {
+      alert('ℹ️ All spare parts in the cart are already confirmed & stock locked!');
+      return;
+    }
+
+    setConfirmingParts(true);
+    try {
+      const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
+      const cloudInv = await fetchCloudInventory().catch(() => []);
+      const allInvMap = new Map();
+      [...cloudInv, ...localInv].forEach(item => {
+        if (item && (item.id || item.part_name || item.item_name || item.name)) {
+          const rawName = String(item.part_name || item.item_name || item.name || '').trim();
+          const key = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
+          if (!allInvMap.has(key)) allInvMap.set(key, item);
+        }
+      });
+
+      let invList = Array.from(allInvMap.values());
+      let invChanged = false;
+
+      unconfirmed.forEach(pToUse => {
+        if (!pToUse) return;
+        const pId = String(pToUse.inventory_id || pToUse.part_id || pToUse.id || '').replace(/[^a-z0-9]/g, '');
+        const pName = String(pToUse.part_name || pToUse.item_name || pToUse.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase().trim();
+        const usedQty = parseInt(pToUse.quantity || 1, 10);
+
+        invList = invList.map(invItem => {
+          if (!invItem) return invItem;
+          const invId = String(invItem.id || '').replace(/[^a-z0-9]/g, '');
+          const invName = String(invItem.part_name || invItem.item_name || invItem.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase().trim();
+
+          const isMatch = (pId && invId && pId === invId) || (pName && invName && (pName === invName || pName.includes(invName) || invName.includes(pName)));
+
+          if (isMatch) {
+            invChanged = true;
+            const currentQty = parseInt(invItem.current_stock !== undefined ? invItem.current_stock : (invItem.stock_quantity !== undefined ? invItem.stock_quantity : (invItem.quantity !== undefined ? invItem.quantity : 0)), 10);
+            const newQty = Math.max(0, currentQty - usedQty);
+            const updatedItem = {
+              ...invItem,
+              current_stock: newQty,
+              stock_quantity: newQty,
+              quantity: newQty,
+              updated_at: new Date().toISOString()
+            };
+            pushCloudInventoryItem(updatedItem).catch(console.warn);
+            return updatedItem;
+          }
+          return invItem;
+        });
+      });
+
+      if (invChanged) {
+        localStorage.setItem('inventory_items', JSON.stringify(invList));
+        localStorage.setItem('spare_parts', JSON.stringify(invList));
+        localStorage.setItem('local_inventory', JSON.stringify(invList));
+        setInventory(invList);
+        await syncCloudInventory(invList).catch(console.warn);
+        try {
+          window.dispatchEvent(new Event('inventory_updated'));
+          window.dispatchEvent(new Event('master_store_updated'));
+        } catch (e) {}
+        loadInventory();
+      }
+
+      // Mark cart items as CONFIRMED and is_deducted: true
+      const updatedCart = cartItems.map(p => ({
+        ...p,
+        status: 'CONFIRMED',
+        is_deducted: true,
+        is_confirmed: true
+      }));
+      setCartItems(updatedCart);
+      alert(`✅ ${unconfirmed.length} Spare Part(s) Confirmed & Stock Deducted from Inventory!`);
+    } catch (err) {
+      console.error('Error confirming cart parts:', err);
+      alert('⚠️ Failed to lock stock. Please try again.');
+    } finally {
+      setConfirmingParts(false);
+    }
   };
 
-  // Handle Add Item to Cart (Workshop Style - No premature stock deduction)
+  // Handle Add Item to Cart (Workshop Style)
   const handleAddToCart = (item) => {
     if (!item) return;
     const curStock = parseInt(item.current_stock !== undefined ? item.current_stock : (item.stock_quantity !== undefined ? item.stock_quantity : (item.quantity !== undefined ? item.quantity : 0)), 10);
@@ -357,16 +438,24 @@ export default function CounterSalePage() {
         alert(`⚠️ Maximum available stock for '${rawName}' is ${curStock} units.`);
         return;
       }
-      nextCart = cartItems.map((cItem, idx) => idx === existingIndex ? { ...cItem, quantity: currentQty + 1 } : cItem);
+      nextCart = cartItems.map((cItem, idx) => idx === existingIndex ? {
+        ...cItem,
+        quantity: currentQty + 1,
+        status: 'STAGED',
+        is_deducted: false
+      } : cItem);
     } else {
       nextCart = [...cartItems, {
         id: item.id || `cart_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+        inventory_id: item.id,
         item_name: rawName,
         part_name: rawName,
         selling_price: priceVal,
         unit_price: priceVal,
         quantity: 1,
-        available_stock: curStock
+        available_stock: curStock,
+        status: 'STAGED',
+        is_deducted: false
       }];
     }
 
@@ -382,39 +471,71 @@ export default function CounterSalePage() {
       alert(`⚠️ Only ${target.available_stock} units available in stock!`);
       return;
     }
-    const updatedCart = cartItems.map(i => String(i.id) === String(itemId) ? { ...i, quantity: qty } : i);
+    const updatedCart = cartItems.map(i => String(i.id) === String(itemId) ? {
+      ...i,
+      quantity: qty,
+      status: 'STAGED',
+      is_deducted: false
+    } : i);
     setCartItems(updatedCart);
-    const draft = {
-      customerName,
-      customerPhone,
-      vehicleNumber,
-      cartItems: updatedCart,
-      discountAmount,
-      paidAmount,
-      paymentMode,
-      updated_at: new Date().toISOString()
-    };
-    localStorage.setItem('counter_sale_draft', JSON.stringify(draft));
-    pushCloudActiveCounterCart(draft).catch(() => null);
   };
 
   // Remove Item from Cart
-  const handleRemoveFromCart = (itemId) => {
+  const handleRemoveFromCart = async (itemId) => {
+    const itemToRemove = cartItems.find(i => String(i.id) === String(itemId));
+    if (!itemToRemove) return;
+
+    // If item was already confirmed & deducted, restore its stock to inventory
+    if (itemToRemove.is_deducted) {
+      try {
+        const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
+        const cloudInv = await fetchCloudInventory().catch(() => []);
+        const allInvMap = new Map();
+        [...cloudInv, ...localInv].forEach(item => {
+          if (item && (item.id || item.part_name || item.item_name || item.name)) {
+            const rawName = String(item.part_name || item.item_name || item.name || '').trim();
+            const key = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (!allInvMap.has(key)) allInvMap.set(key, item);
+          }
+        });
+
+        let invList = Array.from(allInvMap.values());
+        const pId = String(itemToRemove.inventory_id || itemToRemove.part_id || itemToRemove.id || '').replace(/[^a-z0-9]/g, '');
+        const pName = String(itemToRemove.part_name || itemToRemove.item_name || itemToRemove.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase().trim();
+        const returnQty = parseInt(itemToRemove.quantity || 1, 10);
+
+        invList = invList.map(invItem => {
+          if (!invItem) return invItem;
+          const invId = String(invItem.id || '').replace(/[^a-z0-9]/g, '');
+          const invName = String(invItem.part_name || invItem.item_name || invItem.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase().trim();
+          const isMatch = (pId && invId && pId === invId) || (pName && invName && (pName === invName || pName.includes(invName) || invName.includes(pName)));
+          if (isMatch) {
+            const cur = parseInt(invItem.current_stock !== undefined ? invItem.current_stock : (invItem.stock_quantity !== undefined ? invItem.stock_quantity : (invItem.quantity !== undefined ? invItem.quantity : 0)), 10);
+            const restored = cur + returnQty;
+            const updated = { ...invItem, current_stock: restored, stock_quantity: restored, quantity: restored, updated_at: new Date().toISOString() };
+            pushCloudInventoryItem(updated).catch(console.warn);
+            return updated;
+          }
+          return invItem;
+        });
+
+        localStorage.setItem('inventory_items', JSON.stringify(invList));
+        localStorage.setItem('spare_parts', JSON.stringify(invList));
+        localStorage.setItem('local_inventory', JSON.stringify(invList));
+        setInventory(invList);
+        await syncCloudInventory(invList).catch(console.warn);
+        try {
+          window.dispatchEvent(new Event('inventory_updated'));
+          window.dispatchEvent(new Event('master_store_updated'));
+        } catch (e) {}
+        loadInventory();
+      } catch (e) {
+        console.warn('Error restoring stock on cart remove:', e);
+      }
+    }
+
     const nextCart = cartItems.filter(i => String(i.id) !== String(itemId));
     setCartItems(nextCart);
-
-    const draft = {
-      customerName,
-      customerPhone,
-      vehicleNumber,
-      cartItems: nextCart,
-      discountAmount,
-      paidAmount,
-      paymentMode,
-      updated_at: new Date().toISOString()
-    };
-    localStorage.setItem('counter_sale_draft', JSON.stringify(draft));
-    pushCloudActiveCounterCart(draft).catch(() => null);
   };
 
   // Clear Cart Completely
@@ -477,44 +598,67 @@ export default function CounterSalePage() {
     };
 
     try {
-      // 1. Deduct Inventory stock for all parts in cart (ONCE per sale)
-      const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
-      const invMap = new Map();
-      localInv.forEach(it => {
-        if (it && (it.part_name || it.item_name || it.name)) {
-          const raw = String(it.part_name || it.item_name || it.name || '').trim();
-          const norm = raw.toLowerCase().replace(/[^a-z0-9]/g, '');
-          if (norm) invMap.set(norm, { ...it, part_name: raw, item_name: raw, name: raw });
-        }
-      });
+      // 1. Deduct only unconfirmed parts from inventory (if not already deducted during Confirm Parts)
+      const unconfirmedParts = cartItems.filter(p => p && (!p.is_deducted || p.status !== 'CONFIRMED'));
+      if (unconfirmedParts.length > 0) {
+        const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
+        const cloudInv = await fetchCloudInventory().catch(() => []);
+        const allInvMap = new Map();
+        [...cloudInv, ...localInv].forEach(item => {
+          if (item && (item.id || item.part_name || item.item_name || item.name)) {
+            const rawName = String(item.part_name || item.item_name || item.name || '').trim();
+            const key = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (!allInvMap.has(key)) allInvMap.set(key, item);
+          }
+        });
 
-      cartItems.forEach(cartPart => {
-        const raw = String(cartPart.part_name || cartPart.item_name || '').trim();
-        const norm = raw.toLowerCase().replace(/[^a-z0-9]/g, '');
-        const deductQty = parseInt(cartPart.quantity || 1, 10);
-        if (norm && invMap.has(norm)) {
-          const item = invMap.get(norm);
-          const curStock = parseInt(item.current_stock !== undefined ? item.current_stock : (item.stock_quantity !== undefined ? item.stock_quantity : (item.quantity !== undefined ? item.quantity : 0)), 10);
-          const newStock = Math.max(0, curStock - deductQty);
-          invMap.set(norm, {
-            ...item,
-            current_stock: newStock,
-            stock_quantity: newStock,
-            quantity: newStock,
-            updated_at: new Date().toISOString()
+        let invList = Array.from(allInvMap.values());
+        let invChanged = false;
+
+        unconfirmedParts.forEach(pToUse => {
+          if (!pToUse) return;
+          const pId = String(pToUse.inventory_id || pToUse.part_id || pToUse.id || '').replace(/[^a-z0-9]/g, '');
+          const pName = String(pToUse.part_name || pToUse.item_name || pToUse.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase().trim();
+          const usedQty = parseInt(pToUse.quantity || 1, 10);
+
+          invList = invList.map(invItem => {
+            if (!invItem) return invItem;
+            const invId = String(invItem.id || '').replace(/[^a-z0-9]/g, '');
+            const invName = String(invItem.part_name || invItem.item_name || invItem.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase().trim();
+
+            const isMatch = (pId && invId && pId === invId) || (pName && invName && (pName === invName || pName.includes(invName) || invName.includes(pName)));
+
+            if (isMatch) {
+              invChanged = true;
+              const currentQty = parseInt(invItem.current_stock !== undefined ? invItem.current_stock : (invItem.stock_quantity !== undefined ? invItem.stock_quantity : (invItem.quantity !== undefined ? invItem.quantity : 0)), 10);
+              const newQty = Math.max(0, currentQty - usedQty);
+              const updatedItem = {
+                ...invItem,
+                current_stock: newQty,
+                stock_quantity: newQty,
+                quantity: newQty,
+                updated_at: new Date().toISOString()
+              };
+              pushCloudInventoryItem(updatedItem).catch(console.warn);
+              return updatedItem;
+            }
+            return invItem;
           });
+        });
+
+        if (invChanged) {
+          localStorage.setItem('inventory_items', JSON.stringify(invList));
+          localStorage.setItem('spare_parts', JSON.stringify(invList));
+          localStorage.setItem('local_inventory', JSON.stringify(invList));
+          setInventory(invList);
+          await syncCloudInventory(invList).catch(console.warn);
+          try {
+            window.dispatchEvent(new Event('inventory_updated'));
+            window.dispatchEvent(new Event('master_store_updated'));
+          } catch (e) {}
+          loadInventory();
         }
-      });
-
-      const updatedInv = Array.from(invMap.values());
-      localStorage.setItem('inventory_items', JSON.stringify(updatedInv));
-      localStorage.setItem('spare_parts', JSON.stringify(updatedInv));
-      localStorage.setItem('local_inventory', JSON.stringify(updatedInv));
-      setInventory(updatedInv);
-
-      // Save updated inventory to cloud master store
-      const store = await fetchMasterStore();
-      await saveMasterStore({ ...store, inventory: updatedInv }).catch(console.warn);
+      }
 
       // 2. Save Counter Sale Invoice to MongoDB Atlas
       await pushCloudCounterSale(saleInvoice);

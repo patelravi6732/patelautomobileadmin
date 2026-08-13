@@ -269,16 +269,19 @@ export default function CounterSalePage() {
     window.addEventListener('master_store_updated', handleUpdates);
     window.addEventListener('inventory_updated', handleUpdates);
     window.addEventListener('counter_cart_updated', handleUpdates);
+    window.addEventListener('storage', handleUpdates);
 
     const interval = setInterval(() => {
+      loadInventory();
       syncCrossDeviceCart();
-    }, 6000);
+    }, 4000);
 
     return () => {
       clearInterval(interval);
       window.removeEventListener('master_store_updated', handleUpdates);
       window.removeEventListener('inventory_updated', handleUpdates);
       window.removeEventListener('counter_cart_updated', handleUpdates);
+      window.removeEventListener('storage', handleUpdates);
     };
   }, []);
 

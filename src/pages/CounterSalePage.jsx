@@ -16,6 +16,7 @@ import {
 } from '../utils/cloudSync';
 import { generateCounterSaleCardPhotoAsync, generateBillCanvasBlob } from '../utils/billCardGenerator';
 import { formatDateDMY } from '../utils/dateFormatter';
+import AdminPasswordModal from '../components/AdminPasswordModal';
 
 const INVENTORY_CATEGORIES = [
   'General', 'Engine Oil', 'Air Filter', 'Oil Filter', 'Spark Plug', 
@@ -117,6 +118,13 @@ export default function CounterSalePage() {
     debtor: null,
     amount: '',
     paymentMode: 'CASH'
+  });
+
+  // Admin Security Password Modal for Delete
+  const [deleteSecurityModal, setDeleteSecurityModal] = useState({
+    isOpen: false,
+    item: null,
+    type: null
   });
   const [recordingPayment, setRecordingPayment] = useState(false);
 
@@ -726,15 +734,32 @@ export default function CounterSalePage() {
     }
   };
 
-  // Delete Counter Sale Invoice (Moves to Recycle Bin & Removes from Active Invoices)
-  const handleDeleteInvoice = async (inv) => {
+  // Initiate Delete Counter Sale Invoice (Triggers Admin Security Password Modal)
+  const handleDeleteInvoice = (inv) => {
     if (!inv || !inv.id) return;
-    if (!window.confirm(`Are you sure you want to move the invoice for ${inv.customer_name} to Recycle Bin?`)) {
-      return;
-    }
+    setDeleteSecurityModal({
+      isOpen: true,
+      item: inv,
+      type: 'INVOICE'
+    });
+  };
 
-    try {
-      // 1. Move to Recycle Bin (local & cloud)
+  // Initiate Delete Counter Khata Debtor (Triggers Admin Security Password Modal)
+  const handleDeleteKhataEntry = (debtor) => {
+    if (!debtor || !debtor.id) return;
+    setDeleteSecurityModal({
+      isOpen: true,
+      item: debtor,
+      type: 'KHATA'
+    });
+  };
+
+  // Perform Delete with Admin Password Confirmation
+  const handleConfirmDeleteWithPassword = async (adminPassword) => {
+    if (!deleteSecurityModal.item || !deleteSecurityModal.type) return;
+
+    if (deleteSecurityModal.type === 'INVOICE') {
+      const inv = deleteSecurityModal.item;
       const trashId = `trash_cs_${inv.id}`;
       const trashObj = {
         id: trashId,
@@ -749,9 +774,8 @@ export default function CounterSalePage() {
       const existingTrash = JSON.parse(localStorage.getItem('recycle_bin_items') || '[]')
         .filter(t => String(t.id) !== trashId && (!t.payload || String(t.payload.id) !== String(inv.id)));
       localStorage.setItem('recycle_bin_items', JSON.stringify([trashObj, ...existingTrash]));
-      pushCloudRecycleBinItem(trashObj).catch(console.warn);
+      await pushCloudRecycleBinItem(trashObj).catch(console.warn);
 
-      // 2. Remove from active invoices
       const filtered = invoices.filter(i => String(i.id) !== String(inv.id));
       setInvoices(filtered);
       localStorage.setItem('local_counter_sales', JSON.stringify(filtered));
@@ -760,26 +784,15 @@ export default function CounterSalePage() {
       
       try {
         window.dispatchEvent(new Event('master_store_updated'));
+        window.dispatchEvent(new Event('storage'));
       } catch (e) {}
 
       alert(`🗑️ Invoice for ${inv.customer_name} moved to Recycle Bin!`);
       const updatedSales = await fetchCloudCounterSales();
       setInvoices(updatedSales);
-    } catch (err) {
-      console.error('Error deleting counter sale invoice:', err);
-      alert('⚠️ Error deleting invoice.');
-    }
-  };
 
-  // Delete Counter Khata Debtor (Moves to Recycle Bin & Removes from Active Khata)
-  const handleDeleteKhataEntry = async (debtor) => {
-    if (!debtor || !debtor.id) return;
-    if (!window.confirm(`Are you sure you want to move the Khata record for ${debtor.customer_name} to Recycle Bin?`)) {
-      return;
-    }
-
-    try {
-      // 1. Move to Recycle Bin (local & cloud)
+    } else if (deleteSecurityModal.type === 'KHATA') {
+      const debtor = deleteSecurityModal.item;
       const trashId = `trash_ckhata_${debtor.id}`;
       const trashObj = {
         id: trashId,
@@ -794,9 +807,8 @@ export default function CounterSalePage() {
       const existingTrash = JSON.parse(localStorage.getItem('recycle_bin_items') || '[]')
         .filter(t => String(t.id) !== trashId && (!t.payload || String(t.payload.id) !== String(debtor.id)));
       localStorage.setItem('recycle_bin_items', JSON.stringify([trashObj, ...existingTrash]));
-      pushCloudRecycleBinItem(trashObj).catch(console.warn);
+      await pushCloudRecycleBinItem(trashObj).catch(console.warn);
 
-      // 2. Remove from active khata
       const filtered = khataDebtors.filter(k => String(k.id) !== String(debtor.id));
       setKhataDebtors(filtered);
       localStorage.setItem('local_counter_khata', JSON.stringify(filtered));
@@ -805,14 +817,12 @@ export default function CounterSalePage() {
 
       try {
         window.dispatchEvent(new Event('master_store_updated'));
+        window.dispatchEvent(new Event('storage'));
       } catch (e) {}
 
       alert(`🗑️ Khata record for ${debtor.customer_name} moved to Recycle Bin!`);
       const updatedKhata = await fetchCloudCounterKhata();
       setKhataDebtors(updatedKhata);
-    } catch (err) {
-      console.error('Error deleting Khata entry:', err);
-      alert('⚠️ Error deleting Khata entry.');
     }
   };
 
@@ -2002,6 +2012,16 @@ Kindly clear your pending balance at your earliest convenience.
           </div>
         </div>
       )}
+
+      {/* MODAL 4: ADMIN SECURITY PASSWORD FOR DELETE */}
+      <AdminPasswordModal
+        isOpen={deleteSecurityModal.isOpen}
+        onClose={() => setDeleteSecurityModal({ isOpen: false, item: null, type: null })}
+        onConfirm={handleConfirmDeleteWithPassword}
+        title="Admin Security Password Required"
+        itemDescription={deleteSecurityModal.item ? `${deleteSecurityModal.type === 'INVOICE' ? 'Invoice of' : 'Khata Record of'} ${deleteSecurityModal.item.customer_name}` : 'this item'}
+        actionLabel="Confirm & Move to Recycle Bin"
+      />
 
     </div>
   );

@@ -583,43 +583,44 @@ export default function CounterSalePage() {
     };
 
     try {
-      // 1. If any parts were unconfirmed, deduct now
-      const unconfirmedParts = cartItems.filter(p => p && p.status !== 'CONFIRMED');
-      if (unconfirmedParts.length > 0) {
-        const local = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
-        const map = new Map();
-        local.forEach(it => {
-          if (it && (it.part_name || it.item_name || it.name)) {
-            const raw = String(it.part_name || it.item_name || it.name || '').trim();
-            const norm = raw.toLowerCase().replace(/[^a-z0-9]/g, '');
-            if (norm) map.set(norm, { ...it, part_name: raw, item_name: raw, name: raw });
-          }
-        });
-
-        unconfirmedParts.forEach(staged => {
-          const raw = String(staged.part_name || staged.item_name || '').trim();
+      // 1. Deduct Inventory stock for all parts in cart (ONCE per sale)
+      const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
+      const invMap = new Map();
+      localInv.forEach(it => {
+        if (it && (it.part_name || it.item_name || it.name)) {
+          const raw = String(it.part_name || it.item_name || it.name || '').trim();
           const norm = raw.toLowerCase().replace(/[^a-z0-9]/g, '');
-          const deductQty = parseInt(staged.quantity || 1, 10);
-          if (norm && map.has(norm)) {
-            const item = map.get(norm);
-            const curStock = parseInt(item.current_stock !== undefined ? item.current_stock : (item.stock_quantity !== undefined ? item.stock_quantity : (item.quantity !== undefined ? item.quantity : 0)), 10);
-            map.set(norm, {
-              ...item,
-              current_stock: Math.max(0, curStock - deductQty),
-              stock_quantity: Math.max(0, curStock - deductQty),
-              quantity: Math.max(0, curStock - deductQty),
-              updated_at: new Date().toISOString()
-            });
-          }
-        });
+          if (norm) invMap.set(norm, { ...it, part_name: raw, item_name: raw, name: raw });
+        }
+      });
 
-        const updatedInv = Array.from(map.values());
-        localStorage.setItem('inventory_items', JSON.stringify(updatedInv));
-        localStorage.setItem('spare_parts', JSON.stringify(updatedInv));
-        localStorage.setItem('local_inventory', JSON.stringify(updatedInv));
-        setInventory(updatedInv);
-        await syncCloudInventory(updatedInv);
-      }
+      cartItems.forEach(cartPart => {
+        const raw = String(cartPart.part_name || cartPart.item_name || '').trim();
+        const norm = raw.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const deductQty = parseInt(cartPart.quantity || 1, 10);
+        if (norm && invMap.has(norm)) {
+          const item = invMap.get(norm);
+          const curStock = parseInt(item.current_stock !== undefined ? item.current_stock : (item.stock_quantity !== undefined ? item.stock_quantity : (item.quantity !== undefined ? item.quantity : 0)), 10);
+          const newStock = Math.max(0, curStock - deductQty);
+          invMap.set(norm, {
+            ...item,
+            current_stock: newStock,
+            stock_quantity: newStock,
+            quantity: newStock,
+            updated_at: new Date().toISOString()
+          });
+        }
+      });
+
+      const updatedInv = Array.from(invMap.values());
+      localStorage.setItem('inventory_items', JSON.stringify(updatedInv));
+      localStorage.setItem('spare_parts', JSON.stringify(updatedInv));
+      localStorage.setItem('local_inventory', JSON.stringify(updatedInv));
+      setInventory(updatedInv);
+
+      // Save updated inventory to cloud master store
+      const store = await fetchMasterStore();
+      await saveMasterStore({ ...store, inventory: updatedInv }).catch(console.warn);
 
       // 2. Save Counter Sale Invoice to MongoDB Atlas
       await pushCloudCounterSale(saleInvoice);
@@ -1518,7 +1519,7 @@ Kindly clear your pending balance at your earliest convenience.
             </div>
           </div>
 
-          {/* INVOICES TABLE */}
+          {/* INVOICES TABLE (EXACT MATCH TO USER IMAGE 1) */}
           {invoices.length === 0 ? (
             <div className="text-center py-10 text-slate-400">
               <Receipt className="w-10 h-10 mx-auto stroke-1 mb-2 text-slate-300" />
@@ -1526,17 +1527,17 @@ Kindly clear your pending balance at your earliest convenience.
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs min-w-[650px]">
+              <table className="w-full text-left text-xs min-w-[850px]">
                 <thead>
-                  <tr className="border-b border-slate-200/80 bg-slate-50/50 text-slate-500 font-bold uppercase tracking-wider">
-                    <th className="py-3 px-3.5">Date</th>
-                    <th className="py-3 px-3.5">Customer</th>
-                    <th className="py-3 px-3.5">Items</th>
-                    <th className="py-3 px-3.5 text-right">Net Total</th>
-                    <th className="py-3 px-3.5 text-right">Paid</th>
-                    <th className="py-3 px-3.5 text-right">Balance</th>
-                    <th className="py-3 px-3.5 text-center">Status</th>
-                    <th className="py-3 px-3.5 text-right">Actions</th>
+                  <tr className="border-b border-slate-200/80 bg-slate-50/50 text-slate-500 font-bold uppercase tracking-wider text-[11px]">
+                    <th className="py-3.5 px-4">CUSTOMER & VEHICLE</th>
+                    <th className="py-3.5 px-4 text-right">PARTS TOTAL</th>
+                    <th className="py-3.5 px-4 text-center">DISCOUNT</th>
+                    <th className="py-3.5 px-4 text-right">NET TOTAL</th>
+                    <th className="py-3.5 px-4 text-right">RECEIVED</th>
+                    <th className="py-3.5 px-4 text-center">PAYMENT STATUS</th>
+                    <th className="py-3.5 px-4 text-center">COMPLETED ON</th>
+                    <th className="py-3.5 px-4 text-right">ACTIONS</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
@@ -1550,83 +1551,103 @@ Kindly clear your pending balance at your earliest convenience.
                       const paidAmt = parseFloat(inv.paid_amount || 0);
                       const pendingAmt = parseFloat(inv.pending_amount !== undefined ? inv.pending_amount : Math.max(0, netTot - paidAmt));
                       const isPaid = pendingAmt <= 0;
+                      const discAmt = parseFloat(inv.discount || inv.discount_amount || 0);
+                      const partsTotal = parseFloat(inv.subtotal || (netTot + discAmt));
 
                       return (
                         <tr key={inv.id} className="hover:bg-slate-50/80 transition-colors">
-                          <td className="py-3 px-3.5 text-slate-600 font-medium whitespace-nowrap">
+                          {/* CUSTOMER & VEHICLE & ITEMS */}
+                          <td className="py-3.5 px-4">
+                            <span className="font-extrabold text-slate-900 block text-sm">{inv.customer_name}</span>
+                            <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                              {inv.vehicle_number ? (
+                                <span className="text-[10px] bg-slate-100 text-slate-700 font-bold px-2 py-0.5 rounded-md font-mono border border-slate-200">
+                                  {inv.vehicle_number}
+                                </span>
+                              ) : (
+                                <span className="text-[10px] bg-slate-100 text-slate-400 font-bold px-2 py-0.5 rounded-md">-</span>
+                              )}
+                              {inv.customer_phone && (
+                                <span className="text-[10px] text-slate-500 font-mono">📞 {inv.customer_phone}</span>
+                              )}
+                            </div>
+                            {inv.items && inv.items.length > 0 && (
+                              <div className="text-[10px] text-slate-500 mt-1 max-w-[220px] truncate flex items-center gap-1">
+                                <Package className="w-3 h-3 text-slate-400 shrink-0" />
+                                <span className="truncate">{inv.items.map(i => `${i.part_name || i.item_name} (x${i.quantity})`).join(', ')}</span>
+                              </div>
+                            )}
+                          </td>
+
+                          {/* PARTS TOTAL */}
+                          <td className="py-3.5 px-4 text-right font-mono font-extrabold text-slate-900 text-sm whitespace-nowrap">
+                            ₹{partsTotal.toFixed(2)}
+                          </td>
+
+                          {/* DISCOUNT */}
+                          <td className="py-3.5 px-4 text-center whitespace-nowrap">
+                            {discAmt > 0 ? (
+                              <span className="px-2.5 py-1 rounded-lg bg-amber-100/90 text-amber-900 font-black font-mono text-xs border border-amber-300 shadow-2xs">
+                                -₹{discAmt.toFixed(2)}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 font-bold text-xs">-</span>
+                            )}
+                          </td>
+
+                          {/* NET TOTAL */}
+                          <td className="py-3.5 px-4 text-right font-mono font-black text-slate-900 text-sm whitespace-nowrap">
+                            ₹{netTot.toFixed(2)}
+                          </td>
+
+                          {/* RECEIVED */}
+                          <td className="py-3.5 px-4 text-right font-mono font-extrabold text-emerald-600 text-sm whitespace-nowrap">
+                            ₹{paidAmt.toFixed(2)}
+                          </td>
+
+                          {/* PAYMENT STATUS */}
+                          <td className="py-3.5 px-4 text-center whitespace-nowrap">
+                            {isPaid ? (
+                              <span className="px-3 py-1 rounded-full text-[10px] font-extrabold uppercase bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                PAID
+                              </span>
+                            ) : (
+                              <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase bg-purple-100 text-purple-800 border border-purple-200 inline-block text-center">
+                                PARTIAL <br /><span className="text-[9px] text-purple-700 font-mono">(₹{pendingAmt.toFixed(0)} PENDING)</span>
+                              </span>
+                            )}
+                          </td>
+
+                          {/* COMPLETED ON */}
+                          <td className="py-3.5 px-4 text-center text-slate-600 font-medium whitespace-nowrap text-xs">
                             {formatDateDMY(inv.created_at || inv.date || Date.now())}
                           </td>
-                          <td className="py-3 px-3.5">
-                            <span className="font-bold text-slate-900 block">{inv.customer_name}</span>
-                            <span className="font-mono text-slate-400 text-[10px]">{inv.customer_phone || inv.mobile_number}</span>
-                          </td>
-                          <td className="py-3 px-3.5 text-slate-600 max-w-[200px] truncate">
-                            {(inv.items || []).map(i => `${i.part_name || i.item_name} (x${i.quantity})`).join(', ')}
-                          </td>
-                          <td className="py-3 px-3.5 text-right whitespace-nowrap">
-                            <span className="font-mono font-black text-slate-900 block">₹{netTot.toFixed(2)}</span>
-                            {parseFloat(inv.discount || inv.discount_amount || 0) > 0 && (
-                              <span className="inline-flex items-center text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded mt-0.5 border border-emerald-200">
-                                Disc: -₹{parseFloat(inv.discount || inv.discount_amount || 0).toFixed(2)}
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-3 px-3.5 text-right whitespace-nowrap">
-                            <span className="font-mono text-emerald-600 font-black block">₹{paidAmt.toFixed(2)}</span>
-                            {paidAmt > 0 && (
-                              <span className={`inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded mt-0.5 ${
-                                (inv.payment_mode || 'CASH').toUpperCase() === 'UPI'
-                                  ? 'bg-purple-100 text-purple-700'
-                                  : 'bg-emerald-100 text-emerald-700'
-                              }`}>
-                                {(inv.payment_mode || 'CASH').toUpperCase() === 'UPI' ? '📱 UPI' : '💵 Cash'}
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-3 px-3.5 text-right font-mono text-rose-600 font-black whitespace-nowrap">
-                            {pendingAmt > 0 ? `₹${pendingAmt.toFixed(2)}` : '₹0.00'}
-                          </td>
-                          <td className="py-3 px-3.5 text-center whitespace-nowrap">
-                            <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase ${
-                              isPaid
-                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                                : 'bg-rose-100 text-rose-800 border border-rose-200'
-                            }`}>
-                              {isPaid ? 'PAID' : 'UNPAID'}
-                            </span>
-                          </td>
-                          <td className="py-3 px-3.5 text-right whitespace-nowrap">
+
+                          {/* ACTIONS */}
+                          <td className="py-3.5 px-4 text-right whitespace-nowrap">
                             <div className="flex items-center justify-end gap-1.5">
-                              {/* Download Card */}
                               <button
                                 type="button"
                                 onClick={() => handleDownloadCard(inv)}
-                                className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100 font-bold text-[11px] inline-flex items-center gap-1 transition-colors"
-                                title="Download Photo Card"
+                                className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs inline-flex items-center gap-1.5 shadow-xs transition-all active:scale-98"
                               >
-                                <Download className="w-3.5 h-3.5" />
-                                <span className="hidden sm:inline">Card</span>
+                                <Download className="w-3.5 h-3.5" /> Download
                               </button>
 
-                              {/* WhatsApp Share Button with WhatsApp Icon */}
                               <button
                                 type="button"
                                 onClick={() => handleShareWhatsApp(inv)}
-                                className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] inline-flex items-center gap-1.5 shadow-xs transition-colors"
-                                title="Share Bill on WhatsApp"
+                                className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs inline-flex items-center gap-1.5 shadow-xs transition-all active:scale-98"
                               >
-                                <WhatsAppIcon className="w-3.5 h-3.5" />
-                                <span className="hidden sm:inline">WhatsApp</span>
+                                <WhatsAppIcon className="w-3.5 h-3.5" /> WhatsApp
                               </button>
 
-                              {/* Delete Button (Red) */}
                               <button
                                 type="button"
                                 onClick={() => handleDeleteInvoice(inv)}
-                                className="p-1.5 sm:p-2 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-400 hover:text-rose-600 transition-colors"
-                                title="Delete Invoice permanently from database"
+                                className="p-2 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-400 hover:text-rose-600 transition-colors"
                               >
-                                <Trash2 className="w-3.5 h-3.5" />
+                                <Trash2 className="w-4 h-4" />
                               </button>
                             </div>
                           </td>
@@ -1641,7 +1662,7 @@ Kindly clear your pending balance at your earliest convenience.
         </div>
       )}
 
-      {/* TAB 3: COUNTER KHATA BOOK (WITH DELETE OPTION & WHATSAPP BUTTON) */}
+      {/* TAB 3: COUNTER KHATA BOOK (EXACT MATCH TO USER IMAGE 2) */}
       {activeTab === 'KHATA' && (
         <div className="bg-white p-4 sm:p-6 rounded-2xl sm:rounded-3xl border border-slate-200/80 shadow-xs space-y-4">
           
@@ -1664,7 +1685,7 @@ Kindly clear your pending balance at your earliest convenience.
             </div>
           </div>
 
-          {/* DEBTORS LIST */}
+          {/* DEBTORS TABLE (EXACT MATCH TO IMAGE 2) */}
           {khataDebtors.filter(k => parseFloat(k.pending_amount || 0) > 0).length === 0 ? (
             <div className="text-center py-10 text-slate-400">
               <CheckCircle2 className="w-10 h-10 mx-auto stroke-1 mb-2 text-emerald-400" />
@@ -1672,102 +1693,143 @@ Kindly clear your pending balance at your earliest convenience.
               <p className="text-[11px] text-slate-400 mt-0.5">Any credit counter sales will automatically appear here.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-              {khataDebtors
-                .filter(k => parseFloat(k.pending_amount || 0) > 0)
-                .filter(k => {
-                  const q = khataSearch.toLowerCase();
-                  return !q || (k.customer_name || '').toLowerCase().includes(q) || (k.customer_phone || '').includes(q);
-                })
-                .map((debtor) => (
-                  <div key={debtor.id} className="p-4 rounded-xl sm:rounded-2xl bg-slate-50 border border-slate-200 space-y-3 hover:shadow-xs transition-shadow">
-                    
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <h4 className="font-bold text-slate-900 text-xs sm:text-sm font-poppins">{debtor.customer_name}</h4>
-                          <span className="text-[10px] bg-slate-200/80 text-slate-600 px-1.5 py-0.5 rounded font-medium">
-                            {formatDateDMY(debtor.created_at || debtor.date || Date.now())}
-                          </span>
-                        </div>
-                        <span className="font-mono text-slate-500 text-[11px] block mt-0.5">{debtor.customer_phone || debtor.phone}</span>
-                      </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs min-w-[900px]">
+                <thead>
+                  <tr className="border-b border-slate-200/80 bg-slate-50/50 text-slate-500 font-bold uppercase tracking-wider text-[11px]">
+                    <th className="py-3.5 px-4">DEBTOR DETAILS</th>
+                    <th className="py-3.5 px-4">VEHICLE</th>
+                    <th className="py-3.5 px-4 text-right">PARTS TOTAL</th>
+                    <th className="py-3.5 px-4 text-center">DISCOUNT</th>
+                    <th className="py-3.5 px-4 text-right">NET TOTAL</th>
+                    <th className="py-3.5 px-4 text-right">PAID</th>
+                    <th className="py-3.5 px-4 text-right">PENDING DUES</th>
+                    <th className="py-3.5 px-4 text-center">VISIT DATE</th>
+                    <th className="py-3.5 px-4 text-right">ACTIONS</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {khataDebtors
+                    .filter(k => parseFloat(k.pending_amount || 0) > 0)
+                    .filter(k => {
+                      const q = khataSearch.toLowerCase();
+                      return !q || (k.customer_name || '').toLowerCase().includes(q) || (k.customer_phone || '').includes(q);
+                    })
+                    .map((debtor) => {
+                      const discAmt = parseFloat(debtor.discount || debtor.discount_amount || 0);
+                      const netTot = parseFloat(debtor.total_amount || 0);
+                      const partsTotal = parseFloat(debtor.subtotal || (netTot + discAmt));
+                      const paidAmt = parseFloat(debtor.paid_amount || 0);
+                      const pendingAmt = parseFloat(debtor.pending_amount || 0);
 
-                      <div className="text-right">
-                        <span className="text-[9px] font-bold text-rose-600 uppercase block">Due</span>
-                        <span className="text-sm sm:text-base font-black font-mono text-rose-600">
-                          ₹{parseFloat(debtor.pending_amount || 0).toFixed(2)}
-                        </span>
-                      </div>
-                    </div>
+                      return (
+                        <tr key={debtor.id} className="hover:bg-slate-50/80 transition-colors">
+                          {/* DEBTOR DETAILS */}
+                          <td className="py-3.5 px-4">
+                            <span className="font-extrabold text-slate-900 block text-sm">{debtor.customer_name}</span>
+                            {debtor.customer_phone && (
+                              <span className="font-mono text-slate-500 text-xs block mt-0.5">📞 {debtor.customer_phone || debtor.phone}</span>
+                            )}
+                            {debtor.items_summary && (
+                              <div className="text-[10px] text-slate-500 mt-1 max-w-[200px] truncate flex items-center gap-1">
+                                <Package className="w-3 h-3 text-slate-400 shrink-0" />
+                                <span className="truncate">{debtor.items_summary}</span>
+                              </div>
+                            )}
+                          </td>
 
-                    {debtor.items_summary && (
-                      <div className="text-[11px] text-slate-500 bg-white px-2.5 py-1.5 rounded-lg border border-slate-200/60 truncate flex items-center gap-1">
-                        <Package className="w-3 h-3 text-slate-400 shrink-0" />
-                        <span className="truncate">{debtor.items_summary}</span>
-                      </div>
-                    )}
+                          {/* VEHICLE */}
+                          <td className="py-3.5 px-4 whitespace-nowrap">
+                            {debtor.vehicle_number ? (
+                              <span className="font-extrabold text-slate-800 text-xs block font-mono">
+                                {debtor.vehicle_number}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 font-bold">-</span>
+                            )}
+                          </td>
 
-                    <div className="text-xs text-slate-600 bg-white p-2.5 rounded-xl border border-slate-200/70 space-y-1">
-                      <div className="flex justify-between items-center text-[10px] sm:text-[11px]">
-                        <span className="text-slate-400">Total Purchase:</span>
-                        <div className="text-right">
-                          <span className="font-mono font-bold block">₹{parseFloat(debtor.total_amount || 0).toFixed(2)}</span>
-                          {parseFloat(debtor.discount || debtor.discount_amount || 0) > 0 && (
-                            <span className="text-[9px] font-bold text-emerald-600 block">
-                              (Disc: -₹{parseFloat(debtor.discount || debtor.discount_amount || 0).toFixed(2)})
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex justify-between text-[10px] sm:text-[11px]">
-                        <span className="text-slate-400">Paid So Far:</span>
-                        <span className="font-mono font-bold text-emerald-600">₹{parseFloat(debtor.paid_amount || 0).toFixed(2)}</span>
-                      </div>
-                    </div>
+                          {/* PARTS TOTAL */}
+                          <td className="py-3.5 px-4 text-right font-mono font-extrabold text-slate-900 text-sm whitespace-nowrap">
+                            ₹{partsTotal.toFixed(2)}
+                          </td>
 
-                    <div className="flex items-center gap-2 pt-0.5">
-                      <button
-                        type="button"
-                        onClick={() => setPaymentModal({ isOpen: true, debtor, amount: '', paymentMode: 'CASH' })}
-                        className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-1 active:scale-98"
-                      >
-                        <DollarSign className="w-3.5 h-3.5" /> Record Payment
-                      </button>
+                          {/* DISCOUNT */}
+                          <td className="py-3.5 px-4 text-center whitespace-nowrap">
+                            {discAmt > 0 ? (
+                              <span className="px-2.5 py-1 rounded-lg bg-amber-100/90 text-amber-900 font-black font-mono text-xs border border-amber-300 shadow-2xs">
+                                -₹{discAmt.toFixed(2)}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 font-bold text-xs">-</span>
+                            )}
+                          </td>
 
-                      {/* Download Statement Card */}
-                      <button
-                        type="button"
-                        onClick={() => handleDownloadKhataCard(debtor)}
-                        className="p-2 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-xl transition-colors active:scale-95"
-                        title="Download Statement Photo Card"
-                      >
-                        <Download className="w-4 h-4" />
-                      </button>
+                          {/* NET TOTAL */}
+                          <td className="py-3.5 px-4 text-right font-mono font-black text-slate-900 text-sm whitespace-nowrap">
+                            ₹{netTot.toFixed(2)}
+                          </td>
 
-                      {/* WhatsApp Reminder Button with WhatsApp Icon */}
-                      <button
-                        type="button"
-                        onClick={() => handleShareKhataReminder(debtor)}
-                        className="p-2 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 rounded-xl transition-colors active:scale-95"
-                        title="Send WhatsApp Payment Reminder"
-                      >
-                        <WhatsAppIcon className="w-4 h-4" />
-                      </button>
+                          {/* PAID */}
+                          <td className="py-3.5 px-4 text-right font-mono font-extrabold text-emerald-600 text-sm whitespace-nowrap">
+                            ₹{paidAmt.toFixed(2)}
+                          </td>
 
-                      {/* Delete Khata Entry (Red) */}
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteKhataEntry(debtor)}
-                        className="p-2 bg-slate-100 hover:bg-rose-100 text-slate-400 hover:text-rose-600 rounded-xl transition-colors active:scale-95"
-                        title="Delete Khata Record permanently from database"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
+                          {/* PENDING DUES */}
+                          <td className="py-3.5 px-4 text-right font-mono font-black text-rose-600 text-sm whitespace-nowrap">
+                            ₹{pendingAmt.toFixed(2)}
+                          </td>
 
-                  </div>
-                ))}
+                          {/* VISIT DATE */}
+                          <td className="py-3.5 px-4 text-center text-slate-600 font-medium whitespace-nowrap text-xs">
+                            📅 {formatDateDMY(debtor.created_at || debtor.date || Date.now())}
+                          </td>
+
+                          {/* ACTIONS */}
+                          <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                            <div className="flex items-center justify-end gap-1.5">
+                              {/* Download Card */}
+                              <button
+                                type="button"
+                                onClick={() => handleDownloadKhataCard(debtor)}
+                                className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs inline-flex items-center gap-1.5 shadow-xs transition-all active:scale-98"
+                              >
+                                <Download className="w-3.5 h-3.5" /> Download
+                              </button>
+
+                              {/* WhatsApp Reminder */}
+                              <button
+                                type="button"
+                                onClick={() => handleShareKhataReminder(debtor)}
+                                className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs inline-flex items-center gap-1.5 shadow-xs transition-all active:scale-98"
+                              >
+                                <WhatsAppIcon className="w-3.5 h-3.5" /> WhatsApp
+                              </button>
+
+                              {/* Record Payment */}
+                              <button
+                                type="button"
+                                onClick={() => setPaymentModal({ isOpen: true, debtor, amount: '', paymentMode: 'CASH' })}
+                                className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs inline-flex items-center gap-1 shadow-xs transition-all active:scale-98"
+                              >
+                                <Plus className="w-3.5 h-3.5" /> Payment
+                              </button>
+
+                              {/* Delete Button */}
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteKhataEntry(debtor)}
+                                className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-500 border border-rose-200 rounded-xl transition-colors active:scale-95"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
             </div>
           )}
 

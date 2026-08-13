@@ -299,49 +299,31 @@ export async function saveMasterStore(storeData) {
 
     storeData.jobs = mergedJobs;
 
-    const curLocalInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
-    let resolvedInv = storeData.inventory || curLocalInv;
-    
-    if (curLocalInv.length > 0) {
-      const localDeleted = JSON.parse(localStorage.getItem('deleted_ids') || '[]');
-      const cloudDeleted = Array.isArray(storeData.deletedIds) ? storeData.deletedIds : [];
-      const allDeleted = Array.from(new Set([...localDeleted, ...cloudDeleted]));
+    const localDeleted = JSON.parse(localStorage.getItem('deleted_ids') || '[]');
+    const cloudDeleted = Array.isArray(storeData.deletedIds) ? storeData.deletedIds : [];
+    const allDeleted = Array.from(new Set([...localDeleted, ...cloudDeleted]));
 
-      const recMap = new Map();
-      [...(storeData.inventory || []), ...curLocalInv].forEach(item => {
-        if (item && (item.id || item.part_name || item.name)) {
-          const rawId = String(item.id || `inv_${String(item.part_name || item.name).toLowerCase().replace(/[^a-z0-9]/g, '')}`);
-          const rawName = String(item.part_name || item.name || '').trim();
-          const normName = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
-
-          if (!allDeleted.includes(rawId) && !allDeleted.includes(rawName) && !allDeleted.includes(normName)) {
-            const parsedStock = parseInt(item.current_stock !== undefined ? item.current_stock : 0, 10);
-            const cleanObj = {
-              ...item,
-              id: rawId,
-              part_name: rawName || 'Spare Part',
-              current_stock: parsedStock,
-              min_stock_alert: item.min_stock_alert !== undefined ? parseInt(item.min_stock_alert, 10) : 2,
-              price: parseFloat(item.price || 0)
-            };
-            const existing = recMap.get(rawId);
-            if (!existing) {
-              recMap.set(rawId, cleanObj);
-            } else {
-              if (parsedStock < existing.current_stock) {
-                recMap.set(rawId, { ...existing, ...cleanObj, current_stock: parsedStock });
-              } else if (cleanObj.price !== existing.price || cleanObj.min_stock_alert !== existing.min_stock_alert) {
-                recMap.set(rawId, { ...existing, ...cleanObj });
-              }
-            }
-          }
-        }
+    const cleanInv = (Array.isArray(storeData.inventory) ? storeData.inventory : []).filter(item => {
+      if (!item || typeof item !== 'object') return false;
+      const rawId = String(item.id || '').toLowerCase().trim();
+      const rawName = String(item.part_name || item.item_name || item.name || '').trim().toLowerCase();
+      const normName = rawName.replace(/[^a-z0-9]/g, '');
+      return !allDeleted.some(d => {
+        if (!d) return false;
+        const dStr = String(d).toLowerCase().trim();
+        const dNorm = dStr.replace(/[^a-z0-9]/g, '');
+        return (rawId && dStr && rawId === dStr) || (rawName && dStr && rawName === dStr) || (normName && dNorm && normName === dNorm);
       });
-      resolvedInv = Array.from(recMap.values());
-    }
+    });
 
-    storeData.inventory = resolvedInv;
+    storeData.inventory = cleanInv;
+    storeData.deletedIds = allDeleted;
+
+    localStorage.setItem('inventory_items', JSON.stringify(cleanInv));
+    localStorage.setItem('spare_parts', JSON.stringify(cleanInv));
+    localStorage.setItem('local_inventory', JSON.stringify(cleanInv));
     localStorage.setItem('master_cloud_cache', JSON.stringify(storeData));
+
     if (storeData.garageInfo) {
       localStorage.setItem('garage_info', JSON.stringify(storeData.garageInfo));
     }
@@ -349,23 +331,6 @@ export async function saveMasterStore(storeData) {
     if (Array.isArray(storeData.invoices)) localStorage.setItem('local_invoices', JSON.stringify(storeData.invoices));
     if (Array.isArray(storeData.khataEntries)) localStorage.setItem('khata_entries', JSON.stringify(storeData.khataEntries));
     if (Array.isArray(storeData.customers)) localStorage.setItem('local_customers', JSON.stringify(storeData.customers));
-    if (Array.isArray(resolvedInv)) {
-      const curLocalInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
-      const mergedInvMap = new Map();
-      [...curLocalInv, ...resolvedInv].forEach(i => {
-        if (i && typeof i === 'object' && (i.id || i.part_name || i.name)) {
-          const strId = String(i.id || `inv_${String(i.part_name || i.name).toLowerCase().replace(/[^a-z0-9]/g, '')}`);
-          if (!mergedInvMap.has(strId)) {
-            mergedInvMap.set(strId, i);
-          } else {
-            mergedInvMap.set(strId, { ...mergedInvMap.get(strId), ...i });
-          }
-        }
-      });
-      const finalMergedInv = Array.from(mergedInvMap.values());
-      localStorage.setItem('inventory_items', JSON.stringify(finalMergedInv));
-      localStorage.setItem('spare_parts', JSON.stringify(finalMergedInv));
-    }
     if (Array.isArray(storeData.bookings)) localStorage.setItem('local_bookings', JSON.stringify(storeData.bookings));
     if (Array.isArray(storeData.messages)) {
       localStorage.setItem('local_messages', JSON.stringify(storeData.messages));
@@ -646,32 +611,36 @@ export async function pushCloudInventoryItem(newItem) {
 export async function moveToRecycleBin(trashObj, inventoryItem) {
   if (!trashObj) return;
   const item = inventoryItem || trashObj.payload || {};
-  const itId = String(item.id || '');
-  const itName = String(item.part_name || item.name || trashObj.title || '').trim();
+  const itId = String(item.id || '').trim();
+  const itName = String(item.part_name || item.item_name || item.name || trashObj.title || '').trim();
   const itNorm = itName.toLowerCase().replace(/[^a-z0-9]/g, '');
 
   // 1. Update local recycle bin
   const existingTrash = JSON.parse(localStorage.getItem('recycle_bin_items') || '[]');
-  const updatedTrash = [trashObj, ...existingTrash];
+  const updatedTrash = [trashObj, ...existingTrash.filter(r => String(r.id) !== String(trashObj.id))];
   localStorage.setItem('recycle_bin_items', JSON.stringify(updatedTrash));
 
-  // 2. Prepare deletion IDs (store exact item ID only)
+  // 2. Prepare deletion IDs (store ID, name, and norm name)
   const localDeleted = JSON.parse(localStorage.getItem('deleted_ids') || '[]');
-  const newDeletedIds = Array.from(new Set([...localDeleted, itId].filter(d => d && String(d).startsWith('inv_'))));
+  const newDeletedIds = Array.from(new Set([...localDeleted, itId, itName, itNorm].filter(Boolean)));
   localStorage.setItem('deleted_ids', JSON.stringify(newDeletedIds));
 
-  // 3. Remove from local inventory
-  const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+  // 3. Remove from local inventory storages
   const isMatchItem = (i) => {
     if (!i) return false;
-    const curId = String(i.id || '');
-    const curName = String(i.part_name || i.name || '').trim();
+    const curId = String(i.id || '').trim();
+    const curName = String(i.part_name || i.item_name || i.name || '').trim();
     const curNorm = curName.toLowerCase().replace(/[^a-z0-9]/g, '');
-    return (itId && curId && itId === curId) || (itName && curName && itName.toLowerCase() === curName.toLowerCase()) || (itNorm && curNorm && itNorm === curNorm);
+    return (itId && curId && itId === curId) || 
+           (itName && curName && itName.toLowerCase() === curName.toLowerCase()) || 
+           (itNorm && curNorm && itNorm === curNorm);
   };
+
+  const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
   const updatedLocalInv = localInv.filter(i => !isMatchItem(i));
   localStorage.setItem('inventory_items', JSON.stringify(updatedLocalInv));
   localStorage.setItem('spare_parts', JSON.stringify(updatedLocalInv));
+  localStorage.setItem('local_inventory', JSON.stringify(updatedLocalInv));
 
   // 4. ATOMIC SINGLE CLOUD UPDATE
   const store = await fetchMasterStore();
@@ -681,7 +650,7 @@ export async function moveToRecycleBin(trashObj, inventoryItem) {
 
   const mergedDeleted = Array.from(new Set([...cloudDeleted, ...newDeletedIds]));
   const filteredInv = existingInv.filter(i => !isMatchItem(i));
-  const mergedRecycle = [trashObj, ...existingRecycle];
+  const mergedRecycle = [trashObj, ...existingRecycle.filter(r => String(r.id) !== String(trashObj.id))];
 
   await saveMasterStore({
     ...store,
@@ -689,15 +658,20 @@ export async function moveToRecycleBin(trashObj, inventoryItem) {
     recycleBin: mergedRecycle,
     deletedIds: mergedDeleted
   });
+
+  try {
+    window.dispatchEvent(new Event('storage'));
+    window.dispatchEvent(new Event('master_store_updated'));
+    window.dispatchEvent(new Event('inventory_updated'));
+  } catch (e) {}
 }
 
 export async function deleteCloudInventoryItem(target) {
   if (!target) return;
-  const targetId = typeof target === 'object' ? String(target.id || '') : String(target);
-  const targetName = typeof target === 'object' ? String(target.part_name || target.name || '').toLowerCase().trim() : targetId.toLowerCase().trim();
-  const targetNorm = targetName.replace(/[^a-z0-9]/g, '');
+  const targetId = typeof target === 'object' ? String(target.id || '').trim() : String(target).trim();
+  const targetName = typeof target === 'object' ? String(target.part_name || target.item_name || target.name || '').trim() : targetId;
 
-  const itemObj = typeof target === 'object' ? target : { id: targetId, name: targetName };
+  const itemObj = typeof target === 'object' ? target : { id: targetId, name: targetName, part_name: targetName };
   const trashObj = {
     id: `trash_inv_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
     item_type: 'Inventory Item',
@@ -708,43 +682,7 @@ export async function deleteCloudInventoryItem(target) {
     payload: itemObj
   };
 
-  const localTrash = JSON.parse(localStorage.getItem('recycle_bin_items') || '[]');
-  localStorage.setItem('recycle_bin_items', JSON.stringify([trashObj, ...localTrash.filter(r => String(r.id) !== trashObj.id)]));
-
-  // 1. Add to deletedIds (local & cloud)
-  const localDeleted = JSON.parse(localStorage.getItem('deleted_ids') || '[]');
-  const updatedDeleted = Array.from(new Set([...localDeleted, targetId, targetNorm, targetName].filter(Boolean)));
-  localStorage.setItem('deleted_ids', JSON.stringify(updatedDeleted));
-
-  // 2. Remove from local inventory_items & spare_parts
-  const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
-  const isMatchItem = (i) => {
-    if (!i) return false;
-    const curId = String(i.id || '');
-    const curRaw = String(i.part_name || i.name || '').trim();
-    const curName = curRaw.toLowerCase();
-    const curNorm = curName.replace(/[^a-z0-9]/g, '');
-    return (targetId && curId && targetId === curId) || (targetNorm && curNorm && targetNorm === curNorm) || (targetName && curName && targetName === curName);
-  };
-  const updatedLocal = localInv.filter(i => !isMatchItem(i));
-  localStorage.setItem('inventory_items', JSON.stringify(updatedLocal));
-  localStorage.setItem('spare_parts', JSON.stringify(updatedLocal));
-
-  // 3. Remove from master_cloud_cache
-  const store = await fetchMasterStore();
-  const existing = (store.inventory || []).filter(i => i && typeof i === 'object');
-  const updated = existing.filter(i => !isMatchItem(i));
-  const storeRecycle = [trashObj, ...(store.recycleBin || []).filter(r => String(r.id) !== trashObj.id)];
-
-  await saveMasterStore({
-    ...store,
-    inventory: updated,
-    recycleBin: storeRecycle,
-    deletedIds: Array.from(new Set([...(store.deletedIds || []), ...updatedDeleted]))
-  });
-
-  window.dispatchEvent(new Event('storage'));
-  window.dispatchEvent(new Event('master_store_updated'));
+  await moveToRecycleBin(trashObj, itemObj);
 }
 
 // ---------------- RECYCLE BIN ----------------

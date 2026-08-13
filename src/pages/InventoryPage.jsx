@@ -52,25 +52,29 @@ export default function InventoryPage() {
     const isItemDeleted = (item) => {
       if (!item) return true;
       const itId = String(item.id || '').toLowerCase().trim();
-      if (!itId) return false;
+      const itName = String(item.part_name || item.item_name || item.name || '').toLowerCase().trim();
+      const itNorm = itName.replace(/[^a-z0-9]/g, '');
+      if (!itId && !itName) return false;
       return allDeletedIds.some(d => {
         if (!d) return false;
         const dStr = String(d).toLowerCase().trim();
-        return dStr.startsWith('inv_') && itId === dStr;
+        const dNorm = dStr.replace(/[^a-z0-9]/g, '');
+        return (itId && dStr && itId === dStr) || 
+               (itName && dStr && itName === dStr) || 
+               (itNorm && dNorm && itNorm === dNorm);
       });
     };
 
     const cloudInv = await fetchCloudInventory().catch(() => []);
-    const rawLocalInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+    const rawLocalInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
     
     // Clean local storage of any deleted item
     const cleanLocalInv = rawLocalInv.filter(i => !isItemDeleted(i));
     const cleanCloudInv = cloudInv.filter(i => !isItemDeleted(i));
 
-    if (cleanLocalInv.length !== rawLocalInv.length) {
-      localStorage.setItem('inventory_items', JSON.stringify(cleanLocalInv));
-      localStorage.setItem('spare_parts', JSON.stringify(cleanLocalInv));
-    }
+    localStorage.setItem('inventory_items', JSON.stringify(cleanLocalInv));
+    localStorage.setItem('spare_parts', JSON.stringify(cleanLocalInv));
+    localStorage.setItem('local_inventory', JSON.stringify(cleanLocalInv));
 
     const allMap = new Map();
     [...cleanLocalInv, ...cleanCloudInv].forEach(item => {

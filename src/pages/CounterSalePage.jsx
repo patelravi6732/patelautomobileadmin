@@ -145,9 +145,23 @@ export default function CounterSalePage() {
       const local = JSON.parse(raw);
       if (!Array.isArray(local)) { setInventory([]); return; }
 
+      const localDeleted = JSON.parse(localStorage.getItem('deleted_ids') || '[]');
+      const isDeleted = (item) => {
+        if (!item) return true;
+        const itId = String(item.id || '').toLowerCase().trim();
+        const itName = String(item.part_name || item.item_name || item.name || '').toLowerCase().trim();
+        const itNorm = itName.replace(/[^a-z0-9]/g, '');
+        return localDeleted.some(d => {
+          if (!d) return false;
+          const dStr = String(d).toLowerCase().trim();
+          const dNorm = dStr.replace(/[^a-z0-9]/g, '');
+          return (itId && dStr && itId === dStr) || (itName && dStr && itName === dStr) || (itNorm && dNorm && itNorm === dNorm);
+        });
+      };
+
       const map = new Map();
       local.forEach(it => {
-        if (it && typeof it === 'object' && (it.part_name || it.item_name || it.name)) {
+        if (it && typeof it === 'object' && !isDeleted(it) && (it.part_name || it.item_name || it.name)) {
           const rawName = String(it.part_name || it.item_name || it.name || '').trim();
           const normKey = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
           if (normKey) {

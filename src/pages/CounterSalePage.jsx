@@ -226,6 +226,18 @@ export default function CounterSalePage() {
     } catch (e) {}
   };
 
+  // Automatic Self-Healing Storage Protection
+  useEffect(() => {
+    try {
+      ['counter_sale_draft', 'local_counter_sales', 'local_counter_khata'].forEach(key => {
+        const raw = localStorage.getItem(key);
+        if (raw === 'undefined' || raw === 'null' || raw === '[object Object]') {
+          localStorage.removeItem(key);
+        }
+      });
+    } catch (e) {}
+  }, []);
+
   useEffect(() => {
     loadInventory();
     loadInvoices();

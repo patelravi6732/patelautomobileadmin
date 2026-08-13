@@ -231,6 +231,7 @@ export default function DashboardPage() {
     window.addEventListener('storage', handleStorage);
     window.addEventListener('master_store_updated', handleStorage);
     window.addEventListener('khata_updated', handleStorage);
+    window.addEventListener('invoices_updated', handleStorage);
     window.addEventListener('counter_khata_updated', handleStorage);
     window.addEventListener('counter_sales_updated', handleStorage);
     window.addEventListener('inventory_updated', handleStorage);
@@ -239,6 +240,7 @@ export default function DashboardPage() {
       window.removeEventListener('storage', handleStorage);
       window.removeEventListener('master_store_updated', handleStorage);
       window.removeEventListener('khata_updated', handleStorage);
+      window.removeEventListener('invoices_updated', handleStorage);
       window.removeEventListener('counter_khata_updated', handleStorage);
       window.removeEventListener('counter_sales_updated', handleStorage);
       window.removeEventListener('inventory_updated', handleStorage);

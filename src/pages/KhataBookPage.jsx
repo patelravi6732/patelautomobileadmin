@@ -14,9 +14,23 @@ const monthNames = [
 ];
 
 export default function KhataBookPage() {
-  const [debtors, setDebtors] = useState([]);
-  const [totalPending, setTotalPending] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [debtors, setDebtors] = useState(() => {
+    try {
+      const cached = JSON.parse(localStorage.getItem('khata_debtors') || '[]');
+      return Array.isArray(cached) ? cached : [];
+    } catch {
+      return [];
+    }
+  });
+  const [totalPending, setTotalPending] = useState(() => {
+    try {
+      const cached = JSON.parse(localStorage.getItem('khata_debtors') || '[]');
+      return Array.isArray(cached) ? cached.reduce((sum, d) => sum + (parseFloat(d.pending_amount || d.balance || 0) || 0), 0) : 0;
+    } catch {
+      return 0;
+    }
+  });
+  const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [sharingPhoto, setSharingPhoto] = useState(false);
   const [toast, setToast] = useState(null);
@@ -52,7 +66,7 @@ export default function KhataBookPage() {
     if (!deleteModal.debtor) return;
     const targetDebtor = deleteModal.debtor;
     const targetId = String(targetDebtor.id || targetDebtor.invoice_id || '');
-    const rawId = targetId.replace(/^inv_/, '').replace(/^job_/, '').replace(/^khata_/, '').replace(/^booking_/, '');
+    const rawId = targetId.replace(/^(inv_|job_|khata_|booking_)/, '');
     const invNum = targetDebtor.invoice_number || '';
     const vehNum = (targetDebtor.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
 
@@ -129,199 +143,247 @@ export default function KhataBookPage() {
   };
 
   const fetchKhata = async (isInitial = false) => {
-    if (isInitial) setLoading(true);
+    if (isInitial && (!debtors || debtors.length === 0)) setLoading(true);
     try {
       let backendData = null;
       try {
-        const res = await API.get('/khata-book/', { timeout: 1200 });
+        const res = await API.get('/khata-book/', { timeout: 800 });
         backendData = res.data;
       } catch (err) {
-        console.warn('Backend API offline for Khata, aggregating from local and cloud stores:', err);
+        // silent fallback
       }
 
       const deletedIds = await fetchCloudDeletedIds().catch(() => []);
       const isDeleted = (id) => {
         if (!id) return false;
         const s = String(id).trim();
-        const raw = s.replace(/^inv_/, '').replace(/^job_/, '').replace(/^khata_/, '').replace(/^booking_/, '');
+        const raw = s.replace(/^(inv_|job_|khata_|booking_)/, '');
         return deletedIds.some(d => {
           if (!d) return false;
           const dStr = String(d).trim();
-          const dRaw = dStr.replace(/^inv_/, '').replace(/^job_/, '').replace(/^khata_/, '').replace(/^booking_/, '');
+          const dRaw = dStr.replace(/^(inv_|job_|khata_|booking_)/, '');
           return s === dStr || (raw && dRaw && raw === dRaw);
         });
       };
 
-      // Read all records across stores safely
+      // Read stores safely
       const localKhata = JSON.parse(localStorage.getItem('khata_entries') || '[]').filter(k => k && !isDeleted(k.id) && !isDeleted(k.job_id));
       const cloudKhata = (await fetchCloudKhataEntries().catch(() => [])).filter(k => k && !isDeleted(k.id) && !isDeleted(k.job_id));
       const combinedKhata = [...localKhata, ...cloudKhata];
+
+      // Build Credit Payment Map (Sum of all CREDIT entries)
+      const creditMap = new Map();
+      combinedKhata.forEach(k => {
+        if (k && k.type === 'CREDIT' && (parseFloat(k.amount || 0) > 0)) {
+          const rawJobId = String(k.job_id || k.id || '').replace(/^(inv_|job_|khata_|booking_)/, '');
+          const veh = (k.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+          if (rawJobId) {
+            creditMap.set(`job_${rawJobId}`, (creditMap.get(`job_${rawJobId}`) || 0) + parseFloat(k.amount));
+          }
+          if (veh) {
+            creditMap.set(`veh_${veh}`, (creditMap.get(`veh_${veh}`) || 0) + parseFloat(k.amount));
+          }
+        }
+      });
 
       const localInvs = JSON.parse(localStorage.getItem('local_invoices') || '[]').filter(i => i && !isDeleted(i.id) && !isDeleted(i.invoice_number) && !isDeleted(i.job_id));
       const cloudInvs = (await fetchCloudInvoices().catch(() => [])).filter(i => i && !isDeleted(i.id) && !isDeleted(i.invoice_number) && !isDeleted(i.job_id));
       
       const invMap = new Map();
+      // localInvs first, then merge cloudInvs taking the MAX paid_amount
       [...localInvs, ...cloudInvs].forEach(inv => {
         if (inv && (inv.id || inv.job_id || inv.invoice_number)) {
-          const key = String(inv.job_id || inv.id || inv.invoice_number);
-          const existing = invMap.get(key);
+          const rawKey = String(inv.job_id || inv.id || inv.invoice_number).replace(/^(inv_|job_|khata_|booking_)/, '');
+          const existing = invMap.get(rawKey);
           if (!existing) {
-            invMap.set(key, inv);
+            invMap.set(rawKey, inv);
           } else {
-            const exPending = parseFloat(existing.pending_amount !== undefined ? existing.pending_amount : (parseFloat(existing.grand_total || existing.total_amount || 0) - parseFloat(existing.paid_amount || 0)));
-            const curPending = parseFloat(inv.pending_amount !== undefined ? inv.pending_amount : (parseFloat(inv.grand_total || inv.total_amount || 0) - parseFloat(inv.paid_amount || 0)));
-            if (curPending < exPending || (inv.paid_amount && !existing.paid_amount)) {
-              invMap.set(key, inv);
-            }
+            const exPaid = parseFloat(existing.paid_amount || 0);
+            const curPaid = parseFloat(inv.paid_amount || 0);
+            const preferred = curPaid >= exPaid ? inv : existing;
+            invMap.set(rawKey, {
+              ...existing,
+              ...preferred,
+              paid_amount: Math.max(exPaid, curPaid),
+              pending_amount: Math.max(0, parseFloat(preferred.grand_total || preferred.total_amount || 0) - Math.max(exPaid, curPaid))
+            });
           }
         }
       });
       const combinedInvs = Array.from(invMap.values());
 
-      const allJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]').filter(j => j && !isDeleted(j.id) && !isDeleted(j.booking_id));
+      const rawLocalJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
+      const localJobs = rawLocalJobs.filter(j => j && !isDeleted(j.id) && !isDeleted(j.booking_id));
       const cloudJobs = (await fetchCloudJobs().catch(() => [])).filter(j => j && !isDeleted(j.id) && !isDeleted(j.booking_id));
-      const combinedJobs = [...allJobs, ...cloudJobs];
+      
+      const jobsMap = new Map();
+      [...localJobs, ...cloudJobs].forEach(j => {
+        if (j && (j.id || j.booking_id)) {
+          const rawKey = String(j.id || j.booking_id).replace(/^(inv_|job_|khata_|booking_)/, '');
+          const existing = jobsMap.get(rawKey);
+          if (!existing) {
+            jobsMap.set(rawKey, j);
+          } else {
+            const exPaid = parseFloat(existing.paid_amount || 0);
+            const curPaid = parseFloat(j.paid_amount || 0);
+            const preferred = curPaid >= exPaid ? j : existing;
+            jobsMap.set(rawKey, {
+              ...existing,
+              ...preferred,
+              paid_amount: Math.max(exPaid, curPaid),
+              pending_amount: Math.max(0, parseFloat(preferred.grand_total || preferred.live_total || 0) - Math.max(exPaid, curPaid))
+            });
+          }
+        }
+      });
+      const combinedJobs = Array.from(jobsMap.values());
       const finishedJobs = combinedJobs.filter(j => j && (j.status === 'FINISHED' || j.status === 'COMPLETED'));
-
-      const legacyDebtors = backendData?.debtors || JSON.parse(localStorage.getItem('khata_debtors') || '[]');
 
       const khataList = [];
 
       // 1. Process Invoices
       combinedInvs.forEach(inv => {
         if (!inv || isDeleted(inv.id) || isDeleted(inv.invoice_number) || isDeleted(inv.job_id)) return;
+        const rawId = String(inv.job_id || inv.id || '').replace(/^(inv_|job_|khata_|booking_)/, '');
+        
         const partsVal = parseFloat(inv.parts_total || 0);
         const labourVal = parseFloat(inv.labour_charge || 0);
         const discountVal = parseFloat(inv.discount_amount || 0);
         const totalVal = parseFloat(inv.grand_total || inv.total_amount || Math.max(0, partsVal + labourVal - discountVal));
-        let paidVal = parseFloat(inv.paid_amount || 0);
-        const statusStr = String(inv.payment_status || inv.status || '').toUpperCase();
         
-        let pendingVal = 0;
-        if (inv.pending_amount !== undefined && inv.pending_amount !== null) {
-          pendingVal = parseFloat(inv.pending_amount || 0);
-        } else {
-          pendingVal = Math.max(0, totalVal - paidVal);
-        }
+        let directPaid = parseFloat(inv.paid_amount || (inv.payment_status === 'PAID' ? totalVal : 0));
+        const extraCredits = (rawId ? (creditMap.get(`job_${rawId}`) || 0) : 0);
+        const totalPaid = Math.min(totalVal, Math.max(directPaid, extraCredits, directPaid + extraCredits));
+        const pendingVal = Math.max(0, totalVal - totalPaid);
+        const statusStr = String(inv.payment_status || inv.status || '').toUpperCase();
 
-        if (statusStr === 'PAID' && pendingVal === 0) return;
+        if (pendingVal <= 0 || statusStr === 'PAID') return;
 
-        if (pendingVal > 0 || statusStr === 'UNPAID' || statusStr === 'PARTIAL') {
-          const actualPending = pendingVal > 0 ? pendingVal : Math.max(0, totalVal - paidVal);
-          if (actualPending <= 0 && statusStr === 'PAID') return;
+        const itemDate = inv.created_at || inv.date || new Date().toISOString();
+        const formattedDate = new Date(itemDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+        const grossVal = (partsVal + labourVal > 0) ? (partsVal + labourVal) : (totalVal + discountVal);
 
-          const itemDate = inv.created_at || inv.date || new Date().toISOString();
-          const formattedDate = new Date(itemDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-          const grossVal = (partsVal + labourVal > 0) ? (partsVal + labourVal) : (totalVal + discountVal);
-          khataList.push({
-            id: String(inv.id),
-            invoice_id: inv.id,
-            invoice_number: inv.invoice_number || `INV-${String(inv.id).slice(-4)}`,
-            customer_name: inv.customer_name || 'Valued Customer',
-            phone: inv.mobile_number || inv.phone || 'N/A',
-            mobile_number: inv.mobile_number || inv.phone || 'N/A',
-            vehicle_number: inv.vehicle_number || 'GJ-15',
-            bike_model: inv.bike_model || 'Two Wheeler',
-            parts_total: partsVal,
-            labour_charge: labourVal,
-            discount_amount: discountVal,
-            gross_total: grossVal,
-            total_billed: totalVal,
-            total_paid: paidVal,
-            pending_amount: actualPending > 0 ? actualPending : Math.max(0, totalVal - paidVal),
-            balance: actualPending > 0 ? actualPending : Math.max(0, totalVal - paidVal),
-            visit_date: formattedDate,
-            raw_date: itemDate,
-            parts: inv.parts || []
-          });
-        }
+        khataList.push({
+          id: `inv_${rawId}`,
+          invoice_id: inv.id,
+          job_id: rawId,
+          invoice_number: inv.invoice_number || `INV-${rawId.slice(-4)}`,
+          customer_name: inv.customer_name || 'Valued Customer',
+          phone: inv.mobile_number || inv.phone || 'N/A',
+          mobile_number: inv.mobile_number || inv.phone || 'N/A',
+          vehicle_number: inv.vehicle_number || 'GJ-15',
+          bike_model: inv.bike_model || 'Two Wheeler',
+          parts_total: partsVal,
+          labour_charge: labourVal,
+          discount_amount: discountVal,
+          gross_total: grossVal,
+          total_billed: totalVal,
+          total_paid: totalPaid,
+          pending_amount: pendingVal,
+          balance: pendingVal,
+          visit_date: formattedDate,
+          raw_date: itemDate,
+          parts: inv.parts || []
+        });
       });
 
-      // 2. Process Finished Jobs not in invoices
+      // 2. Process Finished Jobs (only if not already in invoices)
       finishedJobs.forEach(job => {
-        if (!job || deletedIds.includes(String(job.id))) return;
-        const alreadyInInvoices = combinedInvs.some(i => String(i.job_id) === String(job.id) || String(i.id) === `inv_${job.id}`);
+        if (!job || isDeleted(job.id)) return;
+        const rawId = String(job.id || '').replace(/^(inv_|job_|khata_|booking_)/, '');
+        const alreadyInInvoices = combinedInvs.some(i => String(i.job_id || i.id || '').replace(/^(inv_|job_|khata_|booking_)/, '') === rawId);
         if (alreadyInInvoices) return;
 
         const partsVal = parseFloat(job.parts_total || 0);
         const labourVal = parseFloat(job.labour_charge || 0);
         const discountVal = parseFloat(job.discount_amount || 0);
         const totalVal = parseFloat(job.grand_total || job.live_total || Math.max(0, partsVal + labourVal - discountVal));
-        let paidVal = parseFloat(job.paid_amount || 0);
+        
+        let directPaid = parseFloat(job.paid_amount || (job.payment_status === 'PAID' ? totalVal : 0));
+        const extraCredits = (rawId ? (creditMap.get(`job_${rawId}`) || 0) : 0);
+        const totalPaid = Math.min(totalVal, Math.max(directPaid, extraCredits, directPaid + extraCredits));
+        const pendingVal = Math.max(0, totalVal - totalPaid);
         const statusStr = String(job.payment_status || job.status || '').toUpperCase();
-        if (statusStr === 'PAID' && paidVal === 0) paidVal = totalVal;
 
-        const pendingVal = Math.max(0, totalVal - paidVal);
-        if (pendingVal > 0) {
-          const itemDate = job.finished_at || job.completed_at || job.created_at || new Date().toISOString();
-          const formattedDate = new Date(itemDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-          const grossVal = (partsVal + labourVal > 0) ? (partsVal + labourVal) : (totalVal + discountVal);
-          khataList.push({
-            id: String(job.id),
-            invoice_id: job.id,
-            invoice_number: `INV-${String(job.id).slice(-4)}`,
-            customer_name: job.customer_name || 'Valued Customer',
-            phone: job.mobile_number || job.phone || 'N/A',
-            mobile_number: job.mobile_number || job.phone || 'N/A',
-            vehicle_number: job.vehicle_number || 'GJ-15',
-            bike_model: job.bike_model || 'Two Wheeler',
-            parts_total: partsVal,
-            labour_charge: labourVal,
-            discount_amount: discountVal,
-            gross_total: grossVal,
-            total_billed: totalVal,
-            total_paid: paidVal,
-            pending_amount: pendingVal,
-            balance: pendingVal,
-            visit_date: formattedDate,
-            raw_date: itemDate,
-            parts: job.parts || []
-          });
-        }
+        if (pendingVal <= 0 || statusStr === 'PAID') return;
+
+        const itemDate = job.finished_at || job.completed_at || job.created_at || new Date().toISOString();
+        const formattedDate = new Date(itemDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+        const grossVal = (partsVal + labourVal > 0) ? (partsVal + labourVal) : (totalVal + discountVal);
+
+        khataList.push({
+          id: `job_${rawId}`,
+          invoice_id: job.id,
+          job_id: rawId,
+          invoice_number: `INV-${rawId.slice(-4)}`,
+          customer_name: job.customer_name || 'Valued Customer',
+          phone: job.mobile_number || job.phone || 'N/A',
+          mobile_number: job.mobile_number || job.phone || 'N/A',
+          vehicle_number: job.vehicle_number || 'GJ-15',
+          bike_model: job.bike_model || 'Two Wheeler',
+          parts_total: partsVal,
+          labour_charge: labourVal,
+          discount_amount: discountVal,
+          gross_total: grossVal,
+          total_billed: totalVal,
+          total_paid: totalPaid,
+          pending_amount: pendingVal,
+          balance: pendingVal,
+          visit_date: formattedDate,
+          raw_date: itemDate,
+          parts: job.parts || []
+        });
       });
 
-      // 3. Process All Khata Debit Entries
-      combinedKhata.forEach(k => {
-        if (!k || deletedIds.includes(String(k.id))) return;
-        const alreadyInList = khataList.some(item => String(item.id) === String(k.id) || (k.job_id && String(item.id) === String(k.job_id)));
+      // 3. Process DEBIT Khata entries (only if not already processed in invoices/jobs)
+      combinedKhata.filter(k => k && k.type === 'DEBIT').forEach(k => {
+        if (!k || isDeleted(k.id) || isDeleted(k.job_id)) return;
+        const rawId = String(k.job_id || k.id || '').replace(/^(inv_|job_|khata_|booking_)/, '');
+        const alreadyInList = khataList.some(item => String(item.job_id || item.invoice_id || item.id || '').replace(/^(inv_|job_|khata_|booking_)/, '') === rawId);
         if (alreadyInList) return;
+        const alreadyInInvs = combinedInvs.some(i => String(i.job_id || i.id || '').replace(/^(inv_|job_|khata_|booking_)/, '') === rawId);
+        if (alreadyInInvs) return;
 
         const billed = parseFloat(k.total_billed !== undefined ? k.total_billed : (k.amount || k.grand_total || k.total_amount || 0));
-        const paid = parseFloat(k.total_paid !== undefined ? k.total_paid : (k.paid_amount || 0));
-        const pending = parseFloat(k.pending_amount !== undefined ? k.pending_amount : (k.balance !== undefined ? k.balance : Math.max(0, billed - paid)));
+        let directPaid = parseFloat(k.total_paid !== undefined ? k.total_paid : (k.paid_amount || 0));
+        const extraCredits = (rawId ? (creditMap.get(`job_${rawId}`) || 0) : 0);
+        const totalPaid = Math.min(billed, Math.max(directPaid, extraCredits, directPaid + extraCredits));
+        const pending = Math.max(0, billed - totalPaid);
         const discountVal = parseFloat(k.discount_amount || k.discount || 0);
 
-        if (pending > 0) {
-          const itemDate = k.created_at || k.date || k.last_visit || new Date().toISOString();
-          const formattedDate = new Date(itemDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-          khataList.push({
-            id: String(k.id),
-            invoice_id: k.id,
-            invoice_number: k.invoice_number || `KHATA-${String(k.id).slice(-4)}`,
-            customer_name: k.customer_name || 'Debtor',
-            phone: k.phone || k.mobile_number || 'N/A',
-            mobile_number: k.mobile_number || k.phone || 'N/A',
-            vehicle_number: k.vehicle_number || 'GJ-15',
-            bike_model: k.bike_model || 'Two Wheeler',
-            parts_total: parseFloat(k.parts_total || 0),
-            labour_charge: parseFloat(k.labour_charge || 0),
-            discount_amount: discountVal,
-            gross_total: billed + discountVal,
-            total_billed: billed,
-            total_paid: paid,
-            pending_amount: pending,
-            balance: pending,
-            visit_date: formattedDate,
-            raw_date: itemDate,
-            parts: k.parts || []
-          });
-        }
+        if (pending <= 0) return;
+
+        const itemDate = k.created_at || k.date || k.last_visit || new Date().toISOString();
+        const formattedDate = new Date(itemDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+
+        khataList.push({
+          id: `khata_${rawId}`,
+          invoice_id: k.id,
+          job_id: rawId,
+          invoice_number: k.invoice_number || `KHATA-${rawId.slice(-4)}`,
+          customer_name: k.customer_name || 'Debtor',
+          phone: k.phone || k.mobile_number || 'N/A',
+          mobile_number: k.mobile_number || k.phone || 'N/A',
+          vehicle_number: k.vehicle_number || 'GJ-15',
+          bike_model: k.bike_model || 'Two Wheeler',
+          parts_total: parseFloat(k.parts_total || 0),
+          labour_charge: parseFloat(k.labour_charge || 0),
+          discount_amount: discountVal,
+          gross_total: billed + discountVal,
+          total_billed: billed,
+          total_paid: totalPaid,
+          pending_amount: pending,
+          balance: pending,
+          visit_date: formattedDate,
+          raw_date: itemDate,
+          parts: k.parts || []
+        });
       });
 
-      // Strictly deduplicate khataList so no bill/visit appears twice
+      // Strict Universal Deduplication Key
       const uniqueKhataMap = new Map();
       khataList.forEach(item => {
-        const rawId = String(item.invoice_id || item.id || '').replace(/^inv_/, '').replace(/^khata_/, '');
+        const rawId = String(item.job_id || item.invoice_id || item.id || '').replace(/^(inv_|job_|khata_|booking_)/, '');
         const veh = (item.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
         const key = rawId ? `id_${rawId}` : `veh_${veh}_${item.total_billed}_${item.visit_date}`;
 
@@ -335,12 +397,18 @@ export default function KhataBookPage() {
           if (item.labour_charge && !existing.labour_charge) {
             existing.labour_charge = item.labour_charge;
           }
+          if (item.total_paid > existing.total_paid) {
+            existing.total_paid = item.total_paid;
+            existing.pending_amount = Math.max(0, existing.total_billed - item.total_paid);
+            existing.balance = existing.pending_amount;
+          }
         }
       });
-      const finalKhataList = Array.from(uniqueKhataMap.values());
+      const finalKhataList = Array.from(uniqueKhataMap.values()).filter(d => parseFloat(d.pending_amount || d.balance || 0) > 0);
 
+      localStorage.setItem('khata_debtors', JSON.stringify(finalKhataList));
       setDebtors(finalKhataList);
-      setTotalPending(finalKhataList.reduce((sum, item) => sum + item.pending_amount, 0));
+      setTotalPending(finalKhataList.reduce((sum, item) => sum + (parseFloat(item.pending_amount || item.balance || 0) || 0), 0));
     } catch (err) {
       console.error('Error fetching Khata debtors:', err);
     } finally {
@@ -349,11 +417,22 @@ export default function KhataBookPage() {
   };
 
   useEffect(() => {
-    fetchKhata(true);
+    fetchKhata(false);
     const interval = setInterval(() => {
       fetchKhata(false);
-    }, 3000);
-    return () => clearInterval(interval);
+    }, 4000);
+
+    const onStorageOrUpdate = () => fetchKhata(false);
+    window.addEventListener('storage', onStorageOrUpdate);
+    window.addEventListener('khata_updated', onStorageOrUpdate);
+    window.addEventListener('invoices_updated', onStorageOrUpdate);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('storage', onStorageOrUpdate);
+      window.removeEventListener('khata_updated', onStorageOrUpdate);
+      window.removeEventListener('invoices_updated', onStorageOrUpdate);
+    };
   }, []);
 
   const parseSafelyDate = (dateStr) => {
@@ -437,7 +516,7 @@ export default function KhataBookPage() {
     setStatementPreviewUrl(null);
   };
 
-  const handleRecordPayment = (e) => {
+  const handleRecordPayment = async (e) => {
     if (e && e.preventDefault) e.preventDefault();
     if (!selectedCustomer) return;
 
@@ -453,7 +532,7 @@ export default function KhataBookPage() {
     }
 
     const targetId = String(selectedCustomer.invoice_id || selectedCustomer.id || '');
-    const rawId = targetId.replace(/^inv_/, '').replace(/^khata_/, '');
+    const rawId = targetId.replace(/^(inv_|job_|khata_|booking_)/, '');
     const vehNum = (selectedCustomer.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
     const invNum = selectedCustomer.invoice_number || '';
 
@@ -464,13 +543,14 @@ export default function KhataBookPage() {
       if (!inv) return inv;
       const curInvId = String(inv.id || '');
       const curJobId = String(inv.job_id || '');
+      const curRaw = curInvId.replace(/^(inv_|job_|khata_|booking_)/, '');
       const curVeh = (inv.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-      const isMatch = (curInvId === targetId || curInvId === `inv_${rawId}` || curJobId === rawId || (invNum && inv.invoice_number === invNum) || (vehNum && curVeh === vehNum && (parseFloat(inv.pending_amount || 0) > 0)));
+      const isMatch = (curInvId === targetId || curRaw === rawId || curJobId === rawId || (invNum && inv.invoice_number === invNum) || (vehNum && curVeh === vehNum && (parseFloat(inv.pending_amount || 0) > 0)));
 
       if (isMatch) {
         const total = parseFloat(inv.grand_total || inv.total_amount || 0);
         const oldPaid = parseFloat(inv.paid_amount || 0);
-        const newPaid = oldPaid + paymentNum;
+        const newPaid = Math.min(total, oldPaid + paymentNum);
         const newPending = Math.max(0, total - newPaid);
         const updatedInv = {
           ...inv,
@@ -491,13 +571,14 @@ export default function KhataBookPage() {
     const updatedJobs = localJobs.map(j => {
       if (!j) return j;
       const curJobId = String(j.id || '');
+      const curRaw = curJobId.replace(/^(inv_|job_|khata_|booking_)/, '');
       const curVeh = (j.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-      const isMatch = (curJobId === rawId || curJobId === targetId || (vehNum && curVeh === vehNum && (j.status === 'FINISHED' || j.status === 'COMPLETED')));
+      const isMatch = (curRaw === rawId || curJobId === targetId || (vehNum && curVeh === vehNum && (j.status === 'FINISHED' || j.status === 'COMPLETED')));
 
       if (isMatch) {
         const total = parseFloat(j.grand_total || j.live_total || 0);
         const oldPaid = parseFloat(j.paid_amount || 0);
-        const newPaid = oldPaid + paymentNum;
+        const newPaid = Math.min(total, oldPaid + paymentNum);
         const newPending = Math.max(0, total - newPaid);
         const updatedJob = {
           ...j,
@@ -530,8 +611,9 @@ export default function KhataBookPage() {
     const updatedKhataList = localKhata.map(k => {
       if (!k) return k;
       const curKId = String(k.id || '');
+      const curKRaw = curKId.replace(/^(inv_|job_|khata_|booking_)/, '');
       const curKVeh = (k.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-      if ((curKId === targetId || curKId === `khata_${rawId}` || (vehNum && curKVeh === vehNum && k.type === 'DEBIT'))) {
+      if (curKId === targetId || curKRaw === rawId || (vehNum && curKVeh === vehNum && k.type === 'DEBIT')) {
         const curAmt = parseFloat(k.amount || 0);
         const newAmt = Math.max(0, curAmt - paymentNum);
         return { ...k, amount: newAmt };
@@ -540,31 +622,13 @@ export default function KhataBookPage() {
     });
     localStorage.setItem('khata_entries', JSON.stringify([creditKhataEntry, ...updatedKhataList]));
 
-    // 4. ATOMIC SINGLE CLOUD PAYMENT COMMIT (No race conditions!)
-    atomicRecordPayment({
-      updatedInvoice: targetUpdatedInv,
-      updatedJob: targetUpdatedJob,
-      creditKhataEntry: creditKhataEntry,
-      paymentAmount: paymentNum,
-      targetId: targetId,
-      vehicleNumber: selectedCustomer.vehicle_number
-    }).catch(console.warn);
-
-    localStorage.setItem('khata_entries', JSON.stringify([creditKhataEntry, ...updatedKhataList]));
-
-    // Push to backend asynchronously without blocking UI
-    API.post('/khata-book/record-payment/', {
-      invoice_id: selectedCustomer.invoice_id || null,
-      customer_id: selectedCustomer.customer_id || null,
-      amount: paymentNum
-    }, { timeout: 1500 }).catch(console.warn);
-
-    // Instant 0ms UI State Update
+    // 4. Instant 0ms UI State Update
     setDebtors(prev => {
-      return prev.map(d => {
+      const updated = prev.map(d => {
         const dId = String(d.invoice_id || d.id || '');
+        const dRaw = dId.replace(/^(inv_|job_|khata_|booking_)/, '');
         const dVeh = (d.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-        if (dId === targetId || (vehNum && dVeh === vehNum)) {
+        if (dRaw === rawId || dId === targetId || (vehNum && dVeh === vehNum)) {
           const oldPending = parseFloat(d.pending_amount || d.balance || 0);
           const newPending = Math.max(0, oldPending - paymentNum);
           const oldPaid = parseFloat(d.total_paid || 0);
@@ -577,6 +641,8 @@ export default function KhataBookPage() {
         }
         return d;
       }).filter(d => (parseFloat(d.pending_amount || d.balance || 0) > 0));
+      localStorage.setItem('khata_debtors', JSON.stringify(updated));
+      return updated;
     });
 
     setTotalPending(prev => Math.max(0, prev - paymentNum));
@@ -585,7 +651,35 @@ export default function KhataBookPage() {
     showToast('🎉 Payment Recorded!', `₹${paymentNum} payment successfully credited!`);
     setSelectedCustomer(null);
     setPayAmount(0);
-    fetchKhata();
+
+    // 5. ATOMIC SINGLE CLOUD PAYMENT COMMIT (No race conditions!)
+    try {
+      await atomicRecordPayment({
+        updatedInvoice: targetUpdatedInv,
+        updatedJob: targetUpdatedJob,
+        creditKhataEntry: creditKhataEntry,
+        paymentAmount: paymentNum,
+        targetId: targetId,
+        vehicleNumber: selectedCustomer.vehicle_number
+      });
+    } catch (err) {
+      console.warn('Cloud sync payment notice:', err);
+    }
+
+    // Push to backend asynchronously without blocking UI
+    API.post('/khata-book/record-payment/', {
+      invoice_id: selectedCustomer.invoice_id || null,
+      customer_id: selectedCustomer.customer_id || null,
+      amount: paymentNum
+    }, { timeout: 1500 }).catch(console.warn);
+
+    try {
+      window.dispatchEvent(new Event('invoices_updated'));
+      window.dispatchEvent(new Event('khata_updated'));
+      window.dispatchEvent(new Event('storage'));
+    } catch (e) {}
+
+    await fetchKhata(false);
   };
 
   const handleDownloadStatementPhoto = async (customer) => {

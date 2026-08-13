@@ -99,11 +99,22 @@ export default function BillingPage() {
       };
     });
 
+    const localKhata = JSON.parse(localStorage.getItem('khata_entries') || '[]');
+    const khataCreditMap = new Map();
+    localKhata.forEach(k => {
+      if (k && k.type === 'CREDIT' && (parseFloat(k.amount || 0) > 0)) {
+        const rawJobId = String(k.job_id || k.id || '').replace(/^(inv_|job_|khata_|booking_)/, '');
+        if (rawJobId) {
+          khataCreditMap.set(rawJobId, (khataCreditMap.get(rawJobId) || 0) + parseFloat(k.amount));
+        }
+      }
+    });
+
     const allMap = new Map();
-    [...cloudInvs, ...localInvs, ...derivedInvs, ...backendInvs].forEach(inv => {
+    [...localInvs, ...cloudInvs, ...derivedInvs, ...backendInvs].forEach(inv => {
       if (inv && typeof inv === 'object') {
         const strId = String(inv.id || '');
-        const rawId = strId.replace(/^inv_/, '').replace(/^job_/, '');
+        const rawId = strId.replace(/^(inv_|job_|khata_|booking_)/, '');
         const invNum = inv.invoice_number || '';
         const vehNum = (inv.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
         const dateMinute = inv.created_at ? new Date(inv.created_at).toISOString().slice(0, 16) : '';
@@ -123,7 +134,9 @@ export default function BillingPage() {
           : (inv.received_amount !== undefined && inv.received_amount !== null
             ? parseFloat(inv.received_amount)
             : (inv.payment_status === 'PAID' ? totalVal : 0));
-        const paidVal = Math.min(totalVal, Math.max(0, rawPaid));
+        
+        const extraCredit = rawId ? (khataCreditMap.get(rawId) || 0) : 0;
+        const paidVal = Math.min(totalVal, Math.max(rawPaid, extraCredit, (inv.payment_status === 'PAID' ? totalVal : 0)));
         const pendingVal = Math.max(0, totalVal - paidVal);
 
         const normalizedInv = {
@@ -132,13 +145,22 @@ export default function BillingPage() {
           total_amount: totalVal,
           paid_amount: paidVal,
           pending_amount: pendingVal,
-          payment_status: pendingVal > 0 ? 'PENDING' : 'PAID'
+          payment_status: pendingVal === 0 ? 'PAID' : 'PENDING'
         };
 
         if (!allMap.has(key)) {
           allMap.set(key, normalizedInv);
         } else {
-          allMap.set(key, { ...allMap.get(key), ...normalizedInv });
+          const prev = allMap.get(key);
+          const maxPaid = Math.min(totalVal, Math.max(parseFloat(prev.paid_amount || 0), paidVal));
+          const minPending = Math.max(0, totalVal - maxPaid);
+          allMap.set(key, {
+            ...prev,
+            ...normalizedInv,
+            paid_amount: maxPaid,
+            pending_amount: minPending,
+            payment_status: minPending === 0 ? 'PAID' : 'PENDING'
+          });
         }
       }
     });
@@ -154,15 +176,21 @@ export default function BillingPage() {
   };
 
   useEffect(() => {
-    fetchInvoices(true);
+    fetchInvoices(false);
     const interval = setInterval(() => {
       fetchInvoices(false);
-    }, 5000);
-    const handleStorage = () => fetchInvoices(false);
-    window.addEventListener('storage', handleStorage);
+    }, 4000);
+
+    const onStorageOrUpdate = () => fetchInvoices(false);
+    window.addEventListener('storage', onStorageOrUpdate);
+    window.addEventListener('invoices_updated', onStorageOrUpdate);
+    window.addEventListener('khata_updated', onStorageOrUpdate);
+
     return () => {
       clearInterval(interval);
-      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('storage', onStorageOrUpdate);
+      window.removeEventListener('invoices_updated', onStorageOrUpdate);
+      window.removeEventListener('khata_updated', onStorageOrUpdate);
     };
   }, []);
 

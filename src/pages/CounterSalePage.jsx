@@ -10,7 +10,7 @@ import { useAuth } from '../context/AuthContext';
 import { 
   fetchCloudCounterSales, pushCloudCounterSale, deleteCloudCounterSale,
   fetchCloudCounterKhata, pushCloudCounterKhata, atomicRecordCounterPayment,
-  atomicDeductInventoryForSale, atomicAddInventoryItem, fetchMasterStore,
+  syncCloudInventory, atomicAddInventoryItem, fetchMasterStore,
   saveMasterStore
 } from '../utils/cloudSync';
 import { generateCounterSaleCardPhotoAsync } from '../utils/billCardGenerator';
@@ -326,7 +326,7 @@ export default function CounterSalePage() {
     } catch (e) {}
 
     // 2. Non-blocking cloud background sync
-    atomicDeductInventoryForSale(stagedParts).catch(console.warn);
+    syncCloudInventory(updatedInv).catch(console.warn);
 
     alert(`✅ Spare Parts Confirmed!\n\n${stagedParts.length} item(s) confirmed and stock deducted from Inventory successfully.`);
   };
@@ -415,7 +415,7 @@ export default function CounterSalePage() {
         } catch (e) {}
 
         // Non-blocking cloud update
-        pushCloudInventoryItem(updatedItem).catch(console.warn);
+        syncCloudInventory(updatedInv).catch(console.warn);
       }
     }
   };
@@ -466,6 +466,8 @@ export default function CounterSalePage() {
       window.dispatchEvent(new Event('master_store_updated'));
       window.dispatchEvent(new Event('inventory_updated'));
     } catch (e) {}
+
+    syncCloudInventory(updatedInv).catch(console.warn);
   };
 
   // Submit Counter Sale
@@ -521,7 +523,39 @@ export default function CounterSalePage() {
       // 1. If any parts were unconfirmed, deduct now
       const unconfirmedParts = cartItems.filter(p => p.status !== 'CONFIRMED');
       if (unconfirmedParts.length > 0) {
-        await atomicDeductInventoryForSale(unconfirmedParts);
+        const local = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
+        const map = new Map();
+        local.forEach(it => {
+          if (it && (it.part_name || it.item_name || it.name)) {
+            const raw = String(it.part_name || it.item_name || it.name || '').trim();
+            const norm = raw.toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (norm) map.set(norm, { ...it, part_name: raw, item_name: raw, name: raw });
+          }
+        });
+
+        unconfirmedParts.forEach(staged => {
+          const raw = String(staged.part_name || staged.item_name || '').trim();
+          const norm = raw.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const deductQty = parseInt(staged.quantity || 1, 10);
+          if (norm && map.has(norm)) {
+            const item = map.get(norm);
+            const curStock = parseInt(item.current_stock !== undefined ? item.current_stock : (item.stock_quantity !== undefined ? item.stock_quantity : (item.quantity !== undefined ? item.quantity : 0)), 10);
+            map.set(norm, {
+              ...item,
+              current_stock: Math.max(0, curStock - deductQty),
+              stock_quantity: Math.max(0, curStock - deductQty),
+              quantity: Math.max(0, curStock - deductQty),
+              updated_at: new Date().toISOString()
+            });
+          }
+        });
+
+        const updatedInv = Array.from(map.values());
+        localStorage.setItem('inventory_items', JSON.stringify(updatedInv));
+        localStorage.setItem('spare_parts', JSON.stringify(updatedInv));
+        localStorage.setItem('local_inventory', JSON.stringify(updatedInv));
+        setInventory(updatedInv);
+        await syncCloudInventory(updatedInv);
       }
 
       // 2. Save Counter Sale Invoice

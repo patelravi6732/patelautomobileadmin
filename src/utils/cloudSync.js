@@ -1555,77 +1555,25 @@ export async function atomicRecordCounterPayment(targetId, paymentAmount, paymen
   });
 }
 
-// ---------------- ATOMIC INVENTORY DEDUCT & ADD FOR COUNTER SALE ----------------
-export async function atomicDeductInventoryForSale(saleItems = []) {
-  if (!Array.isArray(saleItems) || saleItems.length === 0) return;
-
+export async function syncCloudInventory(inventoryList) {
+  if (!Array.isArray(inventoryList)) return;
   const store = await fetchMasterStore();
-  const existingInv = (store.inventory || []).filter(i => i && typeof i === 'object');
-  const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
-
-  // Merge map of all inventory strictly by normalized name
   const allMap = new Map();
-  [...localInv, ...existingInv].forEach(it => {
-    if (it && (it.id || it.part_name || it.item_name || it.name)) {
+  inventoryList.forEach(it => {
+    if (it && (it.part_name || it.item_name || it.name)) {
       const rawName = String(it.part_name || it.item_name || it.name || '').trim();
       const normKey = rawName.toLowerCase().replace(/[^a-z0-9]/g, '') || String(it.id || '').toLowerCase();
       if (normKey) {
-        if (!allMap.has(normKey)) {
-          allMap.set(normKey, { ...it, part_name: rawName, item_name: rawName, name: rawName });
-        } else {
-          const prev = allMap.get(normKey);
-          const prevTime = new Date(prev.updated_at || 0).getTime();
-          const curTime = new Date(it.updated_at || 0).getTime();
-          const preferred = curTime >= prevTime ? it : prev;
-          allMap.set(normKey, { ...prev, ...preferred, part_name: rawName, item_name: rawName, name: rawName });
-        }
+        allMap.set(normKey, { ...it, part_name: rawName, item_name: rawName, name: rawName });
       }
     }
   });
-
-  const baseInv = Array.from(allMap.values());
-
-  const updatedInv = baseInv.map(invItem => {
-    if (!invItem) return invItem;
-    const invId = String(invItem.id || '').toLowerCase().trim();
-    const invRawName = String(invItem.part_name || invItem.item_name || invItem.name || '').trim();
-    const invNorm = invRawName.toLowerCase().replace(/[^a-z0-9]/g, '');
-
-    // Check if any saleItem matches this invItem
-    let matchedQty = 0;
-    saleItems.forEach(sItem => {
-      if (!sItem) return;
-      const sId = String(sItem.id || sItem.item_id || '').toLowerCase().trim();
-      const sRawName = String(sItem.part_name || sItem.item_name || sItem.name || '').trim();
-      const sNorm = sRawName.toLowerCase().replace(/[^a-z0-9]/g, '');
-
-      const isMatch = (sId && invId && sId === invId) || (sNorm && invNorm && sNorm === invNorm);
-      if (isMatch) {
-        matchedQty += parseInt(sItem.quantity || sItem.qty || 1, 10);
-      }
-    });
-
-    if (matchedQty > 0) {
-      const curStock = parseInt(invItem.current_stock !== undefined ? invItem.current_stock : (invItem.stock_quantity !== undefined ? invItem.stock_quantity : (invItem.quantity !== undefined ? invItem.quantity : 0)), 10);
-      const newStock = Math.max(0, curStock - matchedQty);
-      return {
-        ...invItem,
-        current_stock: newStock,
-        stock_quantity: newStock,
-        quantity: newStock,
-        updated_at: new Date().toISOString()
-      };
-    }
-    return invItem;
-  });
-
-  localStorage.setItem('inventory_items', JSON.stringify(updatedInv));
-  localStorage.setItem('spare_parts', JSON.stringify(updatedInv));
-  localStorage.setItem('local_inventory', JSON.stringify(updatedInv));
-  await saveMasterStore({ ...store, inventory: updatedInv });
-
+  const cleanInv = Array.from(allMap.values());
+  localStorage.setItem('inventory_items', JSON.stringify(cleanInv));
+  localStorage.setItem('spare_parts', JSON.stringify(cleanInv));
+  localStorage.setItem('local_inventory', JSON.stringify(cleanInv));
+  await saveMasterStore({ ...store, inventory: cleanInv });
   try {
-    window.dispatchEvent(new Event('storage'));
     window.dispatchEvent(new Event('master_store_updated'));
     window.dispatchEvent(new Event('inventory_updated'));
   } catch (e) {}

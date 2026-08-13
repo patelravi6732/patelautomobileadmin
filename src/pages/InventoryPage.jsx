@@ -197,13 +197,20 @@ export default function InventoryPage() {
 
     // Save locally and push to cloud bin
     pushCloudInventoryItem(newPartObj).catch(console.warn);
-    const existing = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+    const existing = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
     const updatedLocal = [newPartObj, ...existing.filter(i => i && String(i.id) !== newPartObj.id)];
     localStorage.setItem('inventory_items', JSON.stringify(updatedLocal));
     localStorage.setItem('spare_parts', JSON.stringify(updatedLocal));
+    localStorage.setItem('local_inventory', JSON.stringify(updatedLocal));
 
     setItems(prev => [newPartObj, ...prev.filter(i => i && String(i.id) !== newPartObj.id)]);
     setShowAddModal(false);
+
+    try {
+      window.dispatchEvent(new Event('storage'));
+      window.dispatchEvent(new Event('master_store_updated'));
+      window.dispatchEvent(new Event('inventory_updated'));
+    } catch (e) {}
 
     try {
       await API.post('/inventory/', data, { timeout: 2000 });
@@ -220,19 +227,33 @@ export default function InventoryPage() {
       const updatedObj = {
         ...targetItem,
         part_name: passwordModal.pendingData.part_name,
+        name: passwordModal.pendingData.part_name,
+        item_name: passwordModal.pendingData.part_name,
         category: passwordModal.pendingData.category || 'General',
         price: parseFloat(passwordModal.pendingData.price || 0),
+        unit_price: parseFloat(passwordModal.pendingData.price || 0),
+        selling_price: parseFloat(passwordModal.pendingData.price || 0),
         current_stock: parseInt(passwordModal.pendingData.current_stock || 0, 10),
+        stock_quantity: parseInt(passwordModal.pendingData.current_stock || 0, 10),
+        quantity: parseInt(passwordModal.pendingData.current_stock || 0, 10),
         min_stock_alert: passwordModal.pendingData.min_stock_alert !== '' ? parseInt(passwordModal.pendingData.min_stock_alert, 10) : 2
       };
 
       pushCloudInventoryItem(updatedObj).catch(console.warn);
-      const existing = JSON.parse(localStorage.getItem('inventory_items') || JSON.stringify(DEFAULT_SPARE_PARTS));
+      const existing = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || JSON.stringify(DEFAULT_SPARE_PARTS));
       const updatedLocal = existing.map(i => (String(i.id) === String(targetItem.id) ? updatedObj : i));
       localStorage.setItem('inventory_items', JSON.stringify(updatedLocal));
+      localStorage.setItem('spare_parts', JSON.stringify(updatedLocal));
+      localStorage.setItem('local_inventory', JSON.stringify(updatedLocal));
 
       setItems(prev => prev.map(i => (String(i.id) === String(targetItem.id) ? updatedObj : i)));
       setShowAddModal(false);
+
+      try {
+        window.dispatchEvent(new Event('storage'));
+        window.dispatchEvent(new Event('master_store_updated'));
+        window.dispatchEvent(new Event('inventory_updated'));
+      } catch (e) {}
 
       try {
         await API.put(`/inventory/${targetItem.id}/`, {

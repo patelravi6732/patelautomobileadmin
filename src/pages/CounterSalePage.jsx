@@ -77,13 +77,14 @@ export default function CounterSalePage() {
   const loadInventory = async () => {
     setLoadingInv(true);
     try {
-      const store = await fetchMasterStore();
+      const store = await fetchMasterStore(true);
       const items = (store.inventory || []).filter(i => i && typeof i === 'object');
-      const local = JSON.parse(localStorage.getItem('local_inventory') || '[]');
+      const local = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
       const map = new Map();
       [...items, ...local].forEach(it => {
-        if (it && it.id) {
-          map.set(String(it.id), it);
+        if (it && (it.id || it.part_name || it.item_name || it.name)) {
+          const key = String(it.id || it.part_name || it.item_name || it.name);
+          map.set(key, it);
         }
       });
       setInventory(Array.from(map.values()));
@@ -118,6 +119,22 @@ export default function CounterSalePage() {
     loadInventory();
     loadInvoices();
     loadKhata();
+
+    const handleUpdates = () => {
+      loadInventory();
+      loadInvoices();
+      loadKhata();
+    };
+
+    window.addEventListener('storage', handleUpdates);
+    window.addEventListener('master_store_updated', handleUpdates);
+    window.addEventListener('inventory_updated', handleUpdates);
+
+    return () => {
+      window.removeEventListener('storage', handleUpdates);
+      window.removeEventListener('master_store_updated', handleUpdates);
+      window.removeEventListener('inventory_updated', handleUpdates);
+    };
   }, []);
 
   // Filtered Inventory Catalog
@@ -746,9 +763,16 @@ Kindly clear your pending balance at your earliest convenience.
 
               {/* CART ITEMS LIST */}
               <div className="space-y-2">
-                <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider">
-                  Selected Spare Parts
-                </label>
+                <div className="flex justify-between items-center">
+                  <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                    Selected Spare Parts
+                  </label>
+                  {cartItems.length > 0 && (
+                    <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-100 flex items-center gap-1">
+                      <Check className="w-3 h-3" /> Auto-Deducts from Stock
+                    </span>
+                  )}
+                </div>
                 
                 {cartItems.length === 0 ? (
                   <div className="p-6 border-2 border-dashed border-slate-200 rounded-2xl text-center text-slate-400">
@@ -761,7 +785,12 @@ Kindly clear your pending balance at your earliest convenience.
                       <div key={item.id} className="p-3 bg-slate-50 rounded-2xl border border-slate-200/80 flex items-center justify-between gap-3">
                         <div className="flex-1 min-w-0">
                           <h5 className="text-xs font-bold text-slate-900 truncate">{item.part_name || item.item_name}</h5>
-                          <span className="text-[11px] font-mono text-slate-500">₹{item.selling_price.toFixed(2)} / unit</span>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className="text-[11px] font-mono text-slate-500">₹{item.selling_price.toFixed(2)} / unit</span>
+                            <span className="text-[10px] font-bold text-emerald-600 bg-emerald-100/60 px-1.5 py-0.2 rounded font-mono">
+                              ✓ Confirmed
+                            </span>
+                          </div>
                         </div>
 
                         {/* Qty Counter */}

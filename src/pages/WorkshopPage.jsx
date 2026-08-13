@@ -560,8 +560,13 @@ export default function WorkshopPage() {
 
     localStorage.setItem('inventory_items', JSON.stringify(updatedInv));
     localStorage.setItem('spare_parts', JSON.stringify(updatedInv));
+    localStorage.setItem('local_inventory', JSON.stringify(updatedInv));
     setInventory(updatedInv);
-    try { window.dispatchEvent(new Event('storage')); } catch (e) {}
+    try {
+      window.dispatchEvent(new Event('storage'));
+      window.dispatchEvent(new Event('master_store_updated'));
+      window.dispatchEvent(new Event('inventory_updated'));
+    } catch (e) {}
 
     // 2. Update Job parts
     const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
@@ -663,8 +668,13 @@ export default function WorkshopPage() {
 
         localStorage.setItem('inventory_items', JSON.stringify(invList));
         localStorage.setItem('spare_parts', JSON.stringify(invList));
+        localStorage.setItem('local_inventory', JSON.stringify(invList));
         setInventory(invList);
-        try { window.dispatchEvent(new Event('storage')); } catch (e) {}
+        try {
+          window.dispatchEvent(new Event('storage'));
+          window.dispatchEvent(new Event('master_store_updated'));
+          window.dispatchEvent(new Event('inventory_updated'));
+        } catch (e) {}
       } catch (err) {
         console.warn('Stock restoration notice:', err);
       }
@@ -711,12 +721,12 @@ export default function WorkshopPage() {
 
     // Deduct stock from Inventory items in real-time
     try {
-      const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+      const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
       const cloudInv = await fetchCloudInventory().catch(() => []);
       const allInvMap = new Map();
       [...cloudInv, ...localInv].forEach(item => {
-        if (item && (item.id || item.part_name || item.name)) {
-          const rawName = String(item.part_name || item.name || '').trim();
+        if (item && (item.id || item.part_name || item.item_name || item.name)) {
+          const rawName = String(item.part_name || item.item_name || item.name || '').trim();
           const key = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
           if (!allInvMap.has(key)) allInvMap.set(key, item);
         }
@@ -734,7 +744,7 @@ export default function WorkshopPage() {
         invList = invList.map(invItem => {
           if (!invItem) return invItem;
           const invId = String(invItem.id || '').replace(/[^a-z0-9]/g, '');
-          const invName = String(invItem.part_name || invItem.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase().trim();
+          const invName = String(invItem.part_name || invItem.item_name || invItem.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase().trim();
 
           const isMatch = (pId && invId && pId === invId) || (pName && invName && (pName === invName || pName.includes(invName) || invName.includes(pName)));
 
@@ -759,8 +769,13 @@ export default function WorkshopPage() {
       if (invChanged) {
         localStorage.setItem('inventory_items', JSON.stringify(invList));
         localStorage.setItem('spare_parts', JSON.stringify(invList));
+        localStorage.setItem('local_inventory', JSON.stringify(invList));
         setInventory(invList);
-        try { window.dispatchEvent(new Event('storage')); } catch (e) {}
+        try {
+          window.dispatchEvent(new Event('storage'));
+          window.dispatchEvent(new Event('master_store_updated'));
+          window.dispatchEvent(new Event('inventory_updated'));
+        } catch (e) {}
       }
     } catch (invErr) {
       console.warn('Error deducting stock on confirm parts:', invErr);

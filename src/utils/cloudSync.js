@@ -569,53 +569,59 @@ export async function markCloudMessageRead(msgId) {
 // ---------------- INVENTORY ----------------
 export async function fetchCloudInventory() {
   const store = await fetchMasterStore();
-  return (store.inventory || []).filter(i => i && typeof i === 'object' && (i.id || i.part_name || i.name));
+  return (store.inventory || []).filter(i => i && typeof i === 'object' && (i.id || i.part_name || i.item_name || i.name));
 }
 
 export async function pushCloudInventoryItem(newItem) {
   if (!newItem || typeof newItem !== 'object') return;
 
   const newId = String(newItem.id || '');
-  const rawName = String(newItem.part_name || newItem.name || '').trim();
+  const rawName = String(newItem.part_name || newItem.item_name || newItem.name || '').trim();
   const newName = rawName.toLowerCase();
   const newNorm = newName.replace(/[^a-z0-9]/g, '');
   const stampedItem = {
     ...newItem,
+    part_name: rawName,
+    item_name: rawName,
+    name: rawName,
     updated_at: newItem.updated_at || new Date().toISOString()
   };
 
-  // 1. Update local inventory_items & spare_parts
-  const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
   const isMatchItem = (i) => {
     if (!i) return false;
     const curId = String(i.id || '');
-    const curRaw = String(i.part_name || i.name || '').trim();
+    const curRaw = String(i.part_name || i.item_name || i.name || '').trim();
     const curName = curRaw.toLowerCase();
     const curNorm = curName.replace(/[^a-z0-9]/g, '');
     return (newId && curId && newId === curId) || (newNorm && curNorm && newNorm === curNorm) || (newName && curName && newName === curName);
   };
 
+  // 1. Update all local storages
+  const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
   const existsLocal = localInv.some(isMatchItem);
-  let updatedLocal = localInv;
-  if (!existsLocal) {
-    updatedLocal = [stampedItem, ...localInv];
-  } else {
-    updatedLocal = localInv.map(i => isMatchItem(i) ? { ...i, ...stampedItem } : i);
-  }
+  let updatedLocal = existsLocal 
+    ? localInv.map(i => isMatchItem(i) ? { ...i, ...stampedItem } : i)
+    : [stampedItem, ...localInv];
+
   localStorage.setItem('inventory_items', JSON.stringify(updatedLocal));
   localStorage.setItem('spare_parts', JSON.stringify(updatedLocal));
+  localStorage.setItem('local_inventory', JSON.stringify(updatedLocal));
 
-  // 2. Save to master_cloud_cache
+  // 2. Save to master_store
   const store = await fetchMasterStore();
   const existing = (store.inventory || []).filter(i => i && typeof i === 'object');
   const exists = existing.some(isMatchItem);
-  let updated = existing;
-  if (!exists) {
-    updated = [stampedItem, ...existing];
-  } else {
-    updated = existing.map(i => isMatchItem(i) ? { ...i, ...stampedItem } : i);
-  }
+  let updated = exists 
+    ? existing.map(i => isMatchItem(i) ? { ...i, ...stampedItem } : i)
+    : [stampedItem, ...existing];
+
   await saveMasterStore({ ...store, inventory: updated });
+
+  try {
+    window.dispatchEvent(new Event('storage'));
+    window.dispatchEvent(new Event('master_store_updated'));
+    window.dispatchEvent(new Event('inventory_updated'));
+  } catch (e) {}
 }
 
 export async function moveToRecycleBin(trashObj, inventoryItem) {
@@ -1539,63 +1545,116 @@ export async function atomicDeductInventoryForSale(saleItems = []) {
 
   const store = await fetchMasterStore();
   const existingInv = (store.inventory || []).filter(i => i && typeof i === 'object');
+  const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
 
-  const itemQtyMap = new Map();
-  saleItems.forEach(it => {
-    const key = String(it.id || it.item_id || it.part_name || '').toLowerCase().trim();
-    const qty = parseInt(it.quantity || it.qty || 1, 10);
-    if (key) {
-      itemQtyMap.set(key, (itemQtyMap.get(key) || 0) + qty);
+  // Merge map of all inventory
+  const allMap = new Map();
+  [...existingInv, ...localInv].forEach(it => {
+    if (it && (it.id || it.part_name || it.item_name || it.name)) {
+      const key = String(it.id || it.part_name || it.item_name || it.name);
+      allMap.set(key, it);
     }
   });
 
-  const updatedInv = existingInv.map(invItem => {
-    const idKey = String(invItem.id || '').toLowerCase().trim();
-    const nameKey = String(invItem.item_name || invItem.name || '').toLowerCase().trim();
-    const deductQty = itemQtyMap.get(idKey) || itemQtyMap.get(nameKey) || 0;
+  const baseInv = Array.from(allMap.values());
 
-    if (deductQty > 0) {
-      const curStock = parseInt(invItem.current_stock || invItem.stock_quantity || invItem.quantity || 0, 10);
-      const newStock = Math.max(0, curStock - deductQty);
+  const updatedInv = baseInv.map(invItem => {
+    if (!invItem) return invItem;
+    const invId = String(invItem.id || '').toLowerCase().trim();
+    const invRawName = String(invItem.part_name || invItem.item_name || invItem.name || '').trim();
+    const invNorm = invRawName.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    // Check if any saleItem matches this invItem
+    let matchedQty = 0;
+    saleItems.forEach(sItem => {
+      if (!sItem) return;
+      const sId = String(sItem.id || sItem.item_id || '').toLowerCase().trim();
+      const sRawName = String(sItem.part_name || sItem.item_name || sItem.name || '').trim();
+      const sNorm = sRawName.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+      const isMatch = (sId && invId && sId === invId) || (sNorm && invNorm && sNorm === invNorm);
+      if (isMatch) {
+        matchedQty += parseInt(sItem.quantity || sItem.qty || 1, 10);
+      }
+    });
+
+    if (matchedQty > 0) {
+      const curStock = parseInt(invItem.current_stock !== undefined ? invItem.current_stock : (invItem.stock_quantity !== undefined ? invItem.stock_quantity : (invItem.quantity !== undefined ? invItem.quantity : 0)), 10);
+      const newStock = Math.max(0, curStock - matchedQty);
       return {
         ...invItem,
         current_stock: newStock,
         stock_quantity: newStock,
-        quantity: newStock
+        quantity: newStock,
+        updated_at: new Date().toISOString()
       };
     }
     return invItem;
   });
 
+  localStorage.setItem('inventory_items', JSON.stringify(updatedInv));
+  localStorage.setItem('spare_parts', JSON.stringify(updatedInv));
   localStorage.setItem('local_inventory', JSON.stringify(updatedInv));
   await saveMasterStore({ ...store, inventory: updatedInv });
+
+  try {
+    window.dispatchEvent(new Event('storage'));
+    window.dispatchEvent(new Event('master_store_updated'));
+    window.dispatchEvent(new Event('inventory_updated'));
+  } catch (e) {}
 }
 
 export async function atomicAddInventoryItem(itemObj) {
   if (!itemObj || typeof itemObj !== 'object') return;
   const store = await fetchMasterStore();
   const existingInv = (store.inventory || []).filter(i => i && typeof i === 'object');
+  const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
+
+  const allMap = new Map();
+  [...existingInv, ...localInv].forEach(it => {
+    if (it && (it.id || it.part_name || it.item_name || it.name)) {
+      const key = String(it.id || it.part_name || it.item_name || it.name);
+      allMap.set(key, it);
+    }
+  });
 
   const newId = itemObj.id || `item_${Date.now()}`;
+  const rawName = String(itemObj.part_name || itemObj.item_name || itemObj.name || 'Spare Part').trim();
+  const priceVal = parseFloat(itemObj.price || itemObj.unit_price || itemObj.selling_price || 0);
+  const stockVal = parseInt(itemObj.current_stock || itemObj.stock_quantity || itemObj.quantity || 0, 10);
+
   const newItem = {
     id: newId,
-    item_name: itemObj.item_name || itemObj.name || 'Spare Part',
-    name: itemObj.item_name || itemObj.name || 'Spare Part',
+    part_name: rawName,
+    item_name: rawName,
+    name: rawName,
     part_number: itemObj.part_number || '',
-    category: itemObj.category || 'Spare Parts',
+    category: itemObj.category || 'General',
     cost_price: parseFloat(itemObj.cost_price || 0),
-    unit_price: parseFloat(itemObj.unit_price || itemObj.selling_price || itemObj.price || 0),
-    selling_price: parseFloat(itemObj.unit_price || itemObj.selling_price || itemObj.price || 0),
-    price: parseFloat(itemObj.unit_price || itemObj.selling_price || itemObj.price || 0),
-    current_stock: parseInt(itemObj.current_stock || itemObj.stock_quantity || itemObj.quantity || 0, 10),
-    stock_quantity: parseInt(itemObj.current_stock || itemObj.stock_quantity || itemObj.quantity || 0, 10),
-    quantity: parseInt(itemObj.current_stock || itemObj.stock_quantity || itemObj.quantity || 0, 10),
+    unit_price: priceVal,
+    selling_price: priceVal,
+    price: priceVal,
+    current_stock: stockVal,
+    stock_quantity: stockVal,
+    quantity: stockVal,
     min_stock_alert: parseInt(itemObj.min_stock_alert || itemObj.min_stock || 5, 10),
-    created_at: new Date().toISOString()
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
   };
 
-  const updatedInv = [newItem, ...existingInv.filter(i => String(i.id) !== String(newId))];
+  const currentList = Array.from(allMap.values()).filter(i => String(i.id) !== String(newId));
+  const updatedInv = [newItem, ...currentList];
+
+  localStorage.setItem('inventory_items', JSON.stringify(updatedInv));
+  localStorage.setItem('spare_parts', JSON.stringify(updatedInv));
   localStorage.setItem('local_inventory', JSON.stringify(updatedInv));
   await saveMasterStore({ ...store, inventory: updatedInv });
+
+  try {
+    window.dispatchEvent(new Event('storage'));
+    window.dispatchEvent(new Event('master_store_updated'));
+    window.dispatchEvent(new Event('inventory_updated'));
+  } catch (e) {}
+
   return newItem;
 }

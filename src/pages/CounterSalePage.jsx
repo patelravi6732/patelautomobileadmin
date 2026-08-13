@@ -1657,8 +1657,13 @@ Kindly clear your pending balance at your earliest convenience.
                     
                     <div className="flex justify-between items-start">
                       <div>
-                        <h4 className="font-bold text-slate-900 text-xs sm:text-sm font-poppins">{debtor.customer_name}</h4>
-                        <span className="font-mono text-slate-500 text-[11px] block">{debtor.customer_phone || debtor.phone}</span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <h4 className="font-bold text-slate-900 text-xs sm:text-sm font-poppins">{debtor.customer_name}</h4>
+                          <span className="text-[10px] bg-slate-200/80 text-slate-600 px-1.5 py-0.5 rounded font-medium">
+                            {formatDateDMY(debtor.created_at || debtor.date || Date.now())}
+                          </span>
+                        </div>
+                        <span className="font-mono text-slate-500 text-[11px] block mt-0.5">{debtor.customer_phone || debtor.phone}</span>
                       </div>
 
                       <div className="text-right">
@@ -1668,6 +1673,13 @@ Kindly clear your pending balance at your earliest convenience.
                         </span>
                       </div>
                     </div>
+
+                    {debtor.items_summary && (
+                      <div className="text-[11px] text-slate-500 bg-white px-2.5 py-1.5 rounded-lg border border-slate-200/60 truncate flex items-center gap-1">
+                        <Package className="w-3 h-3 text-slate-400 shrink-0" />
+                        <span className="truncate">{debtor.items_summary}</span>
+                      </div>
+                    )}
 
                     <div className="text-xs text-slate-600 bg-white p-2.5 rounded-xl border border-slate-200/70 space-y-1">
                       <div className="flex justify-between text-[10px] sm:text-[11px]">

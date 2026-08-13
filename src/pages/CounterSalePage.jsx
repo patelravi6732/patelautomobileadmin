@@ -819,13 +819,15 @@ export default function CounterSalePage() {
   // Record Khata Payment
   const handleConfirmRecordPayment = async (e) => {
     e.preventDefault();
+    const maxDue = parseFloat(paymentModal.debtor?.pending_amount || 0);
     const numAmt = parseFloat(paymentModal.amount || 0);
     if (numAmt <= 0) {
       alert('Please enter a valid payment amount!');
       return;
     }
-    if (numAmt > paymentModal.debtor.pending_amount) {
-      alert(`Payment amount cannot exceed pending dues of ₹${paymentModal.debtor.pending_amount}!`);
+    if (numAmt > maxDue) {
+      alert(`⚠️ Payment amount (₹${numAmt.toFixed(2)}) cannot exceed remaining pending dues of ₹${maxDue.toFixed(2)}!`);
+      setPaymentModal(prev => ({ ...prev, amount: String(maxDue) }));
       return;
     }
 
@@ -1399,11 +1401,18 @@ Kindly clear your pending balance at your earliest convenience.
                     </div>
                     <input
                       type="number"
-                      step="1"
+                      step="any"
                       min="0"
                       max={cartNetTotal}
                       value={paidAmount}
-                      onChange={(e) => setPaidAmount(e.target.value)}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        if (!isNaN(val) && val > cartNetTotal) {
+                          setPaidAmount(String(cartNetTotal));
+                        } else {
+                          setPaidAmount(e.target.value);
+                        }
+                      }}
                       className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm sm:text-base font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
                     />
                   </div>
@@ -1925,15 +1934,35 @@ Kindly clear your pending balance at your earliest convenience.
               </div>
 
               <div>
-                <label className="block text-[10px] sm:text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  PAYMENT AMOUNT (₹) *
-                </label>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="block text-[10px] sm:text-xs font-bold text-slate-700 uppercase tracking-wider">
+                    PAYMENT AMOUNT (₹) *
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentModal(prev => ({ ...prev, amount: String(parseFloat(prev.debtor?.pending_amount || 0)) }))}
+                    className="text-[10px] font-bold text-emerald-600 hover:text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded cursor-pointer transition-colors"
+                  >
+                    Full Pay: ₹{parseFloat(paymentModal.debtor?.pending_amount || 0).toFixed(2)}
+                  </button>
+                </div>
                 <input
                   type="number"
-                  step="1"
+                  step="any"
+                  min="1"
+                  max={parseFloat(paymentModal.debtor?.pending_amount || 0)}
                   required
+                  placeholder={`Max ₹${parseFloat(paymentModal.debtor?.pending_amount || 0).toFixed(2)}`}
                   value={paymentModal.amount}
-                  onChange={(e) => setPaymentModal({ ...paymentModal, amount: e.target.value })}
+                  onChange={(e) => {
+                    const maxDue = parseFloat(paymentModal.debtor?.pending_amount || 0);
+                    const val = parseFloat(e.target.value);
+                    if (!isNaN(val) && val > maxDue) {
+                      setPaymentModal(prev => ({ ...prev, amount: String(maxDue) }));
+                    } else {
+                      setPaymentModal(prev => ({ ...prev, amount: e.target.value }));
+                    }
+                  }}
                   className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs sm:text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 />
               </div>
@@ -1944,7 +1973,7 @@ Kindly clear your pending balance at your earliest convenience.
                 </label>
                 <select
                   value={paymentModal.paymentMode}
-                  onChange={(e) => setPaymentMode(e.target.value)}
+                  onChange={(e) => setPaymentModal(prev => ({ ...prev, paymentMode: e.target.value }))}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none"
                 >
                   <option value="CASH">Cash 💵</option>

@@ -1163,21 +1163,26 @@ Kindly clear your pending balance at your earliest convenience.
                     </div>
                   ) : (
                     <div className="space-y-2 max-h-44 overflow-y-auto pr-0.5">
-                      {cartItems.map((item) => {
+                      {cartItems.map((item, idx) => {
+                        if (!item) return null;
+                        const itemPrice = parseFloat(item.selling_price || item.unit_price || item.price || 0);
+                        const qty = parseInt(item.quantity || 1, 10);
+                        const itemTotal = itemPrice * qty;
                         const isConfirmed = item.status === 'CONFIRMED';
+                        const itemKey = item.id || `citem_${idx}`;
+                        const rawName = item.part_name || item.item_name || 'Spare Part';
+
                         return (
-                          <div key={item.id} className="p-2.5 sm:p-3 bg-slate-50 rounded-xl sm:rounded-2xl border border-slate-200/80 flex items-center justify-between gap-2.5">
+                          <div key={itemKey} className="p-2.5 sm:p-3 bg-slate-50 rounded-xl sm:rounded-2xl border border-slate-200/80 flex items-center justify-between gap-2.5">
                             <div className="flex-1 min-w-0">
-                              <h5 className="text-xs font-bold text-slate-900 truncate">{item.part_name || item.item_name}</h5>
+                              <h5 className="text-xs font-bold text-slate-900 truncate">{rawName}</h5>
                               <div className="flex items-center gap-1.5 mt-0.5">
-                                <span className="text-[10px] sm:text-[11px] font-mono text-slate-500">₹{item.selling_price.toFixed(2)}</span>
-                                <span className={`text-[9px] sm:text-[10px] font-bold px-1.5 py-0.2 rounded font-mono ${
-                                  isConfirmed 
-                                    ? 'text-emerald-700 bg-emerald-100' 
-                                    : 'text-amber-700 bg-amber-100 animate-pulse'
-                                }`}>
-                                  {isConfirmed ? '✓ Confirmed' : '⏳ Staged'}
-                                </span>
+                                <span className="text-[10px] sm:text-[11px] font-mono text-slate-500">₹{itemPrice.toFixed(2)}</span>
+                                {isConfirmed && (
+                                  <span className="text-[9px] sm:text-[10px] font-bold px-1.5 py-0.2 rounded font-mono text-emerald-700 bg-emerald-100">
+                                    ✓ Confirmed
+                                  </span>
+                                )}
                               </div>
                             </div>
 
@@ -1185,29 +1190,29 @@ Kindly clear your pending balance at your earliest convenience.
                             <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-1.5 py-0.5">
                               <button
                                 type="button"
-                                onClick={() => handleUpdateQty(item.id, item.quantity - 1)}
-                                className="text-slate-500 hover:text-rose-600 font-bold px-1 text-sm"
+                                onClick={() => handleUpdateQty(itemKey, qty - 1)}
+                                className="text-slate-500 hover:text-rose-600 font-bold px-1 text-sm cursor-pointer"
                               >
                                 -
                               </button>
-                              <span className="text-xs font-mono font-bold w-5 text-center">{item.quantity}</span>
+                              <span className="text-xs font-mono font-bold w-5 text-center">{qty}</span>
                               <button
                                 type="button"
-                                onClick={() => handleUpdateQty(item.id, item.quantity + 1)}
-                                className="text-slate-500 hover:text-emerald-600 font-bold px-1 text-sm"
+                                onClick={() => handleUpdateQty(itemKey, qty + 1)}
+                                className="text-slate-500 hover:text-emerald-600 font-bold px-1 text-sm cursor-pointer"
                               >
                                 +
                               </button>
                             </div>
 
                             <span className="text-xs font-black font-mono text-slate-900 w-14 sm:w-16 text-right">
-                              ₹{(item.selling_price * item.quantity).toFixed(2)}
+                              ₹{itemTotal.toFixed(2)}
                             </span>
 
                             <button
                               type="button"
-                              onClick={() => handleRemoveFromCart(item.id)}
-                              className="text-slate-400 hover:text-rose-600 p-1 transition-colors"
+                              onClick={() => handleRemoveFromCart(itemKey)}
+                              className="text-slate-400 hover:text-rose-600 p-1 transition-colors cursor-pointer"
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>

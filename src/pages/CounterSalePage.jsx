@@ -818,21 +818,25 @@ Kindly clear your pending balance at your earliest convenience.
     window.open(`https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
-  // Stats Calculations
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-
+  // Stats Calculations (100% Crash-Proof)
   const todaySalesTotal = useMemo(() => {
+    if (!Array.isArray(invoices)) return 0;
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
     return invoices
-      .filter(i => new Date(i.created_at || i.date) >= todayStart)
-      .reduce((sum, i) => sum + parseFloat(i.paid_amount || i.net_total || 0), 0);
+      .filter(i => i && typeof i === 'object' && new Date(i.created_at || i.date || 0) >= startOfDay)
+      .reduce((sum, i) => sum + (parseFloat(i.paid_amount || i.net_total || i.total_amount || 0) || 0), 0);
   }, [invoices]);
 
   const totalKhataPending = useMemo(() => {
+    if (!Array.isArray(khataDebtors)) return 0;
     return khataDebtors
-      .filter(k => k.status !== 'PAID' && parseFloat(k.pending_amount || 0) > 0)
-      .reduce((sum, k) => sum + parseFloat(k.pending_amount || 0), 0);
+      .filter(k => k && typeof k === 'object' && k.status !== 'PAID' && parseFloat(k.pending_amount || 0) > 0)
+      .reduce((sum, k) => sum + (parseFloat(k.pending_amount || 0) || 0), 0);
   }, [khataDebtors]);
+
+  const safeInvoicesCount = useMemo(() => Array.isArray(invoices) ? invoices.length : 0, [invoices]);
+  const safeKhataCount = useMemo(() => Array.isArray(khataDebtors) ? khataDebtors.filter(k => k && parseFloat(k.pending_amount || 0) > 0).length : 0, [khataDebtors]);
 
   return (
     <div className="space-y-4 sm:space-y-6 max-w-7xl mx-auto pb-16 sm:pb-8">
@@ -885,7 +889,7 @@ Kindly clear your pending balance at your earliest convenience.
               : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          <Receipt className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> 2. Invoices ({invoices.length})
+          <Receipt className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> 2. Invoices ({safeInvoicesCount})
         </button>
 
         <button
@@ -896,7 +900,7 @@ Kindly clear your pending balance at your earliest convenience.
               : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          <BookOpen className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> 3. Khata Book ({khataDebtors.filter(k => parseFloat(k.pending_amount || 0) > 0).length})
+          <BookOpen className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> 3. Khata Book ({safeKhataCount})
         </button>
       </div>
 

@@ -580,7 +580,17 @@ export async function pushCloudInventoryItem(newItem) {
     return (newId && curId && newId === curId) || (newNorm && curNorm && newNorm === curNorm) || (newName && curName && newName === curName);
   };
 
-  // 1. Update all local storages
+  // 1. Remove from local deleted_ids and cloud deletedIds
+  const localDeleted = JSON.parse(localStorage.getItem('deleted_ids') || '[]');
+  const cleanedLocalDeleted = localDeleted.filter(d => {
+    if (!d) return false;
+    const dStr = String(d).toLowerCase().trim();
+    const dNorm = dStr.replace(/[^a-z0-9]/g, '');
+    return dStr !== newId.toLowerCase() && dStr !== newName && dNorm !== newNorm;
+  });
+  localStorage.setItem('deleted_ids', JSON.stringify(cleanedLocalDeleted));
+
+  // 2. Update all local storages
   const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
   const existsLocal = localInv.some(isMatchItem);
   let updatedLocal = existsLocal 
@@ -591,15 +601,27 @@ export async function pushCloudInventoryItem(newItem) {
   localStorage.setItem('spare_parts', JSON.stringify(updatedLocal));
   localStorage.setItem('local_inventory', JSON.stringify(updatedLocal));
 
-  // 2. Save to master_store
+  // 3. Save to master_store
   const store = await fetchMasterStore();
+  const cloudDeleted = Array.isArray(store.deletedIds) ? store.deletedIds : [];
+  const cleanedCloudDeleted = cloudDeleted.filter(d => {
+    if (!d) return false;
+    const dStr = String(d).toLowerCase().trim();
+    const dNorm = dStr.replace(/[^a-z0-9]/g, '');
+    return dStr !== newId.toLowerCase() && dStr !== newName && dNorm !== newNorm;
+  });
+
   const existing = (store.inventory || []).filter(i => i && typeof i === 'object');
   const exists = existing.some(isMatchItem);
   let updated = exists 
     ? existing.map(i => isMatchItem(i) ? { ...i, ...stampedItem } : i)
     : [stampedItem, ...existing];
 
-  await saveMasterStore({ ...store, inventory: updated });
+  await saveMasterStore({
+    ...store,
+    inventory: updated,
+    deletedIds: cleanedCloudDeleted
+  });
 
   try {
     window.dispatchEvent(new Event('storage'));
@@ -1659,22 +1681,40 @@ export async function atomicAddInventoryItem(itemObj) {
   const existingInv = (store.inventory || []).filter(i => i && typeof i === 'object');
   const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
 
-  const allMap = new Map();
-  [...localInv, ...existingInv].forEach(it => {
-    if (it && (it.id || it.part_name || it.item_name || it.name)) {
-      const rawName = String(it.part_name || it.item_name || it.name || '').trim();
-      const normKey = rawName.toLowerCase().replace(/[^a-z0-9]/g, '') || String(it.id || '').toLowerCase();
-      if (normKey) {
-        allMap.set(normKey, it);
-      }
-    }
-  });
-
   const rawName = String(itemObj.part_name || itemObj.item_name || itemObj.name || 'Spare Part').trim();
   const normKey = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
   const newId = itemObj.id || `inv_${normKey || Date.now()}`;
   const priceVal = parseFloat(itemObj.price || itemObj.unit_price || itemObj.selling_price || 0);
   const stockVal = parseInt(itemObj.current_stock || itemObj.stock_quantity || itemObj.quantity || 0, 10);
+
+  // 1. Remove from local deleted_ids and cloud deletedIds
+  const localDeleted = JSON.parse(localStorage.getItem('deleted_ids') || '[]');
+  const cleanedLocalDeleted = localDeleted.filter(d => {
+    if (!d) return false;
+    const dStr = String(d).toLowerCase().trim();
+    const dNorm = dStr.replace(/[^a-z0-9]/g, '');
+    return dStr !== newId.toLowerCase() && dStr !== rawName.toLowerCase() && dNorm !== normKey;
+  });
+  localStorage.setItem('deleted_ids', JSON.stringify(cleanedLocalDeleted));
+
+  const cloudDeleted = Array.isArray(store.deletedIds) ? store.deletedIds : [];
+  const cleanedCloudDeleted = cloudDeleted.filter(d => {
+    if (!d) return false;
+    const dStr = String(d).toLowerCase().trim();
+    const dNorm = dStr.replace(/[^a-z0-9]/g, '');
+    return dStr !== newId.toLowerCase() && dStr !== rawName.toLowerCase() && dNorm !== normKey;
+  });
+
+  const allMap = new Map();
+  [...localInv, ...existingInv].forEach(it => {
+    if (it && (it.id || it.part_name || it.item_name || it.name)) {
+      const itRaw = String(it.part_name || it.item_name || it.name || '').trim();
+      const itKey = itRaw.toLowerCase().replace(/[^a-z0-9]/g, '') || String(it.id || '').toLowerCase();
+      if (itKey) {
+        allMap.set(itKey, it);
+      }
+    }
+  });
 
   const newItem = {
     id: newId,
@@ -1701,7 +1741,12 @@ export async function atomicAddInventoryItem(itemObj) {
   localStorage.setItem('inventory_items', JSON.stringify(updatedInv));
   localStorage.setItem('spare_parts', JSON.stringify(updatedInv));
   localStorage.setItem('local_inventory', JSON.stringify(updatedInv));
-  await saveMasterStore({ ...store, inventory: updatedInv });
+  
+  await saveMasterStore({
+    ...store,
+    inventory: updatedInv,
+    deletedIds: cleanedCloudDeleted
+  });
 
   try {
     window.dispatchEvent(new Event('storage'));

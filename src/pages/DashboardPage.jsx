@@ -139,12 +139,31 @@ const computeInstantStats = () => {
         return acc + paidVal;
       }, 0);
 
-    const totalPendingDues = allInvoices.reduce((acc, inv) => {
+    // 1. Workshop Services Pending Dues
+    const workshopPendingDues = allInvoices.reduce((acc, inv) => {
       const grandVal = parseFloat(inv.grand_total || inv.total_amount || 0);
       const rawPaid = parseFloat(inv.paid_amount !== undefined && inv.paid_amount !== null ? inv.paid_amount : (inv.received_amount || (inv.payment_status === 'PAID' ? grandVal : 0)));
       const paidVal = Math.min(grandVal, Math.max(0, rawPaid));
-      return acc + Math.max(0, grandVal - paidVal);
+      const pendingVal = inv.pending_amount !== undefined ? parseFloat(inv.pending_amount) : Math.max(0, grandVal - paidVal);
+      return acc + (isNaN(pendingVal) ? 0 : Math.max(0, pendingVal));
     }, 0);
+
+    // 2. Counter Khata Debtors Pending Dues
+    const localCounterKhata = JSON.parse(localStorage.getItem('local_counter_khata') || '[]');
+    const cleanCounterKhata = localCounterKhata.filter(k => k && k.id && !isDeleted(k.id) && !isDeleted(String(k.id).replace(/^ckhata_/, '')));
+    const counterKhataPendingDues = cleanCounterKhata
+      .filter(k => k && String(k.status).toUpperCase() !== 'PAID' && parseFloat(k.pending_amount || 0) > 0)
+      .reduce((sum, k) => sum + (parseFloat(k.pending_amount || 0) || 0), 0);
+
+    // 3. Khata Book (General Khata) Pending Dues
+    const localKhataEntries = JSON.parse(localStorage.getItem('khata_entries') || '[]');
+    const cleanKhataEntries = localKhataEntries.filter(k => k && k.id && !isDeleted(k.id) && !isDeleted(String(k.id).replace(/^khata_/, '')));
+    const generalKhataPendingDues = cleanKhataEntries
+      .filter(k => k && String(k.status).toUpperCase() !== 'PAID' && parseFloat(k.pending_amount || 0) > 0)
+      .reduce((sum, k) => sum + (parseFloat(k.pending_amount || 0) || 0), 0);
+
+    // TOTAL PENDING PAYMENT DUES (Workshop + Counter Khata + Khata Book)
+    const totalPendingDues = workshopPendingDues + counterKhataPendingDues + generalKhataPendingDues;
 
     const cleanInv = localInventory.filter(i => i && !isDeleted(i.id) && !isDeleted(i.part_name));
     const lowStockItems = cleanInv.filter(i => (parseInt(i.current_stock || 0, 10)) <= (parseInt(i.min_stock_alert !== undefined ? i.min_stock_alert : 2, 10)));
@@ -166,6 +185,8 @@ const computeInstantStats = () => {
       completed_services: completedServices,
       pending_services: pendingServices,
       pending_payments: totalPendingDues,
+      workshop_pending: workshopPendingDues,
+      counter_pending: counterKhataPendingDues + generalKhataPendingDues,
       today_revenue: todayRevenue,
       counter_today_revenue: counterTodayRevenue,
       counter_total_revenue: counterTotalRevenue,
@@ -209,10 +230,18 @@ export default function DashboardPage() {
     const handleStorage = () => setStats(computeInstantStats());
     window.addEventListener('storage', handleStorage);
     window.addEventListener('master_store_updated', handleStorage);
+    window.addEventListener('khata_updated', handleStorage);
+    window.addEventListener('counter_khata_updated', handleStorage);
+    window.addEventListener('counter_sales_updated', handleStorage);
+    window.addEventListener('inventory_updated', handleStorage);
     return () => {
       clearInterval(interval);
       window.removeEventListener('storage', handleStorage);
       window.removeEventListener('master_store_updated', handleStorage);
+      window.removeEventListener('khata_updated', handleStorage);
+      window.removeEventListener('counter_khata_updated', handleStorage);
+      window.removeEventListener('counter_sales_updated', handleStorage);
+      window.removeEventListener('inventory_updated', handleStorage);
     };
   }, []);
 

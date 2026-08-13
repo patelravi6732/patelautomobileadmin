@@ -633,6 +633,9 @@ export default function CounterSalePage() {
           customer_phone: customerPhone.trim(),
           phone: customerPhone.trim(),
           vehicle_number: vehicleNumber.trim(),
+          subtotal: cartSubtotal,
+          discount: numericDiscount,
+          discount_amount: numericDiscount,
           total_amount: cartNetTotal,
           paid_amount: finalPaid,
           pending_amount: finalPending,
@@ -1560,8 +1563,13 @@ Kindly clear your pending balance at your earliest convenience.
                           <td className="py-3 px-3.5 text-slate-600 max-w-[200px] truncate">
                             {(inv.items || []).map(i => `${i.part_name || i.item_name} (x${i.quantity})`).join(', ')}
                           </td>
-                          <td className="py-3 px-3.5 text-right font-mono font-black text-slate-900 whitespace-nowrap">
-                            ₹{netTot.toFixed(2)}
+                          <td className="py-3 px-3.5 text-right whitespace-nowrap">
+                            <span className="font-mono font-black text-slate-900 block">₹{netTot.toFixed(2)}</span>
+                            {parseFloat(inv.discount || inv.discount_amount || 0) > 0 && (
+                              <span className="inline-flex items-center text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded mt-0.5 border border-emerald-200">
+                                Disc: -₹{parseFloat(inv.discount || inv.discount_amount || 0).toFixed(2)}
+                              </span>
+                            )}
                           </td>
                           <td className="py-3 px-3.5 text-right whitespace-nowrap">
                             <span className="font-mono text-emerald-600 font-black block">₹{paidAmt.toFixed(2)}</span>
@@ -1701,9 +1709,16 @@ Kindly clear your pending balance at your earliest convenience.
                     )}
 
                     <div className="text-xs text-slate-600 bg-white p-2.5 rounded-xl border border-slate-200/70 space-y-1">
-                      <div className="flex justify-between text-[10px] sm:text-[11px]">
+                      <div className="flex justify-between items-center text-[10px] sm:text-[11px]">
                         <span className="text-slate-400">Total Purchase:</span>
-                        <span className="font-mono font-bold">₹{parseFloat(debtor.total_amount || 0).toFixed(2)}</span>
+                        <div className="text-right">
+                          <span className="font-mono font-bold block">₹{parseFloat(debtor.total_amount || 0).toFixed(2)}</span>
+                          {parseFloat(debtor.discount || debtor.discount_amount || 0) > 0 && (
+                            <span className="text-[9px] font-bold text-emerald-600 block">
+                              (Disc: -₹{parseFloat(debtor.discount || debtor.discount_amount || 0).toFixed(2)})
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <div className="flex justify-between text-[10px] sm:text-[11px]">
                         <span className="text-slate-400">Paid So Far:</span>

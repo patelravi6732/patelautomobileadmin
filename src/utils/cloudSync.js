@@ -1394,3 +1394,200 @@ export async function fetchCloudAuditLogs() {
   });
   return Array.from(map.values()).sort((a, b) => new Date(b.timestamp || Date.now()) - new Date(a.timestamp || Date.now()));
 }
+
+// ---------------- COUNTER SALES & COUNTER KHATA ----------------
+export async function fetchCloudCounterSales() {
+  const store = await fetchMasterStore();
+  const cloudSales = (store.counterSales || []).filter(s => s && typeof s === 'object');
+  const localSales = JSON.parse(localStorage.getItem('local_counter_sales') || '[]');
+
+  const map = new Map();
+  [...cloudSales, ...localSales].forEach(s => {
+    if (s && s.id) {
+      map.set(String(s.id), s);
+    }
+  });
+  return Array.from(map.values()).sort((a, b) => new Date(b.created_at || b.date || 0) - new Date(a.created_at || a.date || 0));
+}
+
+export async function pushCloudCounterSale(saleObj) {
+  if (!saleObj || typeof saleObj !== 'object') return;
+  const localSales = JSON.parse(localStorage.getItem('local_counter_sales') || '[]');
+  const filteredLocal = localSales.filter(s => String(s.id) !== String(saleObj.id));
+  localStorage.setItem('local_counter_sales', JSON.stringify([saleObj, ...filteredLocal]));
+
+  const store = await fetchMasterStore();
+  const existing = (store.counterSales || []).filter(s => s && typeof s === 'object');
+  const filteredCloud = existing.filter(s => String(s.id) !== String(saleObj.id));
+  await saveMasterStore({ ...store, counterSales: [saleObj, ...filteredCloud] });
+}
+
+export async function deleteCloudCounterSale(saleId) {
+  if (!saleId) return;
+  const strId = String(saleId);
+  const localSales = JSON.parse(localStorage.getItem('local_counter_sales') || '[]');
+  const updatedLocal = localSales.filter(s => String(s.id) !== strId);
+  localStorage.setItem('local_counter_sales', JSON.stringify(updatedLocal));
+
+  const store = await fetchMasterStore();
+  const existing = (store.counterSales || []).filter(s => s && typeof s === 'object');
+  const updatedCloud = existing.filter(s => String(s.id) !== strId);
+  await saveMasterStore({ ...store, counterSales: updatedCloud });
+}
+
+export async function fetchCloudCounterKhata() {
+  const store = await fetchMasterStore();
+  const cloudKhata = (store.counterKhata || []).filter(k => k && typeof k === 'object');
+  const localKhata = JSON.parse(localStorage.getItem('local_counter_khata') || '[]');
+
+  const map = new Map();
+  [...cloudKhata, ...localKhata].forEach(k => {
+    if (k && k.id) {
+      map.set(String(k.id), k);
+    }
+  });
+  return Array.from(map.values()).sort((a, b) => new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0));
+}
+
+export async function pushCloudCounterKhata(khataObj) {
+  if (!khataObj || typeof khataObj !== 'object') return;
+  const localKhata = JSON.parse(localStorage.getItem('local_counter_khata') || '[]');
+  const filteredLocal = localKhata.filter(k => String(k.id) !== String(khataObj.id));
+  localStorage.setItem('local_counter_khata', JSON.stringify([khataObj, ...filteredLocal]));
+
+  const store = await fetchMasterStore();
+  const existing = (store.counterKhata || []).filter(k => k && typeof k === 'object');
+  const filteredCloud = existing.filter(k => String(k.id) !== String(khataObj.id));
+  await saveMasterStore({ ...store, counterKhata: [khataObj, ...filteredCloud] });
+}
+
+export async function atomicRecordCounterPayment(targetId, paymentAmount, paymentMode = 'CASH', adminName = 'Patel Automobiles') {
+  const numAmt = parseFloat(paymentAmount || 0);
+  if (numAmt <= 0) return;
+
+  const store = await fetchMasterStore();
+  const strId = String(targetId);
+
+  // 1. Update Counter Sales Invoices
+  let storeSales = (store.counterSales || []).map(s => {
+    if (!s) return s;
+    if (String(s.id) === strId || String(s.invoice_number) === strId) {
+      const curTotal = parseFloat(s.net_total || s.total_amount || s.grand_total || 0);
+      const curPaidOld = parseFloat(s.paid_amount || 0);
+      const curPaid = Math.min(curTotal, curPaidOld + numAmt);
+      const curPending = Math.max(0, curTotal - curPaid);
+      return {
+        ...s,
+        paid_amount: curPaid,
+        pending_amount: curPending,
+        payment_status: curPending === 0 ? 'PAID' : 'PARTIAL'
+      };
+    }
+    return s;
+  });
+
+  // 2. Update Counter Khata Book Debtors
+  let storeKhata = (store.counterKhata || []).map(k => {
+    if (!k) return k;
+    if (String(k.id) === strId || String(k.sale_id) === strId || String(k.invoice_number) === strId) {
+      const curTotal = parseFloat(k.total_amount || k.net_total || 0);
+      const curPaidOld = parseFloat(k.paid_amount || 0);
+      const curPaid = curPaidOld + numAmt;
+      const curPending = Math.max(0, curTotal - curPaid);
+      const paymentHistory = Array.isArray(k.payments) ? [...k.payments] : [];
+      paymentHistory.push({
+        id: `cpay_${Date.now()}`,
+        amount: numAmt,
+        payment_mode: paymentMode,
+        date: new Date().toISOString(),
+        recorded_by: adminName
+      });
+      return {
+        ...k,
+        paid_amount: curPaid,
+        pending_amount: curPending,
+        status: curPending === 0 ? 'CLEARED' : 'PENDING',
+        payments: paymentHistory,
+        updated_at: new Date().toISOString()
+      };
+    }
+    return k;
+  });
+
+  // Also update local storage
+  localStorage.setItem('local_counter_sales', JSON.stringify(storeSales));
+  localStorage.setItem('local_counter_khata', JSON.stringify(storeKhata));
+
+  await saveMasterStore({
+    ...store,
+    counterSales: storeSales,
+    counterKhata: storeKhata
+  });
+}
+
+// ---------------- ATOMIC INVENTORY DEDUCT & ADD FOR COUNTER SALE ----------------
+export async function atomicDeductInventoryForSale(saleItems = []) {
+  if (!Array.isArray(saleItems) || saleItems.length === 0) return;
+
+  const store = await fetchMasterStore();
+  const existingInv = (store.inventory || []).filter(i => i && typeof i === 'object');
+
+  const itemQtyMap = new Map();
+  saleItems.forEach(it => {
+    const key = String(it.id || it.item_id || it.part_name || '').toLowerCase().trim();
+    const qty = parseInt(it.quantity || it.qty || 1, 10);
+    if (key) {
+      itemQtyMap.set(key, (itemQtyMap.get(key) || 0) + qty);
+    }
+  });
+
+  const updatedInv = existingInv.map(invItem => {
+    const idKey = String(invItem.id || '').toLowerCase().trim();
+    const nameKey = String(invItem.item_name || invItem.name || '').toLowerCase().trim();
+    const deductQty = itemQtyMap.get(idKey) || itemQtyMap.get(nameKey) || 0;
+
+    if (deductQty > 0) {
+      const curStock = parseInt(invItem.current_stock || invItem.stock_quantity || invItem.quantity || 0, 10);
+      const newStock = Math.max(0, curStock - deductQty);
+      return {
+        ...invItem,
+        current_stock: newStock,
+        stock_quantity: newStock,
+        quantity: newStock
+      };
+    }
+    return invItem;
+  });
+
+  localStorage.setItem('local_inventory', JSON.stringify(updatedInv));
+  await saveMasterStore({ ...store, inventory: updatedInv });
+}
+
+export async function atomicAddInventoryItem(itemObj) {
+  if (!itemObj || typeof itemObj !== 'object') return;
+  const store = await fetchMasterStore();
+  const existingInv = (store.inventory || []).filter(i => i && typeof i === 'object');
+
+  const newId = itemObj.id || `item_${Date.now()}`;
+  const newItem = {
+    id: newId,
+    item_name: itemObj.item_name || itemObj.name || 'Spare Part',
+    name: itemObj.item_name || itemObj.name || 'Spare Part',
+    part_number: itemObj.part_number || '',
+    category: itemObj.category || 'Spare Parts',
+    cost_price: parseFloat(itemObj.cost_price || 0),
+    unit_price: parseFloat(itemObj.unit_price || itemObj.selling_price || itemObj.price || 0),
+    selling_price: parseFloat(itemObj.unit_price || itemObj.selling_price || itemObj.price || 0),
+    price: parseFloat(itemObj.unit_price || itemObj.selling_price || itemObj.price || 0),
+    current_stock: parseInt(itemObj.current_stock || itemObj.stock_quantity || itemObj.quantity || 0, 10),
+    stock_quantity: parseInt(itemObj.current_stock || itemObj.stock_quantity || itemObj.quantity || 0, 10),
+    quantity: parseInt(itemObj.current_stock || itemObj.stock_quantity || itemObj.quantity || 0, 10),
+    min_stock_alert: parseInt(itemObj.min_stock_alert || itemObj.min_stock || 5, 10),
+    created_at: new Date().toISOString()
+  };
+
+  const updatedInv = [newItem, ...existingInv.filter(i => String(i.id) !== String(newId))];
+  localStorage.setItem('local_inventory', JSON.stringify(updatedInv));
+  await saveMasterStore({ ...store, inventory: updatedInv });
+  return newItem;
+}

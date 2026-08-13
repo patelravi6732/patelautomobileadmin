@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { 
   Wrench, CheckCircle2, Clock, AlertTriangle, IndianRupee, 
-  ArrowUpRight, Package, Calendar, Activity, ChevronRight 
+  ArrowUpRight, Package, Calendar, Activity, ChevronRight, ShoppingBag 
 } from 'lucide-react';
 import API from '../services/api';
 import { fetchMasterStore, fetchCloudAdminProfiles, getCleanDeletedIds } from '../utils/cloudSync';
@@ -153,12 +153,21 @@ const computeInstantStats = () => {
       (a, b) => new Date(b.created_at || b.finished_at || Date.now()) - new Date(a.created_at || a.finished_at || Date.now())
     ).slice(0, 5);
 
+    const localCounterSales = JSON.parse(localStorage.getItem('local_counter_sales') || '[]');
+    const counterTodayRevenue = localCounterSales
+      .filter(s => isToday(s.created_at || s.date))
+      .reduce((sum, s) => sum + parseFloat(s.paid_amount || s.net_total || 0), 0);
+    const counterTotalRevenue = localCounterSales
+      .reduce((sum, s) => sum + parseFloat(s.paid_amount || s.net_total || 0), 0);
+
     return {
       today_services: todayServices,
       completed_services: completedServices,
       pending_services: pendingServices,
       pending_payments: totalPendingDues,
       today_revenue: todayRevenue,
+      counter_today_revenue: counterTodayRevenue,
+      counter_total_revenue: counterTotalRevenue,
       low_stock_count: lowStockItems.length,
       recent_jobs: recentJobs,
       low_stock_items: lowStockItems
@@ -170,6 +179,8 @@ const computeInstantStats = () => {
       pending_services: 0,
       pending_payments: 0,
       today_revenue: 0,
+      counter_today_revenue: 0,
+      counter_total_revenue: 0,
       low_stock_count: 0,
       recent_jobs: [],
       low_stock_items: []
@@ -216,8 +227,9 @@ export default function DashboardPage() {
     { title: "Today's Services", value: stats?.today_services || 0, icon: Wrench, color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-100" },
     { title: "Completed Services", value: stats?.completed_services || 0, icon: CheckCircle2, color: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-100" },
     { title: "Pending Services", value: stats?.pending_services || 0, icon: Clock, color: "text-amber-600", bg: "bg-amber-50", border: "border-amber-100" },
-    { title: "Pending Payments", value: `₹${(stats?.pending_payments || 0).toLocaleString('en-IN')}`, icon: IndianRupee, color: "text-purple-600", bg: "bg-purple-50", border: "border-purple-100" },
-    { title: "Today's Revenue", value: `₹${(stats?.today_revenue || 0).toLocaleString('en-IN')}`, icon: IndianRupee, color: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-100" },
+    { title: "Today's Service Revenue", value: `₹${(stats?.today_revenue || 0).toLocaleString('en-IN')}`, icon: IndianRupee, color: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-100" },
+    { title: "Today's Counter Sale", value: `₹${(stats?.counter_today_revenue || 0).toLocaleString('en-IN')}`, icon: ShoppingBag, color: "text-indigo-600", bg: "bg-indigo-50", border: "border-indigo-100" },
+    { title: "Pending Payments Dues", value: `₹${(stats?.pending_payments || 0).toLocaleString('en-IN')}`, icon: IndianRupee, color: "text-purple-600", bg: "bg-purple-50", border: "border-purple-100" },
     { title: "Low Stock Alert", value: `${stats?.low_stock_count || 0} Items`, icon: AlertTriangle, color: "text-red-600", bg: "bg-red-50", border: "border-red-100" },
   ];
 

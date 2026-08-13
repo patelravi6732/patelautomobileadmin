@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BarChart3, IndianRupee, Package, Users, TrendingUp, AlertCircle, Wrench } from 'lucide-react';
+import { BarChart3, IndianRupee, Package, Users, TrendingUp, AlertCircle, Wrench, ShoppingBag, PieChart } from 'lucide-react';
 import API from '../services/api';
 import { fetchCloudDeletedIds, fetchCloudInvoices, fetchCloudInventory } from '../utils/cloudSync';
 
@@ -7,7 +7,9 @@ const computeInstantReports = () => {
   try {
     const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
     const localInvoices = JSON.parse(localStorage.getItem('local_invoices') || '[]');
-    const localInventory = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+    const localInventory = JSON.parse(localStorage.getItem('local_inventory') || localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+    const localCounterSales = JSON.parse(localStorage.getItem('local_counter_sales') || '[]');
+    const localCounterKhata = JSON.parse(localStorage.getItem('local_counter_khata') || '[]');
     const deletedIds = JSON.parse(localStorage.getItem('deleted_ids') || '[]');
 
     const isDeleted = (id) => id && (deletedIds.includes(String(id)) || deletedIds.includes(String(id).replace(/^inv_/, '').replace(/^job_/, '')));
@@ -56,7 +58,6 @@ const computeInstantReports = () => {
 
     const allInvoices = Array.from(allMap.values());
     const now = new Date();
-    const todayISO = now.toISOString().split('T')[0];
     const currentMonth = now.getMonth();
     const currentYear = now.getFullYear();
 
@@ -102,53 +103,97 @@ const computeInstantReports = () => {
       return true;
     };
 
-    const dailyRevenue = allInvoices
+    // 1. Workshop Revenues
+    const workshopDailyRevenue = allInvoices
       .filter(inv => isToday(inv.created_at || inv.visit_date || inv.date))
-      .reduce((acc, inv) => {
-        const grandVal = parseFloat(inv.grand_total || inv.total_amount || 0);
-        const rawPaid = parseFloat(inv.paid_amount !== undefined && inv.paid_amount !== null ? inv.paid_amount : (inv.received_amount || (inv.payment_status === 'PAID' ? grandVal : 0)));
-        const paidVal = Math.min(grandVal, Math.max(0, rawPaid));
-        return acc + paidVal;
-      }, 0);
+      .reduce((acc, inv) => acc + parseFloat(inv.paid_amount || inv.grand_total || 0), 0);
 
-    const monthlyRevenue = allInvoices
+    const workshopMonthlyRevenue = allInvoices
       .filter(inv => isThisMonth(inv.created_at || inv.visit_date || inv.date))
-      .reduce((acc, inv) => {
-        const grandVal = parseFloat(inv.grand_total || inv.total_amount || 0);
-        const rawPaid = parseFloat(inv.paid_amount !== undefined && inv.paid_amount !== null ? inv.paid_amount : (inv.received_amount || (inv.payment_status === 'PAID' ? grandVal : 0)));
-        const paidVal = Math.min(grandVal, Math.max(0, rawPaid));
-        return acc + paidVal;
-      }, 0);
+      .reduce((acc, inv) => acc + parseFloat(inv.paid_amount || inv.grand_total || 0), 0);
 
+    const workshopTotalRevenue = allInvoices
+      .reduce((acc, inv) => acc + parseFloat(inv.paid_amount || inv.grand_total || 0), 0);
+
+    // 2. Counter Sales Revenues
+    const counterDailyRevenue = localCounterSales
+      .filter(s => isToday(s.created_at || s.date))
+      .reduce((acc, s) => acc + parseFloat(s.paid_amount || s.net_total || 0), 0);
+
+    const counterMonthlyRevenue = localCounterSales
+      .filter(s => isThisMonth(s.created_at || s.date))
+      .reduce((acc, s) => acc + parseFloat(s.paid_amount || s.net_total || 0), 0);
+
+    const counterTotalRevenue = localCounterSales
+      .reduce((acc, s) => acc + parseFloat(s.paid_amount || s.net_total || 0), 0);
+
+    // 3. Combined Total Revenues
+    const totalDailyRevenue = workshopDailyRevenue + counterDailyRevenue;
+    const totalMonthlyRevenue = workshopMonthlyRevenue + counterMonthlyRevenue;
+    const grandTotalRevenue = workshopTotalRevenue + counterTotalRevenue;
+
+    // 4. Inventory Valuation
     const cleanInv = localInventory.filter(i => i && !isDeleted(i.id) && !isDeleted(i.part_name));
     const inventoryValue = cleanInv.reduce((acc, item) => {
-      const price = parseFloat(item.price || 0);
-      const stock = parseInt(item.current_stock || 0, 10);
+      const price = parseFloat(item.selling_price || item.unit_price || item.price || 0);
+      const stock = parseInt(item.current_stock || item.stock_quantity || item.quantity || 0, 10);
       return acc + (price * stock);
     }, 0);
 
-    const totalPendingDues = allInvoices.reduce((acc, inv) => {
+    // 5. Total Pending Dues (Workshop + Counter Khata)
+    const workshopPending = allInvoices.reduce((acc, inv) => {
       const grandVal = parseFloat(inv.grand_total || inv.total_amount || 0);
       const rawPaid = parseFloat(inv.paid_amount !== undefined && inv.paid_amount !== null ? inv.paid_amount : (inv.received_amount || (inv.payment_status === 'PAID' ? grandVal : 0)));
       const paidVal = Math.min(grandVal, Math.max(0, rawPaid));
       return acc + Math.max(0, grandVal - paidVal);
     }, 0);
 
+    const counterPending = localCounterKhata
+      .filter(k => k && k.status !== 'CLEARED')
+      .reduce((acc, k) => acc + parseFloat(k.pending_amount || 0), 0);
+
+    const totalPendingDues = workshopPending + counterPending;
+
     return {
-      daily_revenue: dailyRevenue,
-      monthly_revenue: monthlyRevenue,
-      total_invoices: allInvoices.length,
+      daily_revenue: totalDailyRevenue,
+      monthly_revenue: totalMonthlyRevenue,
+      grand_total_revenue: grandTotalRevenue,
+      workshop_daily: workshopDailyRevenue,
+      workshop_monthly: workshopMonthlyRevenue,
+      workshop_total: workshopTotalRevenue,
+      workshop_invoices_count: allInvoices.length,
+      counter_daily: counterDailyRevenue,
+      counter_monthly: counterMonthlyRevenue,
+      counter_total: counterTotalRevenue,
+      counter_sales_count: localCounterSales.length,
+      total_invoices: allInvoices.length + localCounterSales.length,
       inventory_valuation: inventoryValue,
       total_inventory_value: inventoryValue,
+      total_inventory_items: cleanInv.length,
+      workshop_pending: workshopPending,
+      counter_pending: counterPending,
       total_pending_payments: totalPendingDues
     };
-  } catch {
+  } catch (err) {
+    console.error(err);
     return {
       daily_revenue: 0,
       monthly_revenue: 0,
+      grand_total_revenue: 0,
+      workshop_daily: 0,
+      workshop_monthly: 0,
+      workshop_total: 0,
+      workshop_invoices_count: 0,
+      counter_daily: 0,
+      counter_monthly: 0,
+      counter_total: 0,
+      counter_sales_count: 0,
       total_invoices: 0,
       inventory_valuation: 0,
       total_inventory_value: 0,
+      total_inventory_items: 0,
+      workshop_pending: 0,
+      counter_pending: 0,
       total_pending_payments: 0
     };
   }
@@ -185,8 +230,10 @@ export default function ReportsPage() {
     <div className="space-y-8">
       
       <div>
-        <h1 className="text-2xl font-bold text-slate-900 font-poppins">Garage Analytics & Business Reports</h1>
-        <p className="text-xs text-slate-500">Executive financial metrics, inventory valuation, and mechanic performance stats.</p>
+        <h1 className="text-2xl font-bold text-slate-900 font-poppins flex items-center gap-2.5">
+          <BarChart3 className="w-7 h-7 text-blue-600" /> Garage Analytics & Revenue Reports
+        </h1>
+        <p className="text-xs text-slate-500">Executive financial metrics, Workshop Services vs. Spare Parts Counter Sales, and inventory valuation.</p>
       </div>
 
       {loading ? (
@@ -194,40 +241,137 @@ export default function ReportsPage() {
       ) : (
         <div className="space-y-8">
           
-          {/* REVENUE & FINANCIAL STATS */}
+          {/* COMBINED EXECUTIVE FINANCIAL METRICS */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             
             <div className="bg-white p-6 rounded-3xl border border-slate-200/80 soft-shadow space-y-2">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">Daily Revenue</span>
-              <span className="text-2xl font-extrabold text-emerald-600 font-poppins block">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Today Total Revenue</span>
+              <span className="text-2xl font-black text-emerald-600 font-poppins block">
                 ₹{(reports?.daily_revenue || 0).toLocaleString('en-IN')}
               </span>
+              <span className="text-[11px] text-slate-400 font-medium block">
+                Workshop: ₹{(reports?.workshop_daily || 0).toLocaleString('en-IN')} • Counter: ₹{(reports?.counter_daily || 0).toLocaleString('en-IN')}
+              </span>
             </div>
 
             <div className="bg-white p-6 rounded-3xl border border-slate-200/80 soft-shadow space-y-2">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">Monthly Revenue</span>
-              <span className="text-2xl font-extrabold text-blue-600 font-poppins block">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Monthly Total Revenue</span>
+              <span className="text-2xl font-black text-blue-600 font-poppins block">
                 ₹{(reports?.monthly_revenue || 0).toLocaleString('en-IN')}
               </span>
-            </div>
-
-            <div className="bg-white p-6 rounded-3xl border border-slate-200/80 soft-shadow space-y-2">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">Inventory Valuation</span>
-              <span className="text-2xl font-extrabold text-purple-600 font-poppins block">
-                ₹{(reports?.total_inventory_value || 0).toLocaleString('en-IN')}
+              <span className="text-[11px] text-slate-400 font-medium block">
+                Workshop: ₹{(reports?.workshop_monthly || 0).toLocaleString('en-IN')} • Counter: ₹{(reports?.counter_monthly || 0).toLocaleString('en-IN')}
               </span>
             </div>
 
             <div className="bg-white p-6 rounded-3xl border border-slate-200/80 soft-shadow space-y-2">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">Pending Payment Dues</span>
-              <span className="text-2xl font-extrabold text-red-600 font-poppins block">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Live Inventory Valuation</span>
+              <span className="text-2xl font-black text-purple-600 font-poppins block">
+                ₹{(reports?.total_inventory_value || 0).toLocaleString('en-IN')}
+              </span>
+              <span className="text-[11px] text-slate-400 font-medium block">
+                {reports?.total_inventory_items || 0} unique spare part items in stock
+              </span>
+            </div>
+
+            <div className="bg-white p-6 rounded-3xl border border-slate-200/80 soft-shadow space-y-2">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Total Pending Dues</span>
+              <span className="text-2xl font-black text-rose-600 font-poppins block">
                 ₹{(reports?.total_pending_payments || 0).toLocaleString('en-IN')}
+              </span>
+              <span className="text-[11px] text-slate-400 font-medium block">
+                Workshop: ₹{(reports?.workshop_pending || 0).toLocaleString('en-IN')} • Counter: ₹{(reports?.counter_pending || 0).toLocaleString('en-IN')}
               </span>
             </div>
 
           </div>
 
+          {/* DEDICATED REVENUE BREAKDOWN: WORKSHOP VS COUNTER SALE */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            
+            {/* WORKSHOP SERVICES CARD */}
+            <div className="bg-white p-6 rounded-3xl border border-slate-200/80 soft-shadow space-y-5">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 rounded-2xl bg-blue-50 text-blue-600">
+                    <Wrench className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900 font-poppins">Workshop & Repair Services</h3>
+                    <p className="text-xs text-slate-500">Bikes serviced and repair jobs billing</p>
+                  </div>
+                </div>
+                <span className="px-3 py-1 bg-blue-50 text-blue-700 font-bold text-xs rounded-xl font-mono">
+                  {reports?.workshop_invoices_count || 0} Jobs
+                </span>
+              </div>
 
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Today Revenue</span>
+                  <span className="text-lg font-black font-mono text-slate-900">
+                    ₹{(reports?.workshop_daily || 0).toLocaleString('en-IN')}
+                  </span>
+                </div>
+
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Monthly Revenue</span>
+                  <span className="text-lg font-black font-mono text-blue-600">
+                    ₹{(reports?.workshop_monthly || 0).toLocaleString('en-IN')}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex justify-between items-center text-xs text-slate-600 pt-2 border-t border-slate-100">
+                <span>Total Lifetime Workshop Revenue:</span>
+                <span className="font-mono font-black text-slate-900 text-sm">
+                  ₹{(reports?.workshop_total || 0).toLocaleString('en-IN')}
+                </span>
+              </div>
+            </div>
+
+            {/* COUNTER SPARE PARTS CARD */}
+            <div className="bg-white p-6 rounded-3xl border border-slate-200/80 soft-shadow space-y-5">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 rounded-2xl bg-indigo-50 text-indigo-600">
+                    <ShoppingBag className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900 font-poppins">Counter Spare Parts Sales</h3>
+                    <p className="text-xs text-slate-500">Retail counter sale and parts cash memos</p>
+                  </div>
+                </div>
+                <span className="px-3 py-1 bg-indigo-50 text-indigo-700 font-bold text-xs rounded-xl font-mono">
+                  {reports?.counter_sales_count || 0} Invoices
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Today Revenue</span>
+                  <span className="text-lg font-black font-mono text-slate-900">
+                    ₹{(reports?.counter_daily || 0).toLocaleString('en-IN')}
+                  </span>
+                </div>
+
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Monthly Revenue</span>
+                  <span className="text-lg font-black font-mono text-indigo-600">
+                    ₹{(reports?.counter_monthly || 0).toLocaleString('en-IN')}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex justify-between items-center text-xs text-slate-600 pt-2 border-t border-slate-100">
+                <span>Total Lifetime Counter Sales:</span>
+                <span className="font-mono font-black text-slate-900 text-sm">
+                  ₹{(reports?.counter_total || 0).toLocaleString('en-IN')}
+                </span>
+              </div>
+            </div>
+
+          </div>
 
         </div>
       )}

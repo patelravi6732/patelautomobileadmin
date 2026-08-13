@@ -4,7 +4,7 @@ import {
   LayoutDashboard, CalendarCheck, PlusCircle, Wrench, Package, 
   Users, History, Receipt, BookOpen, Clock, BarChart3, Settings, 
   LogOut, Menu, X, Shield, ChevronRight, MessageSquare, Trash2,
-  Globe, ExternalLink, Smartphone, Download
+  Globe, ExternalLink, Smartphone, Download, ShoppingBag
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import ThemeToggle from './ThemeToggle';
@@ -65,6 +65,7 @@ export default function DashboardLayout() {
     { name: 'New Service', path: `${basePrefix}/new-service`, icon: PlusCircle },
     { name: 'Workshop', path: `${basePrefix}/workshop`, icon: Wrench },
     { name: 'Inventory', path: `${basePrefix}/inventory`, icon: Package },
+    { name: 'Counter Sale', path: `${basePrefix}/counter-sale`, icon: ShoppingBag },
     { name: 'Billing', path: `${basePrefix}/billing`, icon: Receipt },
     { name: 'Khata Book', path: `${basePrefix}/khata-book`, icon: BookOpen },
     { name: 'Attendance', path: `${basePrefix}/attendance`, icon: Clock },

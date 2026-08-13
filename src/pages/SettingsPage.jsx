@@ -493,6 +493,11 @@ export default function SettingsPage() {
     }
   };
 
+  const handleFieldChange = (field, value) => {
+    setIsFormDirty(true);
+    setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
   return (
     <div className="space-y-8 w-full">
       
@@ -534,6 +539,7 @@ export default function SettingsPage() {
             if (typeof updateGarageSettings === 'function') {
               await updateGarageSettings(formData);
             }
+            setIsFormDirty(false);
             alert('✅ Garage Settings updated successfully! Timing and info are now synchronized across the public website & all admin devices.');
           }} className="space-y-6">
             
@@ -564,7 +570,7 @@ export default function SettingsPage() {
                     onChange={(e) => {
                       if (e.target.files && e.target.files[0]) {
                         handlePhotoUpload(e.target.files[0], (dataUrl) => {
-                          setFormData({ ...formData, logo: dataUrl });
+                          handleFieldChange('logo', dataUrl);
                         });
                       }
                     }}
@@ -582,7 +588,7 @@ export default function SettingsPage() {
                 type="text"
                 required
                 value={formData.garage_name}
-                onChange={(e) => setFormData({ ...formData, garage_name: e.target.value })}
+                onChange={(e) => handleFieldChange('garage_name', e.target.value)}
                 className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm font-bold font-poppins focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               />
             </div>
@@ -593,7 +599,7 @@ export default function SettingsPage() {
                 rows={2}
                 required
                 value={formData.address}
-                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                onChange={(e) => handleFieldChange('address', e.target.value)}
                 className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               ></textarea>
             </div>
@@ -605,7 +611,7 @@ export default function SettingsPage() {
                   type="text"
                   required
                   value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  onChange={(e) => handleFieldChange('phone', e.target.value)}
                   className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 />
               </div>
@@ -616,7 +622,7 @@ export default function SettingsPage() {
                   type="text"
                   required
                   value={formData.whatsapp_number}
-                  onChange={(e) => setFormData({ ...formData, whatsapp_number: e.target.value })}
+                  onChange={(e) => handleFieldChange('whatsapp_number', e.target.value)}
                   className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 />
               </div>
@@ -629,7 +635,7 @@ export default function SettingsPage() {
                   type="text"
                   required
                   value={formData.timing_text}
-                  onChange={(e) => setFormData({ ...formData, timing_text: e.target.value })}
+                  onChange={(e) => handleFieldChange('timing_text', e.target.value)}
                   className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm focus:outline-none"
                 />
               </div>
@@ -641,7 +647,7 @@ export default function SettingsPage() {
                 rows={2}
                 required
                 value={formData.safety_message || ''}
-                onChange={(e) => setFormData({ ...formData, safety_message: e.target.value })}
+                onChange={(e) => handleFieldChange('safety_message', e.target.value)}
                 className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               ></textarea>
               <p className="text-xs text-slate-500 mt-1">
@@ -686,7 +692,7 @@ export default function SettingsPage() {
                         if (file) {
                           const reader = new FileReader();
                           reader.onloadend = () => {
-                            setFormData(prev => ({ ...prev, upi_qr_code: reader.result }));
+                            handleFieldChange('upi_qr_code', reader.result);
                           };
                           reader.readAsDataURL(file);
                         }
@@ -703,7 +709,7 @@ export default function SettingsPage() {
                       type="text"
                       required
                       value={formData.upi_payee_name || ''}
-                      onChange={(e) => setFormData({ ...formData, upi_payee_name: e.target.value })}
+                      onChange={(e) => handleFieldChange('upi_payee_name', e.target.value)}
                       className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-white text-sm font-bold focus:outline-none focus:border-amber-400"
                     />
                   </div>
@@ -714,7 +720,7 @@ export default function SettingsPage() {
                       type="text"
                       required
                       value={formData.upi_id || ''}
-                      onChange={(e) => setFormData({ ...formData, upi_id: e.target.value })}
+                      onChange={(e) => handleFieldChange('upi_id', e.target.value)}
                       className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-amber-400 font-mono text-sm font-bold focus:outline-none focus:border-amber-400"
                     />
                   </div>
@@ -732,7 +738,7 @@ export default function SettingsPage() {
                 type="text"
                 required
                 value={formData.mechanics_list}
-                onChange={(e) => setFormData({ ...formData, mechanics_list: e.target.value })}
+                onChange={(e) => handleFieldChange('mechanics_list', e.target.value)}
                 className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm font-medium focus:outline-none"
               />
             </div>
@@ -745,7 +751,7 @@ export default function SettingsPage() {
                   step="50"
                   required
                   value={formData.default_labour_charge}
-                  onChange={(e) => setFormData({ ...formData, default_labour_charge: parseFloat(e.target.value) || 0 })}
+                  onChange={(e) => handleFieldChange('default_labour_charge', parseFloat(e.target.value) || 0)}
                   className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm font-bold text-slate-900 focus:outline-none"
                 />
               </div>
@@ -757,7 +763,7 @@ export default function SettingsPage() {
                   min="0"
                   placeholder="5"
                   value={formData.default_min_stock}
-                  onChange={(e) => setFormData({ ...formData, default_min_stock: e.target.value })}
+                  onChange={(e) => handleFieldChange('default_min_stock', e.target.value)}
                   className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 />
               </div>

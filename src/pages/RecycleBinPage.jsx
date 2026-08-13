@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Trash2, RotateCcw, ShieldAlert, Clock, User, FileText, CheckCircle2, AlertTriangle } from 'lucide-react';
 import API from '../services/api';
-import { fetchCloudRecycleBin, restoreCloudRecycleBinItem, emptyCloudRecycleBin, pushCloudInventoryItem, pushCloudJob, pushCloudInvoice, pushCloudKhataEntry, pushCloudCustomer, pushCloudBooking, pushCloudMessage, pushAuditLog, unmarkDeletedId } from '../utils/cloudSync';
+import { fetchCloudRecycleBin, restoreCloudRecycleBinItem, emptyCloudRecycleBin, deleteCloudRecycleBinItem, pushCloudInventoryItem, pushCloudJob, pushCloudInvoice, pushCloudKhataEntry, pushCloudCustomer, pushCloudBooking, pushCloudMessage, pushAuditLog, unmarkDeletedId } from '../utils/cloudSync';
 import AdminPasswordModal from '../components/AdminPasswordModal';
 
 export default function RecycleBinPage() {
@@ -19,26 +19,21 @@ export default function RecycleBinPage() {
       console.warn('Backend API offline for Recycle Bin, using fast local+cloud store:', err);
     }
 
-    const localTrash = JSON.parse(localStorage.getItem('recycle_bin_items') || '[]');
     const cloudTrash = await fetchCloudRecycleBin();
+    const localTrash = JSON.parse(localStorage.getItem('recycle_bin_items') || '[]');
 
-    const allMap = new Map();
-    [...backendItems, ...localTrash, ...cloudTrash].forEach(r => {
-      if (r && typeof r === 'object') {
-        const payloadKey = (r.payload && r.payload.id) ? String(r.payload.id) : null;
-        const key = payloadKey ? `payload_${payloadKey}` : String(r.id || r.title || 'unknown');
-        if (!allMap.has(key)) {
-          allMap.set(key, {
-            ...r,
-            deleted_by: r.deleted_by || 'Patel Owner (Admin)',
-            details: r.details || (r.payload ? `Category: ${r.payload.category || 'General'} • Price: ₹${r.payload.price || 0}` : 'Deleted item')
-          });
-        }
+    const allCombined = [...backendItems, ...cloudTrash, ...localTrash];
+    const uniqueMap = new Map();
+    allCombined.forEach(it => {
+      if (!it || (!it.id && (!it.payload || !it.payload.id))) return;
+      const primaryKey = String(it.id || (it.payload ? it.payload.id : ''));
+      if (!uniqueMap.has(primaryKey)) {
+        uniqueMap.set(primaryKey, it);
       }
     });
 
-    setItems(Array.from(allMap.values()).sort((a, b) => new Date(b.deleted_at || Date.now()) - new Date(a.deleted_at || Date.now())));
-    setLoading(false);
+    setItems(Array.from(uniqueMap.values()));
+    if (showLoading) setLoading(false);
   };
 
   useEffect(() => {
@@ -70,9 +65,9 @@ export default function RecycleBinPage() {
 
   const handlePermanentDeleteWithPassword = async (adminPassword) => {
     if (deleteModal.isDeleteAll) {
-      emptyCloudRecycleBin().catch(console.warn);
-      localStorage.setItem('recycle_bin_items', '[]');
       setItems([]);
+      localStorage.setItem('recycle_bin_items', '[]');
+      await emptyCloudRecycleBin().catch(console.warn);
       setDeleteModal({ isOpen: false, item: null, isDeleteAll: false });
 
       try {
@@ -80,19 +75,27 @@ export default function RecycleBinPage() {
       } catch (err) {
         console.warn('Backend API offline, emptied Recycle Bin locally & cloud store:', err);
       } finally {
-        alert('All items in Recycle Bin permanently deleted!');
+        alert('✅ All items in Recycle Bin permanently deleted!');
       }
       return;
     }
 
     if (!deleteModal.item) return;
-    const targetId = deleteModal.item.id;
+    const targetItem = deleteModal.item;
+    const targetId = String(targetItem.id || '');
+    const payloadId = targetItem.payload ? String(targetItem.payload.id || '') : '';
 
-    const currentTrash = JSON.parse(localStorage.getItem('recycle_bin_items') || '[]');
-    const updatedTrash = currentTrash.filter(r => String(r.id) !== String(targetId));
-    localStorage.setItem('recycle_bin_items', JSON.stringify(updatedTrash));
+    setItems(prev => prev.filter(r => {
+      const rId = String(r.id || '');
+      const rPayloadId = r.payload ? String(r.payload.id || '') : '';
+      return rId !== targetId && (payloadId ? rPayloadId !== payloadId : true);
+    }));
 
-    setItems(prev => prev.filter(r => String(r.id) !== String(targetId)));
+    await deleteCloudRecycleBinItem(targetId).catch(console.warn);
+    if (payloadId) {
+      await deleteCloudRecycleBinItem(payloadId).catch(console.warn);
+    }
+
     setDeleteModal({ isOpen: false, item: null, isDeleteAll: false });
 
     try {
@@ -100,7 +103,7 @@ export default function RecycleBinPage() {
     } catch (err) {
       console.warn('Backend API offline, permanently deleted item locally & cloud store:', err);
     } finally {
-      alert('Item permanently deleted from database!');
+      alert('✅ Item permanently deleted from database!');
     }
   };
 

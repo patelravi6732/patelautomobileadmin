@@ -914,10 +914,33 @@ export async function restoreCloudRecycleBinItem(itemId) {
   window.dispatchEvent(new Event('master_store_updated'));
 }
 
+export async function deleteCloudRecycleBinItem(itemId) {
+  if (!itemId) return;
+  const strId = String(itemId);
+  const localTrash = JSON.parse(localStorage.getItem('recycle_bin_items') || '[]');
+  const updatedLocal = localTrash.filter(r => String(r.id) !== strId && (!r.payload || String(r.payload.id) !== strId));
+  localStorage.setItem('recycle_bin_items', JSON.stringify(updatedLocal));
+
+  const store = await fetchMasterStore();
+  const existingTrash = (store.recycleBin || []).filter(r => r && typeof r === 'object');
+  const updatedCloudTrash = existingTrash.filter(r => String(r.id) !== strId && (!r.payload || String(r.payload.id) !== strId));
+
+  await saveMasterStore({ ...store, recycleBin: updatedCloudTrash });
+
+  try {
+    window.dispatchEvent(new Event('storage'));
+    window.dispatchEvent(new Event('master_store_updated'));
+  } catch (e) {}
+}
+
 export async function emptyCloudRecycleBin() {
   localStorage.setItem('recycle_bin_items', '[]');
   const store = await fetchMasterStore();
   await saveMasterStore({ ...store, recycleBin: [] });
+  try {
+    window.dispatchEvent(new Event('storage'));
+    window.dispatchEvent(new Event('master_store_updated'));
+  } catch (e) {}
 }
 
 // ---------------- GARAGE INFO (SETTINGS) ----------------

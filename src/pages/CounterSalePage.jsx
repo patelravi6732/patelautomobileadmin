@@ -41,11 +41,16 @@ export default function CounterSalePage() {
   const [invSearch, setInvSearch] = useState('');
   const [invCategory, setInvCategory] = useState('ALL');
 
-  // Load initial draft from localStorage or cloud
+  // Load initial draft from localStorage or cloud (100% Crash-Proof)
   const loadInitialDraft = () => {
     try {
       const raw = localStorage.getItem('counter_sale_draft');
-      if (raw) return JSON.parse(raw);
+      if (raw && raw !== 'undefined' && raw !== 'null') {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          return parsed;
+        }
+      }
     } catch (e) {}
     return null;
   };
@@ -56,7 +61,7 @@ export default function CounterSalePage() {
   const [customerName, setCustomerName] = useState(initialDraft?.customerName || '');
   const [customerPhone, setCustomerPhone] = useState(initialDraft?.customerPhone || '');
   const [vehicleNumber, setVehicleNumber] = useState(initialDraft?.vehicleNumber || '');
-  const [cartItems, setCartItems] = useState(initialDraft?.cartItems || []);
+  const [cartItems, setCartItems] = useState(Array.isArray(initialDraft?.cartItems) ? initialDraft.cartItems : []);
   const [discountAmount, setDiscountAmount] = useState(initialDraft?.discountAmount || 0);
   const [paidAmount, setPaidAmount] = useState(initialDraft?.paidAmount !== undefined ? initialDraft.paidAmount : '');
   const [paymentMode, setPaymentMode] = useState(initialDraft?.paymentMode || 'CASH'); // CASH | UPI
@@ -71,16 +76,19 @@ export default function CounterSalePage() {
     if (isSyncingFromCloud.current) return;
 
     const draft = {
-      customerName,
-      customerPhone,
-      vehicleNumber,
-      cartItems,
-      discountAmount,
-      paidAmount,
-      paymentMode,
+      customerName: customerName || '',
+      customerPhone: customerPhone || '',
+      vehicleNumber: vehicleNumber || '',
+      cartItems: Array.isArray(cartItems) ? cartItems : [],
+      discountAmount: discountAmount || 0,
+      paidAmount: paidAmount !== undefined ? paidAmount : '',
+      paymentMode: paymentMode || 'CASH',
       updated_at: new Date().toISOString()
     };
-    localStorage.setItem('counter_sale_draft', JSON.stringify(draft));
+
+    try {
+      localStorage.setItem('counter_sale_draft', JSON.stringify(draft));
+    } catch (e) {}
 
     if (debounceCloudTimer.current) clearTimeout(debounceCloudTimer.current);
     debounceCloudTimer.current = setTimeout(() => {
@@ -131,21 +139,24 @@ export default function CounterSalePage() {
   // 1. Fetch Inventory Store (0ms Instant Local-First)
   const loadInventory = () => {
     try {
-      const local = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
+      const raw = localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]';
+      const local = JSON.parse(raw);
+      if (!Array.isArray(local)) { setInventory([]); return; }
+
       const map = new Map();
       local.forEach(it => {
-        if (it && (it.part_name || it.item_name || it.name)) {
-          const raw = String(it.part_name || it.item_name || it.name || '').trim();
-          const normKey = raw.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (it && typeof it === 'object' && (it.part_name || it.item_name || it.name)) {
+          const rawName = String(it.part_name || it.item_name || it.name || '').trim();
+          const normKey = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
           if (normKey) {
             if (!map.has(normKey)) {
-              map.set(normKey, { ...it, part_name: raw, item_name: raw, name: raw });
+              map.set(normKey, { ...it, part_name: rawName, item_name: rawName, name: rawName });
             } else {
               const prev = map.get(normKey);
               const prevTime = new Date(prev.updated_at || 0).getTime();
               const curTime = new Date(it.updated_at || 0).getTime();
               const preferred = curTime >= prevTime ? it : prev;
-              map.set(normKey, { ...prev, ...preferred, part_name: raw, item_name: raw, name: raw });
+              map.set(normKey, { ...prev, ...preferred, part_name: rawName, item_name: rawName, name: rawName });
             }
           }
         }
@@ -153,6 +164,7 @@ export default function CounterSalePage() {
       setInventory(Array.from(map.values()));
     } catch (e) {
       console.warn('Error loading inventory for counter sale:', e);
+      setInventory([]);
     }
   };
 
@@ -160,9 +172,10 @@ export default function CounterSalePage() {
   const loadInvoices = async () => {
     try {
       const data = await fetchCloudCounterSales();
-      setInvoices(data);
+      setInvoices(Array.isArray(data) ? data : []);
     } catch (e) {
       console.warn('Error loading counter sales:', e);
+      setInvoices([]);
     }
   };
 
@@ -170,9 +183,10 @@ export default function CounterSalePage() {
   const loadKhata = async () => {
     try {
       const data = await fetchCloudCounterKhata();
-      setKhataDebtors(data);
+      setKhataDebtors(Array.isArray(data) ? data : []);
     } catch (e) {
       console.warn('Error loading counter khata:', e);
+      setKhataDebtors([]);
     }
   };
 
@@ -180,7 +194,12 @@ export default function CounterSalePage() {
   const syncCrossDeviceCart = async () => {
     if (isSyncingFromCloud.current) return;
     try {
-      const localDraft = JSON.parse(localStorage.getItem('counter_sale_draft') || 'null');
+      let localDraft = null;
+      try {
+        const rawLocal = localStorage.getItem('counter_sale_draft');
+        if (rawLocal && rawLocal !== 'undefined') localDraft = JSON.parse(rawLocal);
+      } catch (e) {}
+
       const store = await fetchMasterStore();
       const cloudCart = store.activeCounterCart;
       if (cloudCart && typeof cloudCart === 'object') {
@@ -196,7 +215,9 @@ export default function CounterSalePage() {
           setDiscountAmount(cloudCart.discountAmount || 0);
           setPaidAmount(cloudCart.paidAmount !== undefined ? cloudCart.paidAmount : '');
           setPaymentMode(cloudCart.paymentMode || 'CASH');
-          localStorage.setItem('counter_sale_draft', JSON.stringify(cloudCart));
+          try {
+            localStorage.setItem('counter_sale_draft', JSON.stringify(cloudCart));
+          } catch (e) {}
           setTimeout(() => { isSyncingFromCloud.current = false; }, 800);
         }
       }

@@ -107,11 +107,10 @@ export async function fetchMasterStore(forceFresh = false) {
           khataEntries: Array.isArray(res.data.khataEntries) ? res.data.khataEntries : [],
           customers: Array.isArray(res.data.customers) ? res.data.customers : [],
           invoices: Array.isArray(res.data.invoices) ? res.data.invoices : [],
-          attendance: Array.isArray(res.data.attendance) ? res.data.attendance : [],
-          salaryPayments: Array.isArray(res.data.salaryPayments) ? res.data.salaryPayments : [],
           deletedIds: Array.isArray(res.data.deletedIds) ? res.data.deletedIds : [],
           counterSales: Array.isArray(res.data.counterSales) ? res.data.counterSales : [],
-          counterKhata: Array.isArray(res.data.counterKhata) ? res.data.counterKhata : []
+          counterKhata: Array.isArray(res.data.counterKhata) ? res.data.counterKhata : [],
+          activeCounterCart: res.data.activeCounterCart || null
         };
       }
     } catch (e1) {
@@ -134,7 +133,8 @@ export async function fetchMasterStore(forceFresh = false) {
         salaryPayments: freshStore.salaryPayments || [],
         deletedIds: freshStore.deletedIds || [],
         counterSales: freshStore.counterSales || [],
-        counterKhata: freshStore.counterKhata || []
+        counterKhata: freshStore.counterKhata || [],
+        activeCounterCart: freshStore.activeCounterCart || null
       };
       try {
         localStorage.setItem('master_cloud_cache', JSON.stringify(mergedStore));
@@ -231,7 +231,10 @@ export async function saveMasterStore(storeData) {
       invoices: Array.isArray(storeData.invoices) ? storeData.invoices : (curCache.invoices || localInvList),
       attendance: Array.isArray(storeData.attendance) ? storeData.attendance : (curCache.attendance || []),
       salaryPayments: Array.isArray(storeData.salaryPayments) ? storeData.salaryPayments : (curCache.salaryPayments || []),
-      deletedIds: Array.isArray(storeData.deletedIds) ? storeData.deletedIds : (curCache.deletedIds || JSON.parse(localStorage.getItem('deleted_ids') || '[]'))
+      deletedIds: Array.isArray(storeData.deletedIds) ? storeData.deletedIds : (curCache.deletedIds || JSON.parse(localStorage.getItem('deleted_ids') || '[]')),
+      counterSales: Array.isArray(storeData.counterSales) ? storeData.counterSales : (curCache.counterSales || []),
+      counterKhata: Array.isArray(storeData.counterKhata) ? storeData.counterKhata : (curCache.counterKhata || []),
+      activeCounterCart: storeData.activeCounterCart !== undefined ? storeData.activeCounterCart : (curCache.activeCounterCart || null)
     };
 
     _cachedMasterStore = storeData;
@@ -1577,6 +1580,21 @@ export async function syncCloudInventory(inventoryList) {
     window.dispatchEvent(new Event('master_store_updated'));
     window.dispatchEvent(new Event('inventory_updated'));
   } catch (e) {}
+}
+
+export async function pushCloudActiveCounterCart(cartDraft) {
+  const store = await fetchMasterStore();
+  await saveMasterStore({ ...store, activeCounterCart: cartDraft || null });
+  localStorage.setItem('counter_sale_draft', JSON.stringify(cartDraft || null));
+  try {
+    window.dispatchEvent(new Event('master_store_updated'));
+    window.dispatchEvent(new Event('counter_cart_updated'));
+  } catch (e) {}
+}
+
+export async function fetchCloudActiveCounterCart() {
+  const store = await fetchMasterStore();
+  return store.activeCounterCart || JSON.parse(localStorage.getItem('counter_sale_draft') || 'null');
 }
 
 export async function atomicAddInventoryItem(itemObj) {

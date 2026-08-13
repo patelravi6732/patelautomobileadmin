@@ -1,17 +1,17 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   ShoppingBag, Plus, Search, Trash2, CheckCircle2, AlertCircle, 
   Receipt, BookOpen, Download, Share2, Phone, User, Calendar, 
   DollarSign, Package, Tag, ArrowRight, RefreshCw, X, ShieldAlert,
   CreditCard, Smartphone, Check, Sparkles, Filter, ChevronRight,
-  IndianRupee, Wrench, ShieldCheck
+  IndianRupee, Wrench, ShieldCheck, Layers, ShoppingCart
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { 
   fetchCloudCounterSales, pushCloudCounterSale, deleteCloudCounterSale,
   fetchCloudCounterKhata, pushCloudCounterKhata, atomicRecordCounterPayment,
   syncCloudInventory, atomicAddInventoryItem, fetchMasterStore,
-  saveMasterStore
+  saveMasterStore, pushCloudActiveCounterCart
 } from '../utils/cloudSync';
 import { generateCounterSaleCardPhotoAsync } from '../utils/billCardGenerator';
 
@@ -24,6 +24,7 @@ const INVENTORY_CATEGORIES = [
 export default function CounterSalePage() {
   const { garageInfo, user } = useAuth();
   const [activeTab, setActiveTab] = useState('NEW_SALE'); // NEW_SALE | INVOICES | KHATA
+  const [mobilePosView, setMobilePosView] = useState('CATALOG'); // 'CATALOG' | 'CART' for mobile layout
 
   // Live Inventory & Catalog State
   const [inventory, setInventory] = useState([]);
@@ -31,8 +32,8 @@ export default function CounterSalePage() {
   const [invSearch, setInvSearch] = useState('');
   const [invCategory, setInvCategory] = useState('ALL');
 
-  // Load draft from localStorage if available
-  const loadDraft = () => {
+  // Load initial draft from localStorage or cloud
+  const loadInitialDraft = () => {
     try {
       const raw = localStorage.getItem('counter_sale_draft');
       if (raw) return JSON.parse(raw);
@@ -40,9 +41,9 @@ export default function CounterSalePage() {
     return null;
   };
 
-  const initialDraft = loadDraft();
+  const initialDraft = loadInitialDraft();
 
-  // New Sale POS Form State (Persistent across refreshes)
+  // New Sale POS Form State (Synced across devices via MongoDB Atlas)
   const [customerName, setCustomerName] = useState(initialDraft?.customerName || '');
   const [customerPhone, setCustomerPhone] = useState(initialDraft?.customerPhone || '');
   const [vehicleNumber, setVehicleNumber] = useState(initialDraft?.vehicleNumber || '');
@@ -53,8 +54,13 @@ export default function CounterSalePage() {
   const [submittingSale, setSubmittingSale] = useState(false);
   const [confirmingParts, setConfirmingParts] = useState(false);
 
-  // Auto-save draft on every change
+  // Sync draft to local storage and Cloud Master Store
+  const isSyncingFromCloud = useRef(false);
+  const debounceCloudTimer = useRef(null);
+
   useEffect(() => {
+    if (isSyncingFromCloud.current) return;
+
     const draft = {
       customerName,
       customerPhone,
@@ -62,9 +68,16 @@ export default function CounterSalePage() {
       cartItems,
       discountAmount,
       paidAmount,
-      paymentMode
+      paymentMode,
+      updated_at: new Date().toISOString()
     };
     localStorage.setItem('counter_sale_draft', JSON.stringify(draft));
+
+    // Debounce cloud push to prevent spamming
+    if (debounceCloudTimer.current) clearTimeout(debounceCloudTimer.current);
+    debounceCloudTimer.current = setTimeout(() => {
+      pushCloudActiveCounterCart(draft).catch(() => null);
+    }, 600);
   }, [customerName, customerPhone, vehicleNumber, cartItems, discountAmount, paidAmount, paymentMode]);
 
   // Success Modal
@@ -74,7 +87,7 @@ export default function CounterSalePage() {
     photoUrl: null
   });
 
-  // Add New Spare Part Modal (Exact match to Inventory Modal)
+  // Add New Spare Part Modal
   const [showAddPartModal, setShowAddPartModal] = useState(false);
   const [newPartForm, setNewPartForm] = useState({
     part_name: '',
@@ -148,28 +161,60 @@ export default function CounterSalePage() {
     }
   };
 
+  // 4. Sync Cross-Device Cart from Master Store
+  const syncCrossDeviceCart = async () => {
+    try {
+      const store = await fetchMasterStore();
+      const cloudCart = store.activeCounterCart;
+      if (cloudCart && typeof cloudCart === 'object') {
+        const localDraft = JSON.parse(localStorage.getItem('counter_sale_draft') || 'null');
+        const cloudTime = new Date(cloudCart.updated_at || 0).getTime();
+        const localTime = new Date(localDraft?.updated_at || 0).getTime();
+
+        // If cloud cart is newer or local is empty, update local state
+        if (cloudTime > localTime || (!localDraft && Array.isArray(cloudCart.cartItems) && cloudCart.cartItems.length > 0)) {
+          isSyncingFromCloud.current = true;
+          setCustomerName(cloudCart.customerName || '');
+          setCustomerPhone(cloudCart.customerPhone || '');
+          setVehicleNumber(cloudCart.vehicleNumber || '');
+          setCartItems(Array.isArray(cloudCart.cartItems) ? cloudCart.cartItems : []);
+          setDiscountAmount(cloudCart.discountAmount || 0);
+          setPaidAmount(cloudCart.paidAmount !== undefined ? cloudCart.paidAmount : '');
+          setPaymentMode(cloudCart.paymentMode || 'CASH');
+          localStorage.setItem('counter_sale_draft', JSON.stringify(cloudCart));
+          setTimeout(() => { isSyncingFromCloud.current = false; }, 300);
+        }
+      }
+    } catch (e) {}
+  };
+
   useEffect(() => {
     loadInventory();
     loadInvoices();
     loadKhata();
+    syncCrossDeviceCart();
 
     const handleUpdates = () => {
       loadInventory();
       loadInvoices();
       loadKhata();
+      syncCrossDeviceCart();
     };
 
-    window.addEventListener('storage', handleUpdates);
     window.addEventListener('master_store_updated', handleUpdates);
     window.addEventListener('inventory_updated', handleUpdates);
+    window.addEventListener('counter_cart_updated', handleUpdates);
 
-    // Silently refresh cloud store in background
-    fetchMasterStore().catch(() => null);
+    // Silently poll background for multi-device live sync every 4 seconds
+    const interval = setInterval(() => {
+      syncCrossDeviceCart();
+    }, 4000);
 
     return () => {
-      window.removeEventListener('storage', handleUpdates);
+      clearInterval(interval);
       window.removeEventListener('master_store_updated', handleUpdates);
       window.removeEventListener('inventory_updated', handleUpdates);
+      window.removeEventListener('counter_cart_updated', handleUpdates);
     };
   }, []);
 
@@ -223,18 +268,23 @@ export default function CounterSalePage() {
   }, [cartNetTotal, effectivePaid]);
 
   const hasUnconfirmedParts = useMemo(() => {
-    return cartItems.some(p => p.status !== 'CONFIRMED');
+    return cartItems.some(p => p && p.status !== 'CONFIRMED');
   }, [cartItems]);
 
   // Handle Add Item to Cart (Adds as STAGED by default)
   const handleAddToCart = (item) => {
-    const curStock = parseInt(item.current_stock || item.stock_quantity || item.quantity || 0, 10);
+    const curStock = parseInt(item.current_stock !== undefined ? item.current_stock : (item.stock_quantity !== undefined ? item.stock_quantity : (item.quantity !== undefined ? item.quantity : 0)), 10);
     if (curStock <= 0) {
       alert(`⚠️ '${item.part_name || item.item_name || item.name}' is currently Out of Stock!`);
       return;
     }
 
-    const existingIndex = cartItems.findIndex(i => String(i.id) === String(item.id));
+    const itemNorm = String(item.part_name || item.item_name || item.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const existingIndex = cartItems.findIndex(i => {
+      const iNorm = String(i.part_name || i.item_name || i.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      return (i.id && item.id && String(i.id) === String(item.id)) || (iNorm && itemNorm && iNorm === itemNorm);
+    });
+
     if (existingIndex >= 0) {
       const currentQty = cartItems[existingIndex].quantity;
       if (currentQty + 1 > curStock) {
@@ -246,10 +296,11 @@ export default function CounterSalePage() {
       updated[existingIndex].status = 'STAGED'; // Mark staged so user can confirm
       setCartItems(updated);
     } else {
+      const rawName = item.part_name || item.item_name || item.name || 'Spare Part';
       setCartItems([...cartItems, {
-        id: item.id,
-        item_name: item.part_name || item.item_name || item.name || 'Spare Part',
-        part_name: item.part_name || item.item_name || item.name || 'Spare Part',
+        id: item.id || `cart_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+        item_name: rawName,
+        part_name: rawName,
         selling_price: parseFloat(item.price || item.selling_price || item.unit_price || 0),
         unit_price: parseFloat(item.price || item.selling_price || item.unit_price || 0),
         quantity: 1,
@@ -307,7 +358,7 @@ export default function CounterSalePage() {
     const updatedCart = cartItems.map(p => ({ ...p, status: 'CONFIRMED' }));
     setCartItems(updatedCart);
     
-    // Save draft immediately
+    // Save draft immediately & push to cloud
     const draft = {
       customerName,
       customerPhone,
@@ -315,9 +366,11 @@ export default function CounterSalePage() {
       cartItems: updatedCart,
       discountAmount,
       paidAmount,
-      paymentMode
+      paymentMode,
+      updated_at: new Date().toISOString()
     };
     localStorage.setItem('counter_sale_draft', JSON.stringify(draft));
+    pushCloudActiveCounterCart(draft).catch(() => null);
     setConfirmingParts(false);
 
     try {
@@ -325,7 +378,7 @@ export default function CounterSalePage() {
       window.dispatchEvent(new Event('inventory_updated'));
     } catch (e) {}
 
-    // 2. Non-blocking cloud background sync
+    // Non-blocking cloud background sync
     syncCloudInventory(updatedInv).catch(console.warn);
 
     alert(`✅ Spare Parts Confirmed!\n\n${stagedParts.length} item(s) confirmed and stock deducted from Inventory successfully.`);
@@ -349,9 +402,11 @@ export default function CounterSalePage() {
       cartItems: updatedCart,
       discountAmount,
       paidAmount,
-      paymentMode
+      paymentMode,
+      updated_at: new Date().toISOString()
     };
     localStorage.setItem('counter_sale_draft', JSON.stringify(draft));
+    pushCloudActiveCounterCart(draft).catch(() => null);
   };
 
   // Remove Item from Cart (0ms Instant Optimistic Restoration & Clean Deletion)
@@ -371,9 +426,11 @@ export default function CounterSalePage() {
       cartItems: nextCart,
       discountAmount,
       paidAmount,
-      paymentMode
+      paymentMode,
+      updated_at: new Date().toISOString()
     };
     localStorage.setItem('counter_sale_draft', JSON.stringify(draft));
+    pushCloudActiveCounterCart(draft).catch(() => null);
 
     // 3. If item was confirmed, restore stock once
     if (target.status === 'CONFIRMED') {
@@ -461,6 +518,7 @@ export default function CounterSalePage() {
 
     setCartItems([]);
     localStorage.removeItem('counter_sale_draft');
+    pushCloudActiveCounterCart(null).catch(() => null);
 
     try {
       window.dispatchEvent(new Event('master_store_updated'));
@@ -521,7 +579,7 @@ export default function CounterSalePage() {
 
     try {
       // 1. If any parts were unconfirmed, deduct now
-      const unconfirmedParts = cartItems.filter(p => p.status !== 'CONFIRMED');
+      const unconfirmedParts = cartItems.filter(p => p && p.status !== 'CONFIRMED');
       if (unconfirmedParts.length > 0) {
         const local = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
         const map = new Map();
@@ -598,7 +656,7 @@ export default function CounterSalePage() {
         photoUrl: photoUrl
       });
 
-      // 6. Reset POS Form & Clear Draft
+      // 6. Reset POS Form & Clear Draft locally and in Cloud
       setCustomerName('');
       setCustomerPhone('');
       setVehicleNumber('');
@@ -606,6 +664,7 @@ export default function CounterSalePage() {
       setDiscountAmount(0);
       setPaidAmount(0);
       localStorage.removeItem('counter_sale_draft');
+      pushCloudActiveCounterCart(null).catch(() => null);
 
       // Reload Data
       loadInventory();
@@ -786,492 +845,550 @@ Kindly clear your pending balance at your earliest convenience.
   }, [khataDebtors]);
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
+    <div className="space-y-4 sm:space-y-6 max-w-7xl mx-auto pb-16 sm:pb-8">
       
-      {/* HEADER & TOP STATS */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm">
+      {/* HEADER & TOP STATS (MOBILE-OPTIMIZED) */}
+      <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 bg-white p-4 sm:p-6 rounded-2xl sm:rounded-3xl border border-slate-200/80 shadow-xs">
         <div>
-          <h1 className="text-2xl font-black text-slate-900 font-poppins flex items-center gap-2.5">
-            <span className="p-2.5 bg-blue-600 text-white rounded-2xl shadow-md shadow-blue-500/20">
-              <ShoppingBag className="w-6 h-6" />
+          <h1 className="text-xl sm:text-2xl font-black text-slate-900 font-poppins flex items-center gap-2.5">
+            <span className="p-2 sm:p-2.5 bg-blue-600 text-white rounded-xl sm:rounded-2xl shadow-sm shadow-blue-500/20">
+              <ShoppingBag className="w-5 h-5 sm:w-6 sm:h-6" />
             </span>
-            Counter Sale & Spare Parts POS
+            Counter Sale POS
           </h1>
-          <p className="text-xs text-slate-500 mt-1 font-medium">
-            Over-the-counter spare parts direct billing, live inventory sync, and independent Khata Book.
+          <p className="text-[11px] sm:text-xs text-slate-500 mt-1 font-medium">
+            Over-the-counter spare parts direct billing, live multi-device cart sync & Khata.
           </p>
         </div>
 
-        {/* TOP STATS BADGES */}
-        <div className="flex items-center gap-3 shrink-0">
-          <div className="px-4 py-2.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900">
-            <span className="text-[10px] font-bold uppercase tracking-wider block text-emerald-600">Today's Counter Sale</span>
-            <span className="text-base font-black font-mono">₹{todaySalesTotal.toFixed(2)}</span>
+        {/* TOP STATS BADGES (MOBILE 2-COL GRID) */}
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:gap-3 shrink-0">
+          <div className="px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl sm:rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900">
+            <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider block text-emerald-600 truncate">Today's Sales</span>
+            <span className="text-sm sm:text-base font-black font-mono">₹{todaySalesTotal.toFixed(2)}</span>
           </div>
-          <div className="px-4 py-2.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-900">
-            <span className="text-[10px] font-bold uppercase tracking-wider block text-rose-600">Pending Khata Dues</span>
-            <span className="text-base font-black font-mono">₹{totalKhataPending.toFixed(2)}</span>
+          <div className="px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl sm:rounded-2xl bg-rose-50 border border-rose-200 text-rose-900">
+            <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider block text-rose-600 truncate">Khata Dues</span>
+            <span className="text-sm sm:text-base font-black font-mono">₹{totalKhataPending.toFixed(2)}</span>
           </div>
         </div>
       </div>
 
-      {/* NAVIGATION TABS */}
-      <div className="flex items-center gap-2 bg-slate-100 p-1.5 rounded-2xl border border-slate-200/80 max-w-fit">
+      {/* NAVIGATION TABS (SWIPEABLE ON MOBILE) */}
+      <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-2xl border border-slate-200/80 overflow-x-auto scrollbar-none w-full sm:w-fit">
         <button
           onClick={() => setActiveTab('NEW_SALE')}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all ${
+          className={`flex items-center gap-1.5 px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
             activeTab === 'NEW_SALE'
-              ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
+              ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/20'
               : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          <ShoppingBag className="w-4 h-4" /> 1. New Sale (POS)
+          <ShoppingBag className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> 1. New Sale
         </button>
 
         <button
           onClick={() => { setActiveTab('INVOICES'); loadInvoices(); }}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all ${
+          className={`flex items-center gap-1.5 px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
             activeTab === 'INVOICES'
-              ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
+              ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/20'
               : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          <Receipt className="w-4 h-4" /> 2. Counter Invoices ({invoices.length})
+          <Receipt className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> 2. Invoices ({invoices.length})
         </button>
 
         <button
           onClick={() => { setActiveTab('KHATA'); loadKhata(); }}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all ${
+          className={`flex items-center gap-1.5 px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
             activeTab === 'KHATA'
-              ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
+              ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/20'
               : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          <BookOpen className="w-4 h-4" /> 3. Counter Khata Book ({khataDebtors.filter(k => k.status !== 'CLEARED').length})
+          <BookOpen className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> 3. Khata Book ({khataDebtors.filter(k => k.status !== 'CLEARED').length})
         </button>
       </div>
 
       {/* TAB 1: NEW COUNTER SALE (POS) */}
       {activeTab === 'NEW_SALE' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        <div className="space-y-4">
           
-          {/* LEFT COLUMN: INVENTORY CATALOG (7 Cols) */}
-          <div className="lg:col-span-7 space-y-4">
-            <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-sm space-y-4">
-              
-              {/* Search & Add Part Header */}
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                <div className="relative flex-1 w-full">
-                  <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    value={invSearch}
-                    onChange={(e) => setInvSearch(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                  />
-                </div>
+          {/* MOBILE SEGMENT SWITCHER (VISIBLE ONLY ON MOBILE SCREENS) */}
+          <div className="grid grid-cols-2 gap-2 lg:hidden bg-white p-1.5 rounded-2xl border border-slate-200 shadow-xs">
+            <button
+              type="button"
+              onClick={() => setMobilePosView('CATALOG')}
+              className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+                mobilePosView === 'CATALOG'
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <Package className="w-3.5 h-3.5" /> Catalog ({filteredCatalog.length})
+            </button>
 
-                <button
-                  type="button"
-                  onClick={() => setShowAddPartModal(true)}
-                  className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md inline-flex items-center gap-1.5 shrink-0 transition-all"
-                >
-                  <Plus className="w-4 h-4" /> + Add New Part
-                </button>
-              </div>
-
-              {/* Categories Pills */}
-              {categoriesList.length > 1 && (
-                <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
-                  {categoriesList.map(cat => (
-                    <button
-                      key={cat}
-                      type="button"
-                      onClick={() => setInvCategory(cat)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-                        invCategory === cat
-                          ? 'bg-slate-900 text-white'
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                      }`}
-                    >
-                      {cat}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {/* Catalog Items Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[540px] overflow-y-auto pr-1">
-                {filteredCatalog.length === 0 ? (
-                  <div className="col-span-2 text-center py-12 text-slate-400">
-                    <Package className="w-12 h-12 mx-auto stroke-1 text-slate-300 mb-2" />
-                    <p className="text-sm font-medium">No matching spare parts found in inventory.</p>
-                    <button
-                      type="button"
-                      onClick={() => setShowAddPartModal(true)}
-                      className="mt-3 text-xs text-blue-600 font-bold hover:underline"
-                    >
-                      Click here to add this item as a new part
-                    </button>
-                  </div>
-                ) : (
-                  filteredCatalog.map(item => {
-                    const stock = parseInt(item.current_stock || item.stock_quantity || item.quantity || 0, 10);
-                    const isLow = stock <= (parseInt(item.min_stock_alert, 10) || 5);
-                    const isOut = stock <= 0;
-                    const price = parseFloat(item.price || item.selling_price || item.unit_price || 0);
-
-                    return (
-                      <div
-                        key={item.id}
-                        onClick={() => !isOut && handleAddToCart(item)}
-                        className={`p-4 rounded-2xl border transition-all flex flex-col justify-between cursor-pointer group ${
-                          isOut
-                            ? 'bg-slate-50 border-slate-200 opacity-60 cursor-not-allowed'
-                            : 'bg-white hover:bg-blue-50/50 border-slate-200/80 hover:border-blue-300 hover:shadow-md'
-                        }`}
-                      >
-                        <div>
-                          <div className="flex justify-between items-start gap-2">
-                            <h4 className="font-bold text-sm text-slate-900 font-poppins group-hover:text-blue-600 transition-colors line-clamp-1">
-                              {item.part_name || item.item_name || item.name}
-                            </h4>
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase shrink-0 ${
-                              isOut 
-                                ? 'bg-rose-100 text-rose-700' 
-                                : isLow 
-                                  ? 'bg-amber-100 text-amber-700' 
-                                  : 'bg-emerald-100 text-emerald-700'
-                            }`}>
-                              {isOut ? 'Out of Stock' : `${stock} In Stock`}
-                            </span>
-                          </div>
-
-                          {item.category && (
-                            <span className="text-[11px] text-slate-400 block mt-0.5">
-                              {item.category}
-                            </span>
-                          )}
-                        </div>
-
-                        <div className="flex justify-between items-center mt-3 pt-2 border-t border-slate-100">
-                          <span className="text-base font-black font-mono text-slate-900">
-                            ₹{price.toFixed(2)}
-                          </span>
-                          <button
-                            type="button"
-                            disabled={isOut}
-                            className={`px-3 py-1.5 rounded-xl text-xs font-bold inline-flex items-center gap-1 transition-all ${
-                              isOut 
-                                ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                                : 'bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white'
-                            }`}
-                          >
-                            <Plus className="w-3.5 h-3.5" /> Add
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-
-            </div>
+            <button
+              type="button"
+              onClick={() => setMobilePosView('CART')}
+              className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+                mobilePosView === 'CART'
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <ShoppingCart className="w-3.5 h-3.5" /> Cart ({cartItems.length}) {cartNetTotal > 0 && `• ₹${cartNetTotal.toFixed(0)}`}
+            </button>
           </div>
 
-          {/* RIGHT COLUMN: BILL BUILDER & CART (5 Cols) */}
-          <div className="lg:col-span-5 space-y-4">
-            <form onSubmit={handleGenerateCounterBill} className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm space-y-5">
-              
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <h3 className="font-bold text-slate-900 font-poppins flex items-center gap-2">
-                  <Receipt className="w-5 h-5 text-blue-600" /> Customer & Billing Cart
-                </h3>
-                <div className="flex items-center gap-2">
-                  {cartItems.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={handleClearCart}
-                      className="text-[11px] text-rose-500 hover:text-rose-700 font-bold hover:underline"
-                    >
-                      Clear
-                    </button>
-                  )}
-                  <span className="px-2.5 py-1 bg-blue-50 text-blue-700 font-bold text-xs rounded-xl font-mono">
-                    {cartItems.length} {cartItems.length === 1 ? 'Item' : 'Items'}
-                  </span>
-                </div>
-              </div>
-
-              {/* CUSTOMER DETAILS */}
-              <div className="space-y-3 bg-slate-50 p-4 rounded-2xl border border-slate-200/70">
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
-                    Customer Name *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
-                      Mobile Number *
-                    </label>
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+            
+            {/* LEFT COLUMN: INVENTORY CATALOG (7 Cols on desktop, toggle on mobile) */}
+            <div className={`lg:col-span-7 space-y-4 ${mobilePosView === 'CATALOG' ? 'block' : 'hidden lg:block'}`}>
+              <div className="bg-white p-4 sm:p-5 rounded-2xl sm:rounded-3xl border border-slate-200/80 shadow-xs space-y-3.5">
+                
+                {/* Search & Add Part Header */}
+                <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-2.5">
+                  <div className="relative flex-1">
+                    <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                     <input
-                      type="tel"
-                      required
-                      value={customerPhone}
-                      onChange={(e) => setCustomerPhone(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      type="text"
+                      value={invSearch}
+                      onChange={(e) => setInvSearch(e.target.value)}
+                      className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs sm:text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
 
+                  <button
+                    type="button"
+                    onClick={() => setShowAddPartModal(true)}
+                    className="px-3.5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-xs inline-flex items-center justify-center gap-1.5 shrink-0 transition-all active:scale-95"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Add New Part
+                  </button>
+                </div>
+
+                {/* Categories Pills */}
+                {categoriesList.length > 1 && (
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+                    {categoriesList.map(cat => (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() => setInvCategory(cat)}
+                        className={`px-3 py-1.5 rounded-xl text-[11px] font-bold whitespace-nowrap transition-all ${
+                          invCategory === cat
+                            ? 'bg-slate-900 text-white'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}
+                      >
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Catalog Items Grid (Responsive 1 or 2 Cols) */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[500px] overflow-y-auto pr-0.5">
+                  {filteredCatalog.length === 0 ? (
+                    <div className="col-span-1 sm:col-span-2 text-center py-10 text-slate-400">
+                      <Package className="w-10 h-10 mx-auto stroke-1 text-slate-300 mb-1.5" />
+                      <p className="text-xs sm:text-sm font-medium">No matching spare parts found.</p>
+                      <button
+                        type="button"
+                        onClick={() => setShowAddPartModal(true)}
+                        className="mt-2 text-xs text-blue-600 font-bold hover:underline"
+                      >
+                        + Add this as a new part
+                      </button>
+                    </div>
+                  ) : (
+                    filteredCatalog.map(item => {
+                      const stock = parseInt(item.current_stock !== undefined ? item.current_stock : (item.stock_quantity !== undefined ? item.stock_quantity : (item.quantity !== undefined ? item.quantity : 0)), 10);
+                      const isLow = stock <= (parseInt(item.min_stock_alert, 10) || 5);
+                      const isOut = stock <= 0;
+                      const price = parseFloat(item.price || item.selling_price || item.unit_price || 0);
+
+                      return (
+                        <div
+                          key={item.id}
+                          onClick={() => !isOut && handleAddToCart(item)}
+                          className={`p-3 sm:p-4 rounded-xl sm:rounded-2xl border transition-all flex flex-col justify-between cursor-pointer group active:scale-[0.98] ${
+                            isOut
+                              ? 'bg-slate-50 border-slate-200 opacity-60 cursor-not-allowed'
+                              : 'bg-white hover:bg-blue-50/40 border-slate-200 hover:border-blue-300 hover:shadow-xs'
+                          }`}
+                        >
+                          <div>
+                            <div className="flex justify-between items-start gap-1.5">
+                              <h4 className="font-bold text-xs sm:text-sm text-slate-900 font-poppins group-hover:text-blue-600 transition-colors line-clamp-1">
+                                {item.part_name || item.item_name || item.name}
+                              </h4>
+                              <span className={`px-1.5 py-0.5 rounded-full text-[9px] sm:text-[10px] font-extrabold uppercase shrink-0 ${
+                                isOut 
+                                  ? 'bg-rose-100 text-rose-700' 
+                                  : isLow 
+                                    ? 'bg-amber-100 text-amber-700' 
+                                    : 'bg-emerald-100 text-emerald-700'
+                              }`}>
+                                {isOut ? 'Out of Stock' : `${stock} Left`}
+                              </span>
+                            </div>
+
+                            {item.category && (
+                              <span className="text-[10px] sm:text-[11px] text-slate-400 block mt-0.5">
+                                {item.category}
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex justify-between items-center mt-2.5 pt-2 border-t border-slate-100">
+                            <span className="text-sm sm:text-base font-black font-mono text-slate-900">
+                              ₹{price.toFixed(2)}
+                            </span>
+                            <button
+                              type="button"
+                              disabled={isOut}
+                              className={`px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold inline-flex items-center gap-1 transition-all ${
+                                isOut 
+                                  ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                                  : 'bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white'
+                              }`}
+                            >
+                              <Plus className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> Add
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+              </div>
+            </div>
+
+            {/* RIGHT COLUMN: BILL BUILDER & CART (5 Cols on desktop, toggle on mobile) */}
+            <div className={`lg:col-span-5 space-y-4 ${mobilePosView === 'CART' ? 'block' : 'hidden lg:block'}`}>
+              <form onSubmit={handleGenerateCounterBill} className="bg-white p-4 sm:p-6 rounded-2xl sm:rounded-3xl border border-slate-200/80 shadow-xs space-y-4 sm:space-y-5">
+                
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <h3 className="font-bold text-slate-900 font-poppins text-sm sm:text-base flex items-center gap-2">
+                    <Receipt className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600" /> Customer & Billing Cart
+                  </h3>
+                  <div className="flex items-center gap-2">
+                    {cartItems.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleClearCart}
+                        className="text-[11px] text-rose-500 hover:text-rose-700 font-bold hover:underline"
+                      >
+                        Clear
+                      </button>
+                    )}
+                    <span className="px-2 py-0.5 bg-blue-50 text-blue-700 font-bold text-[11px] sm:text-xs rounded-lg font-mono">
+                      {cartItems.length} {cartItems.length === 1 ? 'Item' : 'Items'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* CUSTOMER DETAILS */}
+                <div className="space-y-2.5 bg-slate-50 p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-slate-200/70">
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
-                      Vehicle No. (Optional)
+                    <label className="block text-[10px] sm:text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+                      Customer Name *
                     </label>
                     <input
                       type="text"
-                      value={vehicleNumber}
-                      onChange={(e) => setVehicleNumber(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-sm font-mono uppercase focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      required
+                      value={customerName}
+                      onChange={(e) => setCustomerName(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs sm:text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
-                </div>
-              </div>
 
-              {/* CART ITEMS LIST WITH STAGED & CONFIRM STATUS */}
-              <div className="space-y-2">
-                <div className="flex justify-between items-center">
-                  <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider">
-                    Selected Spare Parts
-                  </label>
-                  {cartItems.length > 0 && (
-                    <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-100 flex items-center gap-1">
-                      {hasUnconfirmedParts ? '⏳ Unconfirmed in Cart' : '✓ All Confirmed & Locked'}
-                    </span>
-                  )}
-                </div>
-                
-                {cartItems.length === 0 ? (
-                  <div className="p-6 border-2 border-dashed border-slate-200 rounded-2xl text-center text-slate-400">
-                    <ShoppingBag className="w-8 h-8 mx-auto stroke-1 mb-1 text-slate-300" />
-                    <p className="text-xs font-medium">Click on spare parts from catalog to add.</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div>
+                      <label className="block text-[10px] sm:text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+                        Mobile Number *
+                      </label>
+                      <input
+                        type="tel"
+                        required
+                        value={customerPhone}
+                        onChange={(e) => setCustomerPhone(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs sm:text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] sm:text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+                        Vehicle No. (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={vehicleNumber}
+                        onChange={(e) => setVehicleNumber(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs sm:text-sm font-mono uppercase focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      />
+                    </div>
                   </div>
-                ) : (
-                  <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
-                    {cartItems.map((item) => {
-                      const isConfirmed = item.status === 'CONFIRMED';
-                      return (
-                        <div key={item.id} className="p-3 bg-slate-50 rounded-2xl border border-slate-200/80 flex items-center justify-between gap-3">
-                          <div className="flex-1 min-w-0">
-                            <h5 className="text-xs font-bold text-slate-900 truncate">{item.part_name || item.item_name}</h5>
-                            <div className="flex items-center gap-2 mt-0.5">
-                              <span className="text-[11px] font-mono text-slate-500">₹{item.selling_price.toFixed(2)} / unit</span>
-                              <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded font-mono ${
-                                isConfirmed 
-                                  ? 'text-emerald-700 bg-emerald-100' 
-                                  : 'text-amber-700 bg-amber-100 animate-pulse'
-                              }`}>
-                                {isConfirmed ? '✓ Confirmed' : '⏳ Staged'}
-                              </span>
+                </div>
+
+                {/* CART ITEMS LIST */}
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <label className="block text-[10px] sm:text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                      Selected Spare Parts
+                    </label>
+                    {cartItems.length > 0 && (
+                      <span className="text-[9px] sm:text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-100 flex items-center gap-1">
+                        {hasUnconfirmedParts ? '⏳ Unconfirmed in Cart' : '✓ All Confirmed & Locked'}
+                      </span>
+                    )}
+                  </div>
+                  
+                  {cartItems.length === 0 ? (
+                    <div className="p-6 border-2 border-dashed border-slate-200 rounded-xl sm:rounded-2xl text-center text-slate-400">
+                      <ShoppingBag className="w-7 h-7 mx-auto stroke-1 mb-1 text-slate-300" />
+                      <p className="text-xs font-medium">Click on spare parts from catalog to add.</p>
+                      <button
+                        type="button"
+                        onClick={() => setMobilePosView('CATALOG')}
+                        className="lg:hidden mt-2 text-xs font-bold text-blue-600 underline"
+                      >
+                        Open Catalog
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-44 overflow-y-auto pr-0.5">
+                      {cartItems.map((item) => {
+                        const isConfirmed = item.status === 'CONFIRMED';
+                        return (
+                          <div key={item.id} className="p-2.5 sm:p-3 bg-slate-50 rounded-xl sm:rounded-2xl border border-slate-200/80 flex items-center justify-between gap-2.5">
+                            <div className="flex-1 min-w-0">
+                              <h5 className="text-xs font-bold text-slate-900 truncate">{item.part_name || item.item_name}</h5>
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                <span className="text-[10px] sm:text-[11px] font-mono text-slate-500">₹{item.selling_price.toFixed(2)}</span>
+                                <span className={`text-[9px] sm:text-[10px] font-bold px-1.5 py-0.2 rounded font-mono ${
+                                  isConfirmed 
+                                    ? 'text-emerald-700 bg-emerald-100' 
+                                    : 'text-amber-700 bg-amber-100 animate-pulse'
+                                }`}>
+                                  {isConfirmed ? '✓ Confirmed' : '⏳ Staged'}
+                                </span>
+                              </div>
                             </div>
-                          </div>
 
-                          {/* Qty Counter */}
-                          <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-xl px-2 py-1">
+                            {/* Qty Counter */}
+                            <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-1.5 py-0.5">
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateQty(item.id, item.quantity - 1)}
+                                className="text-slate-500 hover:text-rose-600 font-bold px-1 text-sm"
+                              >
+                                -
+                              </button>
+                              <span className="text-xs font-mono font-bold w-5 text-center">{item.quantity}</span>
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateQty(item.id, item.quantity + 1)}
+                                className="text-slate-500 hover:text-emerald-600 font-bold px-1 text-sm"
+                              >
+                                +
+                              </button>
+                            </div>
+
+                            <span className="text-xs font-black font-mono text-slate-900 w-14 sm:w-16 text-right">
+                              ₹{(item.selling_price * item.quantity).toFixed(2)}
+                            </span>
+
                             <button
                               type="button"
-                              onClick={() => handleUpdateQty(item.id, item.quantity - 1)}
-                              className="text-slate-500 hover:text-rose-600 font-bold px-1"
+                              onClick={() => handleRemoveFromCart(item.id)}
+                              className="text-slate-400 hover:text-rose-600 p-1 transition-colors"
                             >
-                              -
-                            </button>
-                            <span className="text-xs font-mono font-bold w-6 text-center">{item.quantity}</span>
-                            <button
-                              type="button"
-                              onClick={() => handleUpdateQty(item.id, item.quantity + 1)}
-                              className="text-slate-500 hover:text-emerald-600 font-bold px-1"
-                            >
-                              +
+                              <Trash2 className="w-4 h-4" />
                             </button>
                           </div>
-
-                          <span className="text-xs font-black font-mono text-slate-900 w-16 text-right">
-                            ₹{(item.selling_price * item.quantity).toFixed(2)}
-                          </span>
-
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveFromCart(item.id)}
-                            className="text-slate-400 hover:text-rose-600 p-1 transition-colors"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              {/* EXPLICIT CONFIRM PARTS BUTTON (JUST LIKE WORKSHOP) */}
-              {cartItems.length > 0 && hasUnconfirmedParts && (
-                <button
-                  type="button"
-                  onClick={handleConfirmCartParts}
-                  disabled={confirmingParts}
-                  className="w-full py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-xs rounded-xl shadow-xs flex items-center justify-center gap-1.5 transition-all"
-                >
-                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                  {confirmingParts ? 'Confirming Stock...' : `Confirm ${cartItems.filter(p => p.status !== 'CONFIRMED').length} Part(s) & Lock Stock`}
-                </button>
-              )}
-
-              {/* DISCOUNT INPUT (SAME AS WORKSHOP) */}
-              <div className="space-y-3 pt-2 border-t border-slate-100">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                    Special Discount (₹)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={discountAmount || ''}
-                    onChange={(e) => setDiscountAmount(parseFloat(e.target.value) || 0)}
-                    className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm font-bold text-amber-600 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
-                  />
-                </div>
-
-                {/* SUMMARY BOX (SAME AS WORKSHOP) */}
-                <div className="p-4 bg-slate-900 rounded-2xl text-white space-y-2 text-xs">
-                  <div className="flex justify-between text-slate-300">
-                    <span>Parts Subtotal:</span>
-                    <span className="font-semibold text-white">₹{cartSubtotal.toFixed(2)}</span>
-                  </div>
-                  {numericDiscount > 0 && (
-                    <div className="flex justify-between text-amber-400 font-semibold">
-                      <span>Discount:</span>
-                      <span>- ₹{numericDiscount.toFixed(2)}</span>
+                        );
+                      })}
                     </div>
                   )}
-                  <div className="pt-2 border-t border-slate-800 flex justify-between items-center text-sm font-extrabold text-amber-400">
-                    <span>Final Bill Amount:</span>
-                    <span className="text-base font-mono">₹{cartNetTotal.toFixed(2)}</span>
-                  </div>
                 </div>
 
-                {/* AMOUNT PAID NOW (SAME AS WORKSHOP) */}
-                <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-                      Amount Paid Now (₹)
-                    </label>
-                    <span className="text-[11px] font-bold text-slate-400">Max: ₹{cartNetTotal.toFixed(2)}</span>
-                  </div>
-                  <input
-                    type="number"
-                    step="1"
-                    min="0"
-                    max={cartNetTotal}
-                    value={paidAmount}
-                    onChange={(e) => setPaidAmount(e.target.value)}
-                    className="w-full px-4 py-3 rounded-xl border border-slate-200 text-base font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                  />
-                </div>
-
-                {/* AUTOMATIC KHATA DUE BANNER (SAME AS WORKSHOP) */}
-                {cartPendingBalance > 0 && (
-                  <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-xs text-amber-800 font-medium">
-                    Remaining ₹{cartPendingBalance.toFixed(2)} will be automatically recorded in Customer's Counter Khata Book!
-                  </div>
-                )}
-
-                {/* PAYMENT METHOD (ONLY CASH & UPI / GPAY) */}
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
-                    Payment Method
-                  </label>
-                  <select
-                    value={paymentMode}
-                    onChange={(e) => setPaymentMode(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none"
+                {/* EXPLICIT CONFIRM PARTS BUTTON */}
+                {cartItems.length > 0 && hasUnconfirmedParts && (
+                  <button
+                    type="button"
+                    onClick={handleConfirmCartParts}
+                    disabled={confirmingParts}
+                    className="w-full py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-xs rounded-xl shadow-2xs flex items-center justify-center gap-1.5 transition-all active:scale-98"
                   >
-                    <option value="CASH">Cash 💵</option>
-                    <option value="UPI">UPI / GPay 📱</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* GENERATE INVOICE & CLOSE BUTTON */}
-              <button
-                type="submit"
-                disabled={submittingSale || cartItems.length === 0}
-                className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold rounded-2xl shadow-lg shadow-emerald-600/20 text-sm flex items-center justify-center gap-2 transition-all"
-              >
-                {submittingSale ? (
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Receipt className="w-4 h-4" />
+                    <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                    {confirmingParts ? 'Confirming Stock...' : `Confirm ${cartItems.filter(p => p && p.status !== 'CONFIRMED').length} Part(s) & Lock Stock`}
+                  </button>
                 )}
-                Generate Invoice & Close
-              </button>
 
-            </form>
+                {/* DISCOUNT INPUT */}
+                <div className="space-y-2.5 pt-2 border-t border-slate-100">
+                  <div>
+                    <label className="block text-[10px] sm:text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                      Special Discount (₹)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={discountAmount || ''}
+                      onChange={(e) => setDiscountAmount(parseFloat(e.target.value) || 0)}
+                      className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm font-bold text-amber-600 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                    />
+                  </div>
+
+                  {/* SUMMARY BOX */}
+                  <div className="p-3 sm:p-4 bg-slate-900 rounded-xl sm:rounded-2xl text-white space-y-1.5 text-xs">
+                    <div className="flex justify-between text-slate-300">
+                      <span>Parts Subtotal:</span>
+                      <span className="font-semibold text-white">₹{cartSubtotal.toFixed(2)}</span>
+                    </div>
+                    {numericDiscount > 0 && (
+                      <div className="flex justify-between text-amber-400 font-semibold">
+                        <span>Discount:</span>
+                        <span>- ₹{numericDiscount.toFixed(2)}</span>
+                      </div>
+                    )}
+                    <div className="pt-1.5 border-t border-slate-800 flex justify-between items-center text-xs sm:text-sm font-extrabold text-amber-400">
+                      <span>Final Bill Amount:</span>
+                      <span className="text-sm sm:text-base font-mono">₹{cartNetTotal.toFixed(2)}</span>
+                    </div>
+                  </div>
+
+                  {/* AMOUNT PAID NOW */}
+                  <div>
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="block text-[10px] sm:text-xs font-bold text-slate-700 uppercase tracking-wider">
+                        Amount Paid Now (₹)
+                      </label>
+                      <span className="text-[10px] sm:text-[11px] font-bold text-slate-400">Max: ₹{cartNetTotal.toFixed(2)}</span>
+                    </div>
+                    <input
+                      type="number"
+                      step="1"
+                      min="0"
+                      max={cartNetTotal}
+                      value={paidAmount}
+                      onChange={(e) => setPaidAmount(e.target.value)}
+                      className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm sm:text-base font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                    />
+                  </div>
+
+                  {/* AUTOMATIC KHATA DUE BANNER */}
+                  {cartPendingBalance > 0 && (
+                    <div className="p-2.5 bg-amber-50 rounded-xl border border-amber-200 text-[11px] sm:text-xs text-amber-800 font-medium">
+                      Remaining ₹{cartPendingBalance.toFixed(2)} will be automatically recorded in Customer's Counter Khata Book!
+                    </div>
+                  )}
+
+                  {/* PAYMENT METHOD */}
+                  <div>
+                    <label className="block text-[10px] sm:text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                      Payment Method
+                    </label>
+                    <select
+                      value={paymentMode}
+                      onChange={(e) => setPaymentMode(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none"
+                    >
+                      <option value="CASH">Cash 💵</option>
+                      <option value="UPI">UPI / GPay 📱</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* GENERATE INVOICE & CLOSE BUTTON */}
+                <button
+                  type="submit"
+                  disabled={submittingSale || cartItems.length === 0}
+                  className="w-full py-3.5 sm:py-4 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold rounded-xl sm:rounded-2xl shadow-md shadow-emerald-600/20 text-xs sm:text-sm flex items-center justify-center gap-2 transition-all active:scale-98"
+                >
+                  {submittingSale ? (
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Receipt className="w-4 h-4" />
+                  )}
+                  Generate Invoice & Close
+                </button>
+
+              </form>
+            </div>
+
           </div>
+
+          {/* MOBILE FLOATING VIEW CART BAR (WHEN ON CATALOG TAB WITH ITEMS) */}
+          {mobilePosView === 'CATALOG' && cartItems.length > 0 && (
+            <div className="fixed bottom-3 inset-x-3 lg:hidden z-40">
+              <button
+                type="button"
+                onClick={() => setMobilePosView('CART')}
+                className="w-full py-3 px-4 bg-slate-900 text-white font-bold text-xs rounded-2xl shadow-xl flex items-center justify-between active:scale-98 transition-all"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="p-1.5 bg-blue-600 rounded-xl text-white">
+                    <ShoppingCart className="w-4 h-4" />
+                  </span>
+                  <span>{cartItems.length} {cartItems.length === 1 ? 'Part' : 'Parts'} in Cart</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="font-mono text-amber-400 font-black">₹{cartNetTotal.toFixed(2)}</span>
+                  <ChevronRight className="w-4 h-4 text-slate-400" />
+                </div>
+              </button>
+            </div>
+          )}
 
         </div>
       )}
 
       {/* TAB 2: COUNTER INVOICES HISTORY */}
       {activeTab === 'INVOICES' && (
-        <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm space-y-5">
+        <div className="bg-white p-4 sm:p-6 rounded-2xl sm:rounded-3xl border border-slate-200/80 shadow-xs space-y-4">
           
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 pb-4">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-100 pb-3">
             <div>
-              <h3 className="font-bold text-slate-900 font-poppins text-lg">Counter Sales Invoices History</h3>
-              <p className="text-xs text-slate-500">All retail counter sales bills generated for spare parts.</p>
+              <h3 className="font-bold text-slate-900 font-poppins text-base sm:text-lg">Counter Sales Invoices History</h3>
+              <p className="text-[11px] sm:text-xs text-slate-500">All retail counter sales bills generated for spare parts.</p>
             </div>
 
-            <div className="flex items-center gap-3 w-full sm:w-auto">
-              <div className="relative flex-1 sm:w-64">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={invFilterSearch}
-                  onChange={(e) => setInvFilterSearch(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-medium focus:outline-none"
-                />
-              </div>
+            <div className="relative w-full sm:w-64">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={invFilterSearch}
+                onChange={(e) => setInvFilterSearch(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-medium focus:outline-none"
+              />
             </div>
           </div>
 
           {/* INVOICES TABLE */}
           {invoices.length === 0 ? (
-            <div className="text-center py-12 text-slate-400">
-              <Receipt className="w-12 h-12 mx-auto stroke-1 mb-2 text-slate-300" />
-              <p className="text-sm font-medium">No counter sale bills created yet.</p>
+            <div className="text-center py-10 text-slate-400">
+              <Receipt className="w-10 h-10 mx-auto stroke-1 mb-2 text-slate-300" />
+              <p className="text-xs sm:text-sm font-medium">No counter sale bills created yet.</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
+              <table className="w-full text-left text-xs min-w-[600px]">
                 <thead>
                   <tr className="border-b border-slate-200/80 bg-slate-50/50 text-slate-500 font-bold uppercase tracking-wider">
-                    <th className="py-3 px-4">Bill No</th>
-                    <th className="py-3 px-4">Date</th>
-                    <th className="py-3 px-4">Customer</th>
-                    <th className="py-3 px-4">Items</th>
-                    <th className="py-3 px-4 text-right">Net Total</th>
-                    <th className="py-3 px-4 text-right">Paid</th>
-                    <th className="py-3 px-4 text-right">Balance</th>
-                    <th className="py-3 px-4 text-center">Status</th>
-                    <th className="py-3 px-4 text-right">Actions</th>
+                    <th className="py-2.5 px-3">Bill No</th>
+                    <th className="py-2.5 px-3">Date</th>
+                    <th className="py-2.5 px-3">Customer</th>
+                    <th className="py-2.5 px-3">Items</th>
+                    <th className="py-2.5 px-3 text-right">Net Total</th>
+                    <th className="py-2.5 px-3 text-right">Paid</th>
+                    <th className="py-2.5 px-3 text-right">Balance</th>
+                    <th className="py-2.5 px-3 text-center">Status</th>
+                    <th className="py-2.5 px-3 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
@@ -1282,22 +1399,22 @@ Kindly clear your pending balance at your earliest convenience.
                     })
                     .map((inv) => (
                       <tr key={inv.id} className="hover:bg-slate-50/80 transition-colors">
-                        <td className="py-3 px-4 font-mono font-bold text-blue-600">{inv.invoice_number}</td>
-                        <td className="py-3 px-4 text-slate-500">{new Date(inv.created_at || Date.now()).toLocaleDateString('en-IN')}</td>
-                        <td className="py-3 px-4">
+                        <td className="py-2.5 px-3 font-mono font-bold text-blue-600">{inv.invoice_number}</td>
+                        <td className="py-2.5 px-3 text-slate-500">{new Date(inv.created_at || Date.now()).toLocaleDateString('en-IN')}</td>
+                        <td className="py-2.5 px-3">
                           <span className="font-bold text-slate-900 block">{inv.customer_name}</span>
-                          <span className="font-mono text-slate-400 text-[11px]">{inv.customer_phone}</span>
+                          <span className="font-mono text-slate-400 text-[10px]">{inv.customer_phone}</span>
                         </td>
-                        <td className="py-3 px-4 text-slate-600 max-w-[200px] truncate">
+                        <td className="py-2.5 px-3 text-slate-600 max-w-[180px] truncate">
                           {(inv.items || []).map(i => `${i.part_name || i.item_name} (x${i.quantity})`).join(', ')}
                         </td>
-                        <td className="py-3 px-4 text-right font-mono font-bold text-slate-900">₹{parseFloat(inv.net_total || 0).toFixed(2)}</td>
-                        <td className="py-3 px-4 text-right font-mono text-emerald-600 font-bold">₹{parseFloat(inv.paid_amount || 0).toFixed(2)}</td>
-                        <td className="py-3 px-4 text-right font-mono text-rose-600 font-bold">
+                        <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900">₹{parseFloat(inv.net_total || 0).toFixed(2)}</td>
+                        <td className="py-2.5 px-3 text-right font-mono text-emerald-600 font-bold">₹{parseFloat(inv.paid_amount || 0).toFixed(2)}</td>
+                        <td className="py-2.5 px-3 text-right font-mono text-rose-600 font-bold">
                           {parseFloat(inv.pending_amount || 0) > 0 ? `₹${parseFloat(inv.pending_amount).toFixed(2)}` : '₹0.00'}
                         </td>
-                        <td className="py-3 px-4 text-center">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${
+                        <td className="py-2.5 px-3 text-center">
+                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase ${
                             parseFloat(inv.pending_amount || 0) === 0
                               ? 'bg-emerald-100 text-emerald-700'
                               : 'bg-amber-100 text-amber-700'
@@ -1305,8 +1422,8 @@ Kindly clear your pending balance at your earliest convenience.
                             {parseFloat(inv.pending_amount || 0) === 0 ? 'PAID' : 'PARTIAL'}
                           </span>
                         </td>
-                        <td className="py-3 px-4 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
+                        <td className="py-2.5 px-3 text-right">
+                          <div className="flex items-center justify-end gap-1">
                             <button
                               type="button"
                               onClick={() => handleDownloadCard(inv)}
@@ -1337,14 +1454,14 @@ Kindly clear your pending balance at your earliest convenience.
 
       {/* TAB 3: COUNTER KHATA BOOK */}
       {activeTab === 'KHATA' && (
-        <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm space-y-5">
+        <div className="bg-white p-4 sm:p-6 rounded-2xl sm:rounded-3xl border border-slate-200/80 shadow-xs space-y-4">
           
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 pb-4">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-100 pb-3">
             <div>
-              <h3 className="font-bold text-slate-900 font-poppins text-lg flex items-center gap-2">
-                <BookOpen className="w-5 h-5 text-rose-600" /> Counter Spare Parts Khata Book
+              <h3 className="font-bold text-slate-900 font-poppins text-base sm:text-lg flex items-center gap-2">
+                <BookOpen className="w-4 h-4 sm:w-5 sm:h-5 text-rose-600" /> Counter Khata Book
               </h3>
-              <p className="text-xs text-slate-500">Independent credit register for customers with pending spare part dues.</p>
+              <p className="text-[11px] sm:text-xs text-slate-500">Independent credit register for customers with pending spare part dues.</p>
             </div>
 
             <div className="relative w-full sm:w-64">
@@ -1360,13 +1477,13 @@ Kindly clear your pending balance at your earliest convenience.
 
           {/* DEBTORS LIST */}
           {khataDebtors.filter(k => k.status !== 'CLEARED').length === 0 ? (
-            <div className="text-center py-12 text-slate-400">
-              <CheckCircle2 className="w-12 h-12 mx-auto stroke-1 mb-2 text-emerald-400" />
-              <p className="text-sm font-bold text-slate-700">All Clear! No Pending Spare Part Dues.</p>
-              <p className="text-xs text-slate-400 mt-0.5">Any credit counter sales will automatically appear here.</p>
+            <div className="text-center py-10 text-slate-400">
+              <CheckCircle2 className="w-10 h-10 mx-auto stroke-1 mb-2 text-emerald-400" />
+              <p className="text-xs sm:text-sm font-bold text-slate-700">All Clear! No Pending Spare Part Dues.</p>
+              <p className="text-[11px] text-slate-400 mt-0.5">Any credit counter sales will automatically appear here.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
               {khataDebtors
                 .filter(k => k.status !== 'CLEARED')
                 .filter(k => {
@@ -1374,43 +1491,43 @@ Kindly clear your pending balance at your earliest convenience.
                   return !q || (k.customer_name || '').toLowerCase().includes(q) || (k.customer_phone || '').includes(q);
                 })
                 .map((debtor) => (
-                  <div key={debtor.id} className="p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-4 hover:shadow-md transition-shadow">
+                  <div key={debtor.id} className="p-4 rounded-xl sm:rounded-2xl bg-slate-50 border border-slate-200 space-y-3 hover:shadow-xs transition-shadow">
                     
                     <div className="flex justify-between items-start">
                       <div>
-                        <h4 className="font-bold text-slate-900 text-sm font-poppins">{debtor.customer_name}</h4>
-                        <span className="font-mono text-slate-500 text-xs block">{debtor.customer_phone}</span>
+                        <h4 className="font-bold text-slate-900 text-xs sm:text-sm font-poppins">{debtor.customer_name}</h4>
+                        <span className="font-mono text-slate-500 text-[11px] block">{debtor.customer_phone}</span>
                         {debtor.invoice_number && (
-                          <span className="text-[10px] font-mono text-blue-600 font-bold block mt-0.5">
+                          <span className="text-[9px] font-mono text-blue-600 font-bold block mt-0.5">
                             Ref: #{debtor.invoice_number}
                           </span>
                         )}
                       </div>
 
                       <div className="text-right">
-                        <span className="text-[10px] font-bold text-rose-600 uppercase block">Pending Due</span>
-                        <span className="text-base font-black font-mono text-rose-600">
+                        <span className="text-[9px] font-bold text-rose-600 uppercase block">Due</span>
+                        <span className="text-sm sm:text-base font-black font-mono text-rose-600">
                           ₹{parseFloat(debtor.pending_amount || 0).toFixed(2)}
                         </span>
                       </div>
                     </div>
 
-                    <div className="text-xs text-slate-600 bg-white p-3 rounded-xl border border-slate-200/70 space-y-1">
-                      <div className="flex justify-between text-[11px]">
+                    <div className="text-xs text-slate-600 bg-white p-2.5 rounded-xl border border-slate-200/70 space-y-1">
+                      <div className="flex justify-between text-[10px] sm:text-[11px]">
                         <span className="text-slate-400">Total Purchase:</span>
                         <span className="font-mono font-bold">₹{parseFloat(debtor.total_amount || 0).toFixed(2)}</span>
                       </div>
-                      <div className="flex justify-between text-[11px]">
+                      <div className="flex justify-between text-[10px] sm:text-[11px]">
                         <span className="text-slate-400">Paid So Far:</span>
                         <span className="font-mono font-bold text-emerald-600">₹{parseFloat(debtor.paid_amount || 0).toFixed(2)}</span>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 pt-1">
+                    <div className="flex items-center gap-2 pt-0.5">
                       <button
                         type="button"
                         onClick={() => setPaymentModal({ isOpen: true, debtor, amount: '', paymentMode: 'CASH' })}
-                        className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-sm transition-colors flex items-center justify-center gap-1"
+                        className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-1 active:scale-98"
                       >
                         <DollarSign className="w-3.5 h-3.5" /> Record Payment
                       </button>
@@ -1418,7 +1535,7 @@ Kindly clear your pending balance at your earliest convenience.
                       <button
                         type="button"
                         onClick={() => handleShareKhataReminder(debtor)}
-                        className="p-2 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 rounded-xl transition-colors"
+                        className="p-2 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 rounded-xl transition-colors active:scale-95"
                         title="Send WhatsApp Payment Reminder"
                       >
                         <Share2 className="w-4 h-4" />
@@ -1433,18 +1550,18 @@ Kindly clear your pending balance at your earliest convenience.
         </div>
       )}
 
-      {/* MODAL 1: ADD NEW SPARE PART (EXACT REPLICA OF INVENTORY PAGE MODAL) */}
+      {/* MODAL 1: ADD NEW SPARE PART */}
       {showAddPartModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full space-y-6 shadow-2xl border border-slate-200">
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white rounded-2xl sm:rounded-3xl p-5 sm:p-7 max-w-md w-full space-y-4 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto">
             
-            <h2 className="text-xl font-bold text-slate-900 font-poppins">
+            <h2 className="text-lg sm:text-xl font-bold text-slate-900 font-poppins">
               Add New Spare Part
             </h2>
 
-            <form onSubmit={handleSaveNewPart} className="space-y-4">
+            <form onSubmit={handleSaveNewPart} className="space-y-3.5">
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                <label className="block text-[10px] sm:text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                   PART NAME *
                 </label>
                 <input
@@ -1452,18 +1569,18 @@ Kindly clear your pending balance at your earliest convenience.
                   required
                   value={newPartForm.part_name}
                   onChange={(e) => setNewPartForm({ ...newPartForm, part_name: e.target.value })}
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                <label className="block text-[10px] sm:text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                   CATEGORY *
                 </label>
                 <select
                   value={newPartForm.category}
                   onChange={(e) => setNewPartForm({ ...newPartForm, category: e.target.value })}
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 text-xs font-bold bg-slate-50 focus:outline-none"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-bold bg-slate-50 focus:outline-none"
                 >
                   {INVENTORY_CATEGORIES.map(cat => (
                     <option key={cat} value={cat}>{cat}</option>
@@ -1471,9 +1588,9 @@ Kindly clear your pending balance at your earliest convenience.
                 </select>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  <label className="block text-[10px] sm:text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                     SELLING PRICE (₹) *
                   </label>
                   <input
@@ -1482,12 +1599,12 @@ Kindly clear your pending balance at your earliest convenience.
                     required
                     value={newPartForm.price}
                     onChange={(e) => setNewPartForm({ ...newPartForm, price: e.target.value })}
-                    className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm font-mono font-bold focus:outline-none"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm font-mono font-bold focus:outline-none"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  <label className="block text-[10px] sm:text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                     CURRENT STOCK *
                   </label>
                   <input
@@ -1495,13 +1612,13 @@ Kindly clear your pending balance at your earliest convenience.
                     required
                     value={newPartForm.current_stock}
                     onChange={(e) => setNewPartForm({ ...newPartForm, current_stock: e.target.value })}
-                    className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm font-mono font-bold focus:outline-none"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm font-mono font-bold focus:outline-none"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                <label className="block text-[10px] sm:text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                   LOW STOCK ALERT THRESHOLD
                 </label>
                 <input
@@ -1509,22 +1626,22 @@ Kindly clear your pending balance at your earliest convenience.
                   required
                   value={newPartForm.min_stock_alert}
                   onChange={(e) => setNewPartForm({ ...newPartForm, min_stock_alert: e.target.value })}
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm font-mono focus:outline-none"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm font-mono focus:outline-none"
                 />
               </div>
 
-              <div className="flex gap-3 pt-4">
+              <div className="flex gap-2.5 pt-3">
                 <button
                   type="button"
                   onClick={() => setShowAddPartModal(false)}
-                  className="flex-1 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-all"
+                  className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-all"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={addingPart}
-                  className="flex-1 py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md transition-all disabled:opacity-50"
+                  className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all disabled:opacity-50"
                 >
                   {addingPart ? 'Saving...' : 'Save Part'}
                 </button>
@@ -1537,32 +1654,32 @@ Kindly clear your pending balance at your earliest convenience.
 
       {/* MODAL 2: SALE SUCCESS & INSTANT SHARE MODAL */}
       {successModal.isOpen && successModal.sale && (
-        <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-lg w-full space-y-5 shadow-2xl border border-slate-100 relative animate-in fade-in zoom-in duration-200">
+        <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-md flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white rounded-2xl sm:rounded-3xl p-5 sm:p-7 max-w-lg w-full space-y-4 shadow-2xl border border-slate-100 relative max-h-[90vh] overflow-y-auto">
             
-            <div className="text-center space-y-2">
-              <div className="w-14 h-14 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto shadow-sm">
-                <CheckCircle2 className="w-8 h-8" />
+            <div className="text-center space-y-1.5">
+              <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto shadow-xs">
+                <CheckCircle2 className="w-7 h-7 sm:w-8 sm:h-8" />
               </div>
-              <h3 className="text-xl font-bold font-poppins text-slate-900">Counter Sale Completed!</h3>
-              <p className="text-xs text-slate-500">
+              <h3 className="text-lg sm:text-xl font-bold font-poppins text-slate-900">Counter Sale Completed!</h3>
+              <p className="text-[11px] sm:text-xs text-slate-500">
                 Invoice <span className="font-mono font-bold text-blue-600">#{successModal.sale.invoice_number}</span> generated & stock updated.
               </p>
             </div>
 
             {/* PREVIEW PHOTO CARD */}
             {successModal.photoUrl && (
-              <div className="rounded-2xl overflow-hidden border border-slate-200 shadow-md">
-                <img src={successModal.photoUrl} alt="Bill Preview" className="w-full object-contain max-h-56 bg-slate-50" />
+              <div className="rounded-xl sm:rounded-2xl overflow-hidden border border-slate-200 shadow-xs">
+                <img src={successModal.photoUrl} alt="Bill Preview" className="w-full object-contain max-h-52 bg-slate-50" />
               </div>
             )}
 
             {/* ACTION BUTTONS */}
-            <div className="space-y-2.5">
+            <div className="space-y-2">
               <button
                 type="button"
                 onClick={() => handleDownloadCard(successModal.sale)}
-                className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md inline-flex items-center justify-center gap-2 transition-all"
+                className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-xs inline-flex items-center justify-center gap-2 transition-all active:scale-98"
               >
                 <Download className="w-4 h-4" /> Download Bill Photo Card
               </button>
@@ -1570,7 +1687,7 @@ Kindly clear your pending balance at your earliest convenience.
               <button
                 type="button"
                 onClick={() => handleShareWhatsApp(successModal.sale)}
-                className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md inline-flex items-center justify-center gap-2 transition-all"
+                className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs inline-flex items-center justify-center gap-2 transition-all active:scale-98"
               >
                 <Share2 className="w-4 h-4" /> Share on WhatsApp
               </button>
@@ -1578,7 +1695,7 @@ Kindly clear your pending balance at your earliest convenience.
               <button
                 type="button"
                 onClick={() => setSuccessModal({ isOpen: false, sale: null, photoUrl: null })}
-                className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs rounded-xl transition-all"
+                className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs rounded-xl transition-all"
               >
                 Done / Next Sale
               </button>
@@ -1590,35 +1707,35 @@ Kindly clear your pending balance at your earliest convenience.
 
       {/* MODAL 3: RECORD KHATA PAYMENT MODAL */}
       {paymentModal.isOpen && paymentModal.debtor && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-sm w-full space-y-5 shadow-2xl border border-slate-100 relative animate-in fade-in zoom-in duration-150">
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white rounded-2xl sm:rounded-3xl p-5 sm:p-7 max-w-sm w-full space-y-4 shadow-2xl border border-slate-100 relative">
             
-            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-2.5">
               <div>
-                <h3 className="font-bold text-slate-900 font-poppins text-base flex items-center gap-1.5">
-                  <DollarSign className="w-5 h-5 text-emerald-600" /> Record Khata Payment
+                <h3 className="font-bold text-slate-900 font-poppins text-sm sm:text-base flex items-center gap-1.5">
+                  <DollarSign className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-600" /> Record Khata Payment
                 </h3>
-                <p className="text-xs text-slate-500">Customer: {paymentModal.debtor.customer_name}</p>
+                <p className="text-[11px] text-slate-500">Customer: {paymentModal.debtor.customer_name}</p>
               </div>
               <button
                 type="button"
                 onClick={() => setPaymentModal({ isOpen: false, debtor: null, amount: '', paymentMode: 'CASH' })}
                 className="text-slate-400 hover:text-slate-600 p-1"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleConfirmRecordPayment} className="space-y-4">
-              <div className="p-3 bg-rose-50 rounded-2xl border border-rose-100 flex justify-between items-center">
+            <form onSubmit={handleConfirmRecordPayment} className="space-y-3.5">
+              <div className="p-2.5 bg-rose-50 rounded-xl border border-rose-100 flex justify-between items-center">
                 <span className="text-xs font-bold text-rose-800">Pending Dues:</span>
-                <span className="text-base font-black font-mono text-rose-600">
+                <span className="text-sm sm:text-base font-black font-mono text-rose-600">
                   ₹{parseFloat(paymentModal.debtor.pending_amount || 0).toFixed(2)}
                 </span>
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                <label className="block text-[10px] sm:text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                   PAYMENT AMOUNT (₹) *
                 </label>
                 <input
@@ -1627,36 +1744,36 @@ Kindly clear your pending balance at your earliest convenience.
                   required
                   value={paymentModal.amount}
                   onChange={(e) => setPaymentModal({ ...paymentModal, amount: e.target.value })}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs sm:text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                <label className="block text-[10px] sm:text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                   PAYMENT METHOD
                 </label>
                 <select
                   value={paymentModal.paymentMode}
                   onChange={(e) => setPaymentModal({ ...paymentModal, paymentMode: e.target.value })}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-bold bg-slate-50 focus:outline-none"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none"
                 >
                   <option value="CASH">Cash 💵</option>
                   <option value="UPI">UPI / GPay 📱</option>
                 </select>
               </div>
 
-              <div className="flex gap-3 pt-2">
+              <div className="flex gap-2.5 pt-2">
                 <button
                   type="button"
                   onClick={() => setPaymentModal({ isOpen: false, debtor: null, amount: '', paymentMode: 'CASH' })}
-                  className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs rounded-xl"
+                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs rounded-xl"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={recordingPayment}
-                  className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md disabled:opacity-50"
+                  className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs disabled:opacity-50 active:scale-98"
                 >
                   {recordingPayment ? 'Recording...' : 'Confirm Payment'}
                 </button>

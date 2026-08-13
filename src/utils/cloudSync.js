@@ -1494,6 +1494,19 @@ export async function pushCloudCounterKhata(khataObj) {
   await saveMasterStore({ ...store, counterKhata: [khataObj, ...filteredCloud] });
 }
 
+export async function deleteCloudCounterKhata(khataId) {
+  if (!khataId) return;
+  const strId = String(khataId);
+  const localKhata = JSON.parse(localStorage.getItem('local_counter_khata') || '[]');
+  const updatedLocal = localKhata.filter(k => String(k.id) !== strId && String(k.sale_id) !== strId);
+  localStorage.setItem('local_counter_khata', JSON.stringify(updatedLocal));
+
+  const store = await fetchMasterStore();
+  const existing = (store.counterKhata || []).filter(k => k && typeof k === 'object');
+  const updatedCloud = existing.filter(k => String(k.id) !== strId && String(k.sale_id) !== strId);
+  await saveMasterStore({ ...store, counterKhata: updatedCloud });
+}
+
 export async function atomicRecordCounterPayment(targetId, paymentAmount, paymentMode = 'CASH', adminName = 'Patel Automobiles') {
   const numAmt = parseFloat(paymentAmount || 0);
   if (numAmt <= 0) return;

@@ -4,22 +4,30 @@ import {
   Receipt, BookOpen, Download, Share2, Phone, User, Calendar, 
   DollarSign, Package, Tag, ArrowRight, RefreshCw, X, ShieldAlert,
   CreditCard, Smartphone, Check, Sparkles, Filter, ChevronRight,
-  IndianRupee, Wrench, ShieldCheck, Layers, ShoppingCart
+  IndianRupee, Wrench, ShieldCheck, Layers, ShoppingCart, Send
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { 
   fetchCloudCounterSales, pushCloudCounterSale, deleteCloudCounterSale,
-  fetchCloudCounterKhata, pushCloudCounterKhata, atomicRecordCounterPayment,
-  syncCloudInventory, atomicAddInventoryItem, fetchMasterStore,
-  saveMasterStore, pushCloudActiveCounterCart
+  fetchCloudCounterKhata, pushCloudCounterKhata, deleteCloudCounterKhata,
+  atomicRecordCounterPayment, syncCloudInventory, atomicAddInventoryItem,
+  fetchMasterStore, saveMasterStore, pushCloudActiveCounterCart
 } from '../utils/cloudSync';
-import { generateCounterSaleCardPhotoAsync } from '../utils/billCardGenerator';
+import { generateCounterSaleCardPhotoAsync, generateBillCanvasBlob } from '../utils/billCardGenerator';
+import { formatDateDMY } from '../utils/dateFormatter';
 
 const INVENTORY_CATEGORIES = [
   'General', 'Engine Oil', 'Air Filter', 'Oil Filter', 'Spark Plug', 
   'Brake Shoe', 'Brake Pad', 'Chain Kit', 'Clutch Plate', 'Clutch Cable', 
   'Accelerator Cable', 'Bulbs', 'Battery', 'Tyres'
 ];
+
+// Official WhatsApp SVG Icon Component
+const WhatsAppIcon = ({ className = "w-4 h-4" }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+    <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z"/>
+  </svg>
+);
 
 export default function CounterSalePage() {
   const { garageInfo, user } = useAuth();
@@ -28,7 +36,6 @@ export default function CounterSalePage() {
 
   // Live Inventory & Catalog State
   const [inventory, setInventory] = useState([]);
-  const [loadingInv, setLoadingInv] = useState(false);
   const [invSearch, setInvSearch] = useState('');
   const [invCategory, setInvCategory] = useState('ALL');
 
@@ -73,7 +80,6 @@ export default function CounterSalePage() {
     };
     localStorage.setItem('counter_sale_draft', JSON.stringify(draft));
 
-    // Debounce cloud push to prevent spamming
     if (debounceCloudTimer.current) clearTimeout(debounceCloudTimer.current);
     debounceCloudTimer.current = setTimeout(() => {
       pushCloudActiveCounterCart(draft).catch(() => null);
@@ -171,7 +177,6 @@ export default function CounterSalePage() {
         const cloudTime = new Date(cloudCart.updated_at || 0).getTime();
         const localTime = new Date(localDraft?.updated_at || 0).getTime();
 
-        // If cloud cart is newer or local is empty, update local state
         if (cloudTime > localTime || (!localDraft && Array.isArray(cloudCart.cartItems) && cloudCart.cartItems.length > 0)) {
           isSyncingFromCloud.current = true;
           setCustomerName(cloudCart.customerName || '');
@@ -205,7 +210,6 @@ export default function CounterSalePage() {
     window.addEventListener('inventory_updated', handleUpdates);
     window.addEventListener('counter_cart_updated', handleUpdates);
 
-    // Silently poll background for multi-device live sync every 4 seconds
     const interval = setInterval(() => {
       syncCrossDeviceCart();
     }, 4000);
@@ -229,7 +233,6 @@ export default function CounterSalePage() {
     });
   }, [inventory, invSearch, invCategory]);
 
-  // Categories list for pills
   const categoriesList = useMemo(() => {
     const set = new Set(['ALL', ...INVENTORY_CATEGORIES]);
     inventory.forEach(i => {
@@ -251,7 +254,6 @@ export default function CounterSalePage() {
     return Math.max(0, cartSubtotal - numericDiscount);
   }, [cartSubtotal, numericDiscount]);
 
-  // Keep paidAmount in sync with net total by default when cart or discount changes
   useEffect(() => {
     if (paidAmount === '' || paidAmount === cartSubtotal || initialDraft?.paidAmount === undefined) {
       setPaidAmount(cartNetTotal);
@@ -271,7 +273,7 @@ export default function CounterSalePage() {
     return cartItems.some(p => p && p.status !== 'CONFIRMED');
   }, [cartItems]);
 
-  // Handle Add Item to Cart (Adds as STAGED by default)
+  // Handle Add Item to Cart
   const handleAddToCart = (item) => {
     const curStock = parseInt(item.current_stock !== undefined ? item.current_stock : (item.stock_quantity !== undefined ? item.stock_quantity : (item.quantity !== undefined ? item.quantity : 0)), 10);
     if (curStock <= 0) {
@@ -293,7 +295,7 @@ export default function CounterSalePage() {
       }
       const updated = [...cartItems];
       updated[existingIndex].quantity += 1;
-      updated[existingIndex].status = 'STAGED'; // Mark staged so user can confirm
+      updated[existingIndex].status = 'STAGED';
       setCartItems(updated);
     } else {
       const rawName = item.part_name || item.item_name || item.name || 'Spare Part';
@@ -305,12 +307,12 @@ export default function CounterSalePage() {
         unit_price: parseFloat(item.price || item.selling_price || item.unit_price || 0),
         quantity: 1,
         available_stock: curStock,
-        status: 'STAGED' // Staged until confirmed like workshop
+        status: 'STAGED'
       }]);
     }
   };
 
-  // Explicit Confirm Parts Button Action (0ms Instant Optimistic with non-blocking Cloud sync)
+  // Confirm Cart Parts
   const handleConfirmCartParts = async () => {
     const stagedParts = cartItems.filter(p => p && p.status !== 'CONFIRMED');
     if (stagedParts.length === 0) {
@@ -320,7 +322,6 @@ export default function CounterSalePage() {
 
     setConfirmingParts(true);
 
-    // 1. INSTANT OPTIMISTIC LOCAL DEDUCTION (0ms)
     const local = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
     const map = new Map();
     local.forEach(it => {
@@ -358,7 +359,6 @@ export default function CounterSalePage() {
     const updatedCart = cartItems.map(p => ({ ...p, status: 'CONFIRMED' }));
     setCartItems(updatedCart);
     
-    // Save draft immediately & push to cloud
     const draft = {
       customerName,
       customerPhone,
@@ -378,7 +378,6 @@ export default function CounterSalePage() {
       window.dispatchEvent(new Event('inventory_updated'));
     } catch (e) {}
 
-    // Non-blocking cloud background sync
     syncCloudInventory(updatedInv).catch(console.warn);
 
     alert(`✅ Spare Parts Confirmed!\n\n${stagedParts.length} item(s) confirmed and stock deducted from Inventory successfully.`);
@@ -409,16 +408,14 @@ export default function CounterSalePage() {
     pushCloudActiveCounterCart(draft).catch(() => null);
   };
 
-  // Remove Item from Cart (0ms Instant Optimistic Restoration & Clean Deletion)
+  // Remove Item from Cart
   const handleRemoveFromCart = (itemId) => {
     const target = cartItems.find(i => String(i.id) === String(itemId));
     if (!target) return;
 
-    // 1. Remove from cart immediately
     const nextCart = cartItems.filter(i => String(i.id) !== String(itemId));
     setCartItems(nextCart);
 
-    // 2. Update persistent draft immediately
     const draft = {
       customerName,
       customerPhone,
@@ -432,7 +429,6 @@ export default function CounterSalePage() {
     localStorage.setItem('counter_sale_draft', JSON.stringify(draft));
     pushCloudActiveCounterCart(draft).catch(() => null);
 
-    // 3. If item was confirmed, restore stock once
     if (target.status === 'CONFIRMED') {
       const local = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
       const map = new Map();
@@ -471,7 +467,6 @@ export default function CounterSalePage() {
           window.dispatchEvent(new Event('inventory_updated'));
         } catch (e) {}
 
-        // Non-blocking cloud update
         syncCloudInventory(updatedInv).catch(console.warn);
       }
     }
@@ -481,7 +476,6 @@ export default function CounterSalePage() {
   const handleClearCart = async () => {
     if (!window.confirm('Are you sure you want to clear the active cart?')) return;
     
-    // Restore any confirmed items
     const confirmedItems = cartItems.filter(p => p && p.status === 'CONFIRMED');
     const local = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
     const map = new Map();
@@ -546,15 +540,14 @@ export default function CounterSalePage() {
 
     setSubmittingSale(true);
     const saleId = `cs_${Date.now()}`;
-    const invoiceNo = `CS-${Date.now().toString().slice(-6)}`;
     const finalPaid = effectivePaid;
     const finalPending = cartPendingBalance;
 
     const saleInvoice = {
       id: saleId,
-      invoice_number: invoiceNo,
       customer_name: customerName.trim(),
       customer_phone: customerPhone.trim(),
+      mobile_number: customerPhone.trim(),
       vehicle_number: vehicleNumber.trim(),
       items: cartItems.map(it => ({
         id: it.id,
@@ -562,15 +555,18 @@ export default function CounterSalePage() {
         part_name: it.part_name || it.item_name,
         quantity: it.quantity,
         unit_price: it.selling_price,
+        selling_price: it.selling_price,
         total: it.selling_price * it.quantity
       })),
       subtotal: cartSubtotal,
       discount: numericDiscount,
+      discount_amount: numericDiscount,
       net_total: cartNetTotal,
       grand_total: cartNetTotal,
+      total_amount: cartNetTotal,
       paid_amount: finalPaid,
       pending_amount: finalPending,
-      payment_status: finalPending === 0 ? 'PAID' : (finalPaid > 0 ? 'PARTIAL' : 'PENDING'),
+      payment_status: finalPending === 0 ? 'PAID' : 'UNPAID',
       payment_mode: paymentMode,
       created_at: new Date().toISOString(),
       date: new Date().toISOString(),
@@ -616,7 +612,7 @@ export default function CounterSalePage() {
         await syncCloudInventory(updatedInv);
       }
 
-      // 2. Save Counter Sale Invoice
+      // 2. Save Counter Sale Invoice to MongoDB Atlas
       await pushCloudCounterSale(saleInvoice);
 
       // 3. If credit / pending balance > 0, register in Counter Khata
@@ -624,14 +620,14 @@ export default function CounterSalePage() {
         const khataObj = {
           id: `ckhata_${saleId}`,
           sale_id: saleId,
-          invoice_number: invoiceNo,
           customer_name: customerName.trim(),
           customer_phone: customerPhone.trim(),
+          phone: customerPhone.trim(),
           vehicle_number: vehicleNumber.trim(),
           total_amount: cartNetTotal,
           paid_amount: finalPaid,
           pending_amount: finalPending,
-          status: 'PENDING',
+          status: 'UNPAID',
           items_summary: saleInvoice.items.map(i => `${i.item_name || i.part_name} (x${i.quantity})`).join(', '),
           payments: finalPaid > 0 ? [{
             id: `cpay_init_${Date.now()}`,
@@ -646,7 +642,7 @@ export default function CounterSalePage() {
         await pushCloudCounterKhata(khataObj);
       }
 
-      // 4. Generate Bill Photo Card
+      // 4. Generate Ultra HD Bill Photo Card
       const photoUrl = await generateCounterSaleCardPhotoAsync(saleInvoice, garageInfo);
 
       // 5. Open Success Modal
@@ -656,7 +652,7 @@ export default function CounterSalePage() {
         photoUrl: photoUrl
       });
 
-      // 6. Reset POS Form & Clear Draft locally and in Cloud
+      // 6. Reset POS Form & Clear Draft
       setCustomerName('');
       setCustomerPhone('');
       setVehicleNumber('');
@@ -678,7 +674,7 @@ export default function CounterSalePage() {
     }
   };
 
-  // Handle Save New Part (Exact structure matching screenshot)
+  // Handle Save New Part
   const handleSaveNewPart = async (e) => {
     e.preventDefault();
     if (!newPartForm.part_name.trim()) {
@@ -709,7 +705,6 @@ export default function CounterSalePage() {
         min_stock_alert: parseInt(newPartForm.min_stock_alert || 5, 10)
       });
 
-      // Add directly to cart
       handleAddToCart(createdItem);
 
       alert(`✅ '${createdItem.part_name || createdItem.name}' added to Inventory and added to cart!`);
@@ -727,6 +722,60 @@ export default function CounterSalePage() {
       alert('⚠️ Failed to add spare part. Please try again.');
     } finally {
       setAddingPart(false);
+    }
+  };
+
+  // Delete Counter Sale Invoice (From Local & MongoDB Atlas)
+  const handleDeleteInvoice = async (inv) => {
+    if (!inv || !inv.id) return;
+    if (!window.confirm(`Are you sure you want to permanently delete the invoice for ${inv.customer_name}?`)) {
+      return;
+    }
+
+    try {
+      // 1. Optimistic Local Removal
+      const filtered = invoices.filter(i => String(i.id) !== String(inv.id));
+      setInvoices(filtered);
+      localStorage.setItem('local_counter_sales', JSON.stringify(filtered));
+
+      // 2. Delete from MongoDB Atlas
+      await deleteCloudCounterSale(inv.id);
+      
+      try {
+        window.dispatchEvent(new Event('master_store_updated'));
+      } catch (e) {}
+
+      alert('🗑️ Invoice deleted successfully from Cloud database!');
+      loadInvoices();
+    } catch (err) {
+      console.error('Error deleting counter sale invoice:', err);
+      alert('⚠️ Error deleting invoice.');
+    }
+  };
+
+  // Delete Counter Khata Debtor (From Local & MongoDB Atlas)
+  const handleDeleteKhataEntry = async (debtor) => {
+    if (!debtor || !debtor.id) return;
+    if (!window.confirm(`Are you sure you want to permanently delete the Khata entry for ${debtor.customer_name}?`)) {
+      return;
+    }
+
+    try {
+      const filtered = khataDebtors.filter(k => String(k.id) !== String(debtor.id));
+      setKhataDebtors(filtered);
+      localStorage.setItem('local_counter_khata', JSON.stringify(filtered));
+
+      await deleteCloudCounterKhata(debtor.id);
+
+      try {
+        window.dispatchEvent(new Event('master_store_updated'));
+      } catch (e) {}
+
+      alert('🗑️ Khata entry deleted successfully from Cloud database!');
+      loadKhata();
+    } catch (err) {
+      console.error('Error deleting Khata entry:', err);
+      alert('⚠️ Error deleting Khata entry.');
     }
   };
 
@@ -763,69 +812,74 @@ export default function CounterSalePage() {
     }
   };
 
-  // WhatsApp Share Helper
-  const handleShareWhatsApp = (sale) => {
-    if (!sale || !sale.customer_phone) return;
-    const cleanPhone = sale.customer_phone.replace(/[^0-9]/g, '');
-    const phoneWithCountry = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
-    
-    const itemsList = (sale.items || []).map((it, i) => `${i + 1}. ${it.part_name || it.item_name} (x${it.quantity}) - ₹${parseFloat(it.total).toFixed(2)}`).join('\n');
-    const msg = `*PATEL AUTOMOBILES - SPARE PARTS CASH MEMO* 🛵🔧
-━━━━━━━━━━━━━━━━━━━━
-📄 *Bill No:* ${sale.invoice_number}
-📅 *Date:* ${new Date(sale.created_at || Date.now()).toLocaleDateString('en-IN')}
-👤 *Customer:* ${sale.customer_name}
-${sale.vehicle_number ? `🛵 *Vehicle:* ${sale.vehicle_number.toUpperCase()}\n` : ''}
-*Purchased Items:*
-${itemsList}
-
-━━━━━━━━━━━━━━━━━━━━
-💰 *Net Total:* ₹${parseFloat(sale.net_total).toFixed(2)}
-💵 *Paid Amount:* ₹${parseFloat(sale.paid_amount).toFixed(2)}
-${parseFloat(sale.pending_amount) > 0 ? `⚠️ *Pending Balance Due:* ₹${parseFloat(sale.pending_amount).toFixed(2)}\n` : '✅ *Payment Status:* Paid in Full\n'}
-${garageInfo?.safety_message || 'Thank you for choosing Patel Automobiles! Wish you a safe ride. 🛵⛑️'}
-
-📍 *Address:* Near Dandi Pond, Dandi, Valsad
-📞 *Contact:* +91 81403 71414`;
-
-    window.open(`https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(msg)}`, '_blank');
-  };
-
-  // WhatsApp Khata Reminder Helper
-  const handleShareKhataReminder = (debtor) => {
-    if (!debtor || !debtor.customer_phone) return;
-    const cleanPhone = debtor.customer_phone.replace(/[^0-9]/g, '');
-    const phoneWithCountry = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
-    
-    const msg = `*PATEL AUTOMOBILES - PAYMENT REMINDER* 🛵
-━━━━━━━━━━━━━━━━━━━━
-👤 *Customer:* ${debtor.customer_name}
-📄 *Bill Ref:* ${debtor.invoice_number}
-📦 *Items:* ${debtor.items_summary || 'Spare Parts'}
-💰 *Total Bill:* ₹${parseFloat(debtor.total_amount).toFixed(2)}
-💵 *Paid so far:* ₹${parseFloat(debtor.paid_amount).toFixed(2)}
-⚠️ *Pending Balance Due:* *₹${parseFloat(debtor.pending_amount).toFixed(2)}*
-
-━━━━━━━━━━━━━━━━━━━━
-📲 *Pay via UPI:* ${garageInfo?.upi_id || 'paytmqr5hlpsp@ptys'}
-👤 *Payee:* Patel Automobiles
-
-Kindly clear your pending balance at your earliest convenience.
-📞 *Contact:* +91 81403 71414`;
-
-    window.open(`https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(msg)}`, '_blank');
-  };
-
   // Download Bill Photo Card
   const handleDownloadCard = async (sale) => {
     const url = await generateCounterSaleCardPhotoAsync(sale, garageInfo);
     if (!url) return;
     const link = document.createElement('a');
     link.href = url;
-    link.download = `Bill_${sale.invoice_number || 'CounterSale'}.png`;
+    link.download = `Bill_${(sale.customer_name || 'CounterSale').replace(/\s+/g, '_')}_${formatDateDMY(sale.created_at || Date.now())}.png`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  // WhatsApp Share Helper (Auto Generated HD Card + Formatted Message)
+  const handleShareWhatsApp = async (sale) => {
+    if (!sale) return;
+    const rawPhone = sale.customer_phone || sale.mobile_number || sale.phone || '';
+    const cleanPhone = rawPhone.replace(/[^0-9]/g, '');
+    const phoneWithCountry = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
+    
+    // Automatically trigger HD Photo Card download
+    handleDownloadCard(sale).catch(() => null);
+
+    const itemsList = (sale.items || []).map((it, i) => `${i + 1}. ${it.part_name || it.item_name} (x${it.quantity}) - ₹${parseFloat(it.total || (it.unit_price * it.quantity)).toFixed(2)}`).join('\n');
+    
+    const isPaid = parseFloat(sale.pending_amount || 0) <= 0;
+    const msg = `*PATEL AUTOMOBILES - SPARE PARTS CASH MEMO* 🛵🔧
+━━━━━━━━━━━━━━━━━━━━
+📅 *Date:* ${formatDateDMY(sale.created_at || sale.date || Date.now())}
+👤 *Customer:* ${sale.customer_name}
+${sale.vehicle_number ? `🛵 *Vehicle:* ${sale.vehicle_number.toUpperCase()}\n` : ''}
+*Purchased Items:*
+${itemsList}
+
+━━━━━━━━━━━━━━━━━━━━
+💰 *Net Total:* ₹${parseFloat(sale.net_total || sale.total_amount || 0).toFixed(2)}
+💵 *Paid Amount:* ₹${parseFloat(sale.paid_amount || 0).toFixed(2)}
+${!isPaid ? `⚠️ *Pending Balance Due:* ₹${parseFloat(sale.pending_amount).toFixed(2)}\n` : '✅ *Status:* PAID IN FULL\n'}
+${garageInfo?.safety_message || 'Thank you for choosing Patel Automobiles! Wish you a safe & smooth ride. 🛵⛑️'}
+
+📍 *Address:* ${garageInfo?.address || 'Near Dandi Pond, Dandi, Valsad'}
+📞 *Contact:* ${garageInfo?.phone || '+91 81403 71414'}`;
+
+    window.open(`https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(msg)}`, '_blank');
+  };
+
+  // WhatsApp Khata Reminder Helper
+  const handleShareKhataReminder = async (debtor) => {
+    if (!debtor) return;
+    const rawPhone = debtor.customer_phone || debtor.phone || debtor.mobile_number || '';
+    const cleanPhone = rawPhone.replace(/[^0-9]/g, '');
+    const phoneWithCountry = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
+    
+    const msg = `*PATEL AUTOMOBILES - PAYMENT REMINDER* 🛵
+━━━━━━━━━━━━━━━━━━━━
+👤 *Customer:* ${debtor.customer_name}
+📦 *Items:* ${debtor.items_summary || 'Spare Parts'}
+💰 *Total Bill:* ₹${parseFloat(debtor.total_amount || 0).toFixed(2)}
+💵 *Paid so far:* ₹${parseFloat(debtor.paid_amount || 0).toFixed(2)}
+⚠️ *Pending Balance Due:* *₹${parseFloat(debtor.pending_amount || 0).toFixed(2)}*
+
+━━━━━━━━━━━━━━━━━━━━
+📲 *Pay via UPI:* ${garageInfo?.upi_id || 'paytmqr5hlpsp@ptys'}
+👤 *Payee:* Patel Automobiles
+
+Kindly clear your pending balance at your earliest convenience.
+📞 *Contact:* ${garageInfo?.phone || '+91 81403 71414'}`;
+
+    window.open(`https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
   // Stats Calculations
@@ -840,14 +894,14 @@ Kindly clear your pending balance at your earliest convenience.
 
   const totalKhataPending = useMemo(() => {
     return khataDebtors
-      .filter(k => k.status !== 'CLEARED')
+      .filter(k => k.status !== 'PAID' && parseFloat(k.pending_amount || 0) > 0)
       .reduce((sum, k) => sum + parseFloat(k.pending_amount || 0), 0);
   }, [khataDebtors]);
 
   return (
     <div className="space-y-4 sm:space-y-6 max-w-7xl mx-auto pb-16 sm:pb-8">
       
-      {/* HEADER & TOP STATS (MOBILE-OPTIMIZED) */}
+      {/* HEADER & TOP STATS */}
       <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 bg-white p-4 sm:p-6 rounded-2xl sm:rounded-3xl border border-slate-200/80 shadow-xs">
         <div>
           <h1 className="text-xl sm:text-2xl font-black text-slate-900 font-poppins flex items-center gap-2.5">
@@ -861,7 +915,7 @@ Kindly clear your pending balance at your earliest convenience.
           </p>
         </div>
 
-        {/* TOP STATS BADGES (MOBILE 2-COL GRID) */}
+        {/* TOP STATS BADGES */}
         <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:gap-3 shrink-0">
           <div className="px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl sm:rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900">
             <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider block text-emerald-600 truncate">Today's Sales</span>
@@ -874,7 +928,7 @@ Kindly clear your pending balance at your earliest convenience.
         </div>
       </div>
 
-      {/* NAVIGATION TABS (SWIPEABLE ON MOBILE) */}
+      {/* NAVIGATION TABS */}
       <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-2xl border border-slate-200/80 overflow-x-auto scrollbar-none w-full sm:w-fit">
         <button
           onClick={() => setActiveTab('NEW_SALE')}
@@ -906,7 +960,7 @@ Kindly clear your pending balance at your earliest convenience.
               : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          <BookOpen className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> 3. Khata Book ({khataDebtors.filter(k => k.status !== 'CLEARED').length})
+          <BookOpen className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> 3. Khata Book ({khataDebtors.filter(k => parseFloat(k.pending_amount || 0) > 0).length})
         </button>
       </div>
 
@@ -914,7 +968,7 @@ Kindly clear your pending balance at your earliest convenience.
       {activeTab === 'NEW_SALE' && (
         <div className="space-y-4">
           
-          {/* MOBILE SEGMENT SWITCHER (VISIBLE ONLY ON MOBILE SCREENS) */}
+          {/* MOBILE SEGMENT SWITCHER */}
           <div className="grid grid-cols-2 gap-2 lg:hidden bg-white p-1.5 rounded-2xl border border-slate-200 shadow-xs">
             <button
               type="button"
@@ -943,7 +997,7 @@ Kindly clear your pending balance at your earliest convenience.
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
             
-            {/* LEFT COLUMN: INVENTORY CATALOG (7 Cols on desktop, toggle on mobile) */}
+            {/* LEFT COLUMN: INVENTORY CATALOG */}
             <div className={`lg:col-span-7 space-y-4 ${mobilePosView === 'CATALOG' ? 'block' : 'hidden lg:block'}`}>
               <div className="bg-white p-4 sm:p-5 rounded-2xl sm:rounded-3xl border border-slate-200/80 shadow-xs space-y-3.5">
                 
@@ -988,7 +1042,7 @@ Kindly clear your pending balance at your earliest convenience.
                   </div>
                 )}
 
-                {/* Catalog Items Grid (Responsive 1 or 2 Cols) */}
+                {/* Catalog Items Grid */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[500px] overflow-y-auto pr-0.5">
                   {filteredCatalog.length === 0 ? (
                     <div className="col-span-1 sm:col-span-2 text-center py-10 text-slate-400">
@@ -1067,7 +1121,7 @@ Kindly clear your pending balance at your earliest convenience.
               </div>
             </div>
 
-            {/* RIGHT COLUMN: BILL BUILDER & CART (5 Cols on desktop, toggle on mobile) */}
+            {/* RIGHT COLUMN: BILL BUILDER & CART */}
             <div className={`lg:col-span-5 space-y-4 ${mobilePosView === 'CART' ? 'block' : 'hidden lg:block'}`}>
               <form onSubmit={handleGenerateCounterBill} className="bg-white p-4 sm:p-6 rounded-2xl sm:rounded-3xl border border-slate-200/80 shadow-xs space-y-4 sm:space-y-5">
                 
@@ -1283,8 +1337,8 @@ Kindly clear your pending balance at your earliest convenience.
 
                   {/* AUTOMATIC KHATA DUE BANNER */}
                   {cartPendingBalance > 0 && (
-                    <div className="p-2.5 bg-amber-50 rounded-xl border border-amber-200 text-[11px] sm:text-xs text-amber-800 font-medium">
-                      Remaining ₹{cartPendingBalance.toFixed(2)} will be automatically recorded in Customer's Counter Khata Book!
+                    <div className="p-2.5 bg-rose-50 rounded-xl border border-rose-200 text-[11px] sm:text-xs text-rose-800 font-bold">
+                      ⚠️ Remaining ₹{cartPendingBalance.toFixed(2)} is UNPAID and will be recorded in Customer's Counter Khata Book!
                     </div>
                   )}
 
@@ -1323,7 +1377,7 @@ Kindly clear your pending balance at your earliest convenience.
 
           </div>
 
-          {/* MOBILE FLOATING VIEW CART BAR (WHEN ON CATALOG TAB WITH ITEMS) */}
+          {/* MOBILE FLOATING VIEW CART BAR */}
           {mobilePosView === 'CATALOG' && cartItems.length > 0 && (
             <div className="fixed bottom-3 inset-x-3 lg:hidden z-40">
               <button
@@ -1348,7 +1402,7 @@ Kindly clear your pending balance at your earliest convenience.
         </div>
       )}
 
-      {/* TAB 2: COUNTER INVOICES HISTORY */}
+      {/* TAB 2: COUNTER INVOICES HISTORY (NO BILL NO, CLEAN PAID / UNPAID STATUS, DELETE BUTTON) */}
       {activeTab === 'INVOICES' && (
         <div className="bg-white p-4 sm:p-6 rounded-2xl sm:rounded-3xl border border-slate-200/80 shadow-xs space-y-4">
           
@@ -1377,73 +1431,99 @@ Kindly clear your pending balance at your earliest convenience.
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs min-w-[600px]">
+              <table className="w-full text-left text-xs min-w-[650px]">
                 <thead>
                   <tr className="border-b border-slate-200/80 bg-slate-50/50 text-slate-500 font-bold uppercase tracking-wider">
-                    <th className="py-2.5 px-3">Bill No</th>
-                    <th className="py-2.5 px-3">Date</th>
-                    <th className="py-2.5 px-3">Customer</th>
-                    <th className="py-2.5 px-3">Items</th>
-                    <th className="py-2.5 px-3 text-right">Net Total</th>
-                    <th className="py-2.5 px-3 text-right">Paid</th>
-                    <th className="py-2.5 px-3 text-right">Balance</th>
-                    <th className="py-2.5 px-3 text-center">Status</th>
-                    <th className="py-2.5 px-3 text-right">Actions</th>
+                    <th className="py-3 px-3.5">Date</th>
+                    <th className="py-3 px-3.5">Customer</th>
+                    <th className="py-3 px-3.5">Items</th>
+                    <th className="py-3 px-3.5 text-right">Net Total</th>
+                    <th className="py-3 px-3.5 text-right">Paid</th>
+                    <th className="py-3 px-3.5 text-right">Balance</th>
+                    <th className="py-3 px-3.5 text-center">Status</th>
+                    <th className="py-3 px-3.5 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
                   {invoices
                     .filter(inv => {
                       const q = invFilterSearch.toLowerCase();
-                      return !q || (inv.customer_name || '').toLowerCase().includes(q) || (inv.customer_phone || '').includes(q) || (inv.invoice_number || '').toLowerCase().includes(q);
+                      return !q || (inv.customer_name || '').toLowerCase().includes(q) || (inv.customer_phone || '').includes(q);
                     })
-                    .map((inv) => (
-                      <tr key={inv.id} className="hover:bg-slate-50/80 transition-colors">
-                        <td className="py-2.5 px-3 font-mono font-bold text-blue-600">{inv.invoice_number}</td>
-                        <td className="py-2.5 px-3 text-slate-500">{new Date(inv.created_at || Date.now()).toLocaleDateString('en-IN')}</td>
-                        <td className="py-2.5 px-3">
-                          <span className="font-bold text-slate-900 block">{inv.customer_name}</span>
-                          <span className="font-mono text-slate-400 text-[10px]">{inv.customer_phone}</span>
-                        </td>
-                        <td className="py-2.5 px-3 text-slate-600 max-w-[180px] truncate">
-                          {(inv.items || []).map(i => `${i.part_name || i.item_name} (x${i.quantity})`).join(', ')}
-                        </td>
-                        <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900">₹{parseFloat(inv.net_total || 0).toFixed(2)}</td>
-                        <td className="py-2.5 px-3 text-right font-mono text-emerald-600 font-bold">₹{parseFloat(inv.paid_amount || 0).toFixed(2)}</td>
-                        <td className="py-2.5 px-3 text-right font-mono text-rose-600 font-bold">
-                          {parseFloat(inv.pending_amount || 0) > 0 ? `₹${parseFloat(inv.pending_amount).toFixed(2)}` : '₹0.00'}
-                        </td>
-                        <td className="py-2.5 px-3 text-center">
-                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase ${
-                            parseFloat(inv.pending_amount || 0) === 0
-                              ? 'bg-emerald-100 text-emerald-700'
-                              : 'bg-amber-100 text-amber-700'
-                          }`}>
-                            {parseFloat(inv.pending_amount || 0) === 0 ? 'PAID' : 'PARTIAL'}
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-3 text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            <button
-                              type="button"
-                              onClick={() => handleDownloadCard(inv)}
-                              className="p-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"
-                              title="Download Photo Card"
-                            >
-                              <Download className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleShareWhatsApp(inv)}
-                              className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors"
-                              title="Share on WhatsApp"
-                            >
-                              <Share2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                    .map((inv) => {
+                      const netTot = parseFloat(inv.net_total || inv.total_amount || inv.grand_total || 0);
+                      const paidAmt = parseFloat(inv.paid_amount || 0);
+                      const pendingAmt = parseFloat(inv.pending_amount !== undefined ? inv.pending_amount : Math.max(0, netTot - paidAmt));
+                      const isPaid = pendingAmt <= 0;
+
+                      return (
+                        <tr key={inv.id} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="py-3 px-3.5 text-slate-600 font-medium whitespace-nowrap">
+                            {formatDateDMY(inv.created_at || inv.date || Date.now())}
+                          </td>
+                          <td className="py-3 px-3.5">
+                            <span className="font-bold text-slate-900 block">{inv.customer_name}</span>
+                            <span className="font-mono text-slate-400 text-[10px]">{inv.customer_phone || inv.mobile_number}</span>
+                          </td>
+                          <td className="py-3 px-3.5 text-slate-600 max-w-[200px] truncate">
+                            {(inv.items || []).map(i => `${i.part_name || i.item_name} (x${i.quantity})`).join(', ')}
+                          </td>
+                          <td className="py-3 px-3.5 text-right font-mono font-black text-slate-900 whitespace-nowrap">
+                            ₹{netTot.toFixed(2)}
+                          </td>
+                          <td className="py-3 px-3.5 text-right font-mono text-emerald-600 font-black whitespace-nowrap">
+                            ₹{paidAmt.toFixed(2)}
+                          </td>
+                          <td className="py-3 px-3.5 text-right font-mono text-rose-600 font-black whitespace-nowrap">
+                            {pendingAmt > 0 ? `₹${pendingAmt.toFixed(2)}` : '₹0.00'}
+                          </td>
+                          <td className="py-3 px-3.5 text-center whitespace-nowrap">
+                            <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase ${
+                              isPaid
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                : 'bg-rose-100 text-rose-800 border border-rose-200'
+                            }`}>
+                              {isPaid ? 'PAID' : 'UNPAID'}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3.5 text-right whitespace-nowrap">
+                            <div className="flex items-center justify-end gap-1.5">
+                              {/* Download Card */}
+                              <button
+                                type="button"
+                                onClick={() => handleDownloadCard(inv)}
+                                className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100 font-bold text-[11px] inline-flex items-center gap-1 transition-colors"
+                                title="Download Photo Card"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                                <span className="hidden sm:inline">Card</span>
+                              </button>
+
+                              {/* WhatsApp Share Button with WhatsApp Icon */}
+                              <button
+                                type="button"
+                                onClick={() => handleShareWhatsApp(inv)}
+                                className="p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] inline-flex items-center gap-1.5 shadow-xs transition-colors"
+                                title="Share Bill on WhatsApp"
+                              >
+                                <WhatsAppIcon className="w-3.5 h-3.5" />
+                                <span className="hidden sm:inline">WhatsApp</span>
+                              </button>
+
+                              {/* Delete Button (Red) */}
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteInvoice(inv)}
+                                className="p-1.5 sm:p-2 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-400 hover:text-rose-600 transition-colors"
+                                title="Delete Invoice permanently from database"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                 </tbody>
               </table>
             </div>
@@ -1452,7 +1532,7 @@ Kindly clear your pending balance at your earliest convenience.
         </div>
       )}
 
-      {/* TAB 3: COUNTER KHATA BOOK */}
+      {/* TAB 3: COUNTER KHATA BOOK (WITH DELETE OPTION & WHATSAPP BUTTON) */}
       {activeTab === 'KHATA' && (
         <div className="bg-white p-4 sm:p-6 rounded-2xl sm:rounded-3xl border border-slate-200/80 shadow-xs space-y-4">
           
@@ -1476,7 +1556,7 @@ Kindly clear your pending balance at your earliest convenience.
           </div>
 
           {/* DEBTORS LIST */}
-          {khataDebtors.filter(k => k.status !== 'CLEARED').length === 0 ? (
+          {khataDebtors.filter(k => parseFloat(k.pending_amount || 0) > 0).length === 0 ? (
             <div className="text-center py-10 text-slate-400">
               <CheckCircle2 className="w-10 h-10 mx-auto stroke-1 mb-2 text-emerald-400" />
               <p className="text-xs sm:text-sm font-bold text-slate-700">All Clear! No Pending Spare Part Dues.</p>
@@ -1485,7 +1565,7 @@ Kindly clear your pending balance at your earliest convenience.
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
               {khataDebtors
-                .filter(k => k.status !== 'CLEARED')
+                .filter(k => parseFloat(k.pending_amount || 0) > 0)
                 .filter(k => {
                   const q = khataSearch.toLowerCase();
                   return !q || (k.customer_name || '').toLowerCase().includes(q) || (k.customer_phone || '').includes(q);
@@ -1496,12 +1576,7 @@ Kindly clear your pending balance at your earliest convenience.
                     <div className="flex justify-between items-start">
                       <div>
                         <h4 className="font-bold text-slate-900 text-xs sm:text-sm font-poppins">{debtor.customer_name}</h4>
-                        <span className="font-mono text-slate-500 text-[11px] block">{debtor.customer_phone}</span>
-                        {debtor.invoice_number && (
-                          <span className="text-[9px] font-mono text-blue-600 font-bold block mt-0.5">
-                            Ref: #{debtor.invoice_number}
-                          </span>
-                        )}
+                        <span className="font-mono text-slate-500 text-[11px] block">{debtor.customer_phone || debtor.phone}</span>
                       </div>
 
                       <div className="text-right">
@@ -1532,13 +1607,24 @@ Kindly clear your pending balance at your earliest convenience.
                         <DollarSign className="w-3.5 h-3.5" /> Record Payment
                       </button>
 
+                      {/* WhatsApp Reminder Button with WhatsApp Icon */}
                       <button
                         type="button"
                         onClick={() => handleShareKhataReminder(debtor)}
                         className="p-2 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 rounded-xl transition-colors active:scale-95"
                         title="Send WhatsApp Payment Reminder"
                       >
-                        <Share2 className="w-4 h-4" />
+                        <WhatsAppIcon className="w-4 h-4" />
+                      </button>
+
+                      {/* Delete Khata Entry (Red) */}
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteKhataEntry(debtor)}
+                        className="p-2 bg-slate-100 hover:bg-rose-100 text-slate-400 hover:text-rose-600 rounded-xl transition-colors active:scale-95"
+                        title="Delete Khata Record permanently from database"
+                      >
+                        <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
 
@@ -1663,7 +1749,7 @@ Kindly clear your pending balance at your earliest convenience.
               </div>
               <h3 className="text-lg sm:text-xl font-bold font-poppins text-slate-900">Counter Sale Completed!</h3>
               <p className="text-[11px] sm:text-xs text-slate-500">
-                Invoice <span className="font-mono font-bold text-blue-600">#{successModal.sale.invoice_number}</span> generated & stock updated.
+                Invoice generated & stock updated in database.
               </p>
             </div>
 
@@ -1689,7 +1775,7 @@ Kindly clear your pending balance at your earliest convenience.
                 onClick={() => handleShareWhatsApp(successModal.sale)}
                 className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs inline-flex items-center justify-center gap-2 transition-all active:scale-98"
               >
-                <Share2 className="w-4 h-4" /> Share on WhatsApp
+                <WhatsAppIcon className="w-4 h-4" /> Share on WhatsApp
               </button>
 
               <button
@@ -1754,7 +1840,7 @@ Kindly clear your pending balance at your earliest convenience.
                 </label>
                 <select
                   value={paymentModal.paymentMode}
-                  onChange={(e) => setPaymentModal({ ...paymentModal, paymentMode: e.target.value })}
+                  onChange={(e) => setPaymentMode(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none"
                 >
                   <option value="CASH">Cash 💵</option>

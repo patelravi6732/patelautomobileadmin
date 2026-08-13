@@ -324,12 +324,23 @@ export default function CounterSalePage() {
   }, [cartNetTotal, effectivePaid]);
 
   const hasUnconfirmedParts = useMemo(() => {
-    return Array.isArray(cartItems) && cartItems.some(p => p && (!p.is_deducted || p.status !== 'CONFIRMED'));
+    return Array.isArray(cartItems) && cartItems.some(p => {
+      if (!p) return false;
+      const qty = parseInt(p.quantity || 1, 10);
+      const ded = parseInt(p.deducted_qty || 0, 10);
+      return qty > ded || !p.is_deducted || p.status !== 'CONFIRMED';
+    });
   }, [cartItems]);
 
   // Handle Confirm & Lock Stock for Cart Parts
   const handleConfirmCartParts = async () => {
-    const unconfirmed = cartItems.filter(p => p && (!p.is_deducted || p.status !== 'CONFIRMED'));
+    const unconfirmed = cartItems.filter(p => {
+      if (!p) return false;
+      const qty = parseInt(p.quantity || 1, 10);
+      const ded = parseInt(p.deducted_qty || 0, 10);
+      return qty > ded || !p.is_deducted || p.status !== 'CONFIRMED';
+    });
+
     if (unconfirmed.length === 0) {
       alert('ℹ️ All spare parts in the cart are already confirmed & stock locked!');
       return;
@@ -355,7 +366,11 @@ export default function CounterSalePage() {
         if (!pToUse) return;
         const pId = String(pToUse.inventory_id || pToUse.part_id || pToUse.id || '').replace(/[^a-z0-9]/g, '');
         const pName = String(pToUse.part_name || pToUse.item_name || pToUse.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase().trim();
-        const usedQty = parseInt(pToUse.quantity || 1, 10);
+        const totalQty = parseInt(pToUse.quantity || 1, 10);
+        const alreadyDed = parseInt(pToUse.deducted_qty || 0, 10);
+        const toDeduct = Math.max(0, totalQty - alreadyDed);
+
+        if (toDeduct <= 0) return;
 
         invList = invList.map(invItem => {
           if (!invItem) return invItem;
@@ -367,7 +382,7 @@ export default function CounterSalePage() {
           if (isMatch) {
             invChanged = true;
             const currentQty = parseInt(invItem.current_stock !== undefined ? invItem.current_stock : (invItem.stock_quantity !== undefined ? invItem.stock_quantity : (invItem.quantity !== undefined ? invItem.quantity : 0)), 10);
-            const newQty = Math.max(0, currentQty - usedQty);
+            const newQty = Math.max(0, currentQty - toDeduct);
             const updatedItem = {
               ...invItem,
               current_stock: newQty,
@@ -395,12 +410,13 @@ export default function CounterSalePage() {
         loadInventory();
       }
 
-      // Mark cart items as CONFIRMED and is_deducted: true
+      // Mark all cart items as CONFIRMED and deducted_qty equal to quantity
       const updatedCart = cartItems.map(p => ({
         ...p,
         status: 'CONFIRMED',
         is_deducted: true,
-        is_confirmed: true
+        is_confirmed: true,
+        deducted_qty: parseInt(p.quantity || 1, 10)
       }));
       setCartItems(updatedCart);
       alert(`✅ ${unconfirmed.length} Spare Part(s) Confirmed & Stock Deducted from Inventory!`);
@@ -433,16 +449,18 @@ export default function CounterSalePage() {
 
     let nextCart = [];
     if (existingIndex >= 0) {
-      const currentQty = cartItems[existingIndex].quantity || 1;
-      if (currentQty + 1 > curStock) {
+      const existing = cartItems[existingIndex];
+      const currentQty = existing.quantity || 1;
+      const alreadyDeducted = existing.deducted_qty || 0;
+      if ((currentQty + 1 - alreadyDeducted) > curStock) {
         alert(`⚠️ Maximum available stock for '${rawName}' is ${curStock} units.`);
         return;
       }
       nextCart = cartItems.map((cItem, idx) => idx === existingIndex ? {
         ...cItem,
         quantity: currentQty + 1,
-        status: 'STAGED',
-        is_deducted: false
+        status: (currentQty + 1 === alreadyDeducted) ? 'CONFIRMED' : 'STAGED',
+        is_deducted: (currentQty + 1 === alreadyDeducted)
       } : cItem);
     } else {
       nextCart = [...cartItems, {
@@ -454,6 +472,7 @@ export default function CounterSalePage() {
         unit_price: priceVal,
         quantity: 1,
         available_stock: curStock,
+        deducted_qty: 0,
         status: 'STAGED',
         is_deducted: false
       }];
@@ -467,15 +486,18 @@ export default function CounterSalePage() {
     const qty = parseInt(newQty, 10);
     if (isNaN(qty) || qty <= 0) return;
     const target = cartItems.find(i => String(i.id) === String(itemId));
-    if (target && target.available_stock && qty > target.available_stock) {
-      alert(`⚠️ Only ${target.available_stock} units available in stock!`);
+    if (!target) return;
+    const curStock = target.available_stock || 999;
+    const alreadyDeducted = target.deducted_qty || 0;
+    if ((qty - alreadyDeducted) > curStock) {
+      alert(`⚠️ Only ${curStock} additional units available in stock!`);
       return;
     }
     const updatedCart = cartItems.map(i => String(i.id) === String(itemId) ? {
       ...i,
       quantity: qty,
-      status: 'STAGED',
-      is_deducted: false
+      status: (qty === alreadyDeducted) ? 'CONFIRMED' : 'STAGED',
+      is_deducted: (qty === alreadyDeducted)
     } : i);
     setCartItems(updatedCart);
   };
@@ -485,8 +507,9 @@ export default function CounterSalePage() {
     const itemToRemove = cartItems.find(i => String(i.id) === String(itemId));
     if (!itemToRemove) return;
 
-    // If item was already confirmed & deducted, restore its stock to inventory
-    if (itemToRemove.is_deducted) {
+    const returnQty = parseInt(itemToRemove.deducted_qty !== undefined ? itemToRemove.deducted_qty : (itemToRemove.is_deducted ? itemToRemove.quantity : 0), 10);
+
+    if (returnQty > 0) {
       try {
         const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
         const cloudInv = await fetchCloudInventory().catch(() => []);
@@ -502,7 +525,6 @@ export default function CounterSalePage() {
         let invList = Array.from(allInvMap.values());
         const pId = String(itemToRemove.inventory_id || itemToRemove.part_id || itemToRemove.id || '').replace(/[^a-z0-9]/g, '');
         const pName = String(itemToRemove.part_name || itemToRemove.item_name || itemToRemove.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase().trim();
-        const returnQty = parseInt(itemToRemove.quantity || 1, 10);
 
         invList = invList.map(invItem => {
           if (!invItem) return invItem;

@@ -1703,12 +1703,10 @@ export async function syncCloudInventory(inventoryList) {
 }
 
 export async function pushCloudActiveCounterCart(cartDraft) {
-  const store = await fetchMasterStore();
-  await saveMasterStore({ ...store, activeCounterCart: cartDraft || null });
-  localStorage.setItem('counter_sale_draft', JSON.stringify(cartDraft || null));
+  const store = await fetchMasterStore().catch(() => ({}));
+  await saveMasterStore({ ...store, activeCounterCart: cartDraft || null }).catch(console.warn);
   try {
-    window.dispatchEvent(new Event('master_store_updated'));
-    window.dispatchEvent(new Event('counter_cart_updated'));
+    localStorage.setItem('counter_sale_draft', JSON.stringify(cartDraft || null));
   } catch (e) {}
 }
 

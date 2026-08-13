@@ -187,7 +187,7 @@ export default function CounterSalePage() {
         const cloudTime = new Date(cloudCart.updated_at || 0).getTime();
         const localTime = new Date(localDraft?.updated_at || 0).getTime();
 
-        if (cloudTime > (localTime + 1000) || (!localDraft && Array.isArray(cloudCart.cartItems) && cloudCart.cartItems.length > 0)) {
+        if (cloudTime > (localTime + 2000) || (!localDraft && Array.isArray(cloudCart.cartItems) && cloudCart.cartItems.length > 0)) {
           isSyncingFromCloud.current = true;
           setCustomerName(cloudCart.customerName || '');
           setCustomerPhone(cloudCart.customerPhone || '');
@@ -197,7 +197,7 @@ export default function CounterSalePage() {
           setPaidAmount(cloudCart.paidAmount !== undefined ? cloudCart.paidAmount : '');
           setPaymentMode(cloudCart.paymentMode || 'CASH');
           localStorage.setItem('counter_sale_draft', JSON.stringify(cloudCart));
-          setTimeout(() => { isSyncingFromCloud.current = false; }, 1000);
+          setTimeout(() => { isSyncingFromCloud.current = false; }, 800);
         }
       }
     } catch (e) {}
@@ -222,7 +222,7 @@ export default function CounterSalePage() {
 
     const interval = setInterval(() => {
       syncCrossDeviceCart();
-    }, 5000);
+    }, 6000);
 
     return () => {
       clearInterval(interval);
@@ -293,8 +293,6 @@ export default function CounterSalePage() {
       return;
     }
 
-    isSyncingFromCloud.current = true;
-
     const rawName = String(item.part_name || item.item_name || item.name || 'Spare Part').trim();
     const itemNorm = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
     const priceVal = parseFloat(item.price || item.selling_price || item.unit_price || 0);
@@ -310,7 +308,6 @@ export default function CounterSalePage() {
       const currentQty = cartItems[existingIndex].quantity || 1;
       if (currentQty + 1 > curStock) {
         alert(`⚠️ Maximum available stock for '${rawName}' is ${curStock} units.`);
-        isSyncingFromCloud.current = false;
         return;
       }
       nextCart = cartItems.map((cItem, idx) => idx === existingIndex ? { ...cItem, quantity: currentQty + 1 } : cItem);
@@ -327,27 +324,6 @@ export default function CounterSalePage() {
     }
 
     setCartItems(nextCart);
-
-    const draft = {
-      customerName: customerName || '',
-      customerPhone: customerPhone || '',
-      vehicleNumber: vehicleNumber || '',
-      cartItems: nextCart,
-      discountAmount: discountAmount || 0,
-      paidAmount: paidAmount !== undefined ? paidAmount : '',
-      paymentMode: paymentMode || 'CASH',
-      updated_at: new Date().toISOString()
-    };
-
-    try {
-      localStorage.setItem('counter_sale_draft', JSON.stringify(draft));
-    } catch (e) {}
-
-    pushCloudActiveCounterCart(draft).catch(() => null);
-
-    setTimeout(() => {
-      isSyncingFromCloud.current = false;
-    }, 1500);
   };
 
   // Update Cart Item Quantity

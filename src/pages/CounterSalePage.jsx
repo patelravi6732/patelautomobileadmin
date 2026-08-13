@@ -261,7 +261,7 @@ export default function CounterSalePage() {
 
   // Explicit Confirm Parts Button Action (0ms Instant Optimistic with non-blocking Cloud sync)
   const handleConfirmCartParts = async () => {
-    const stagedParts = cartItems.filter(p => p.status !== 'CONFIRMED');
+    const stagedParts = cartItems.filter(p => p && p.status !== 'CONFIRMED');
     if (stagedParts.length === 0) {
       alert('ℹ️ All spare parts in cart are already confirmed!');
       return;
@@ -306,10 +306,21 @@ export default function CounterSalePage() {
 
     const updatedCart = cartItems.map(p => ({ ...p, status: 'CONFIRMED' }));
     setCartItems(updatedCart);
+    
+    // Save draft immediately
+    const draft = {
+      customerName,
+      customerPhone,
+      vehicleNumber,
+      cartItems: updatedCart,
+      discountAmount,
+      paidAmount,
+      paymentMode
+    };
+    localStorage.setItem('counter_sale_draft', JSON.stringify(draft));
     setConfirmingParts(false);
 
     try {
-      window.dispatchEvent(new Event('storage'));
       window.dispatchEvent(new Event('master_store_updated'));
       window.dispatchEvent(new Event('inventory_updated'));
     } catch (e) {}
@@ -329,14 +340,42 @@ export default function CounterSalePage() {
       alert(`⚠️ Only ${target.available_stock} units available in stock!`);
       return;
     }
-    setCartItems(cartItems.map(i => String(i.id) === String(itemId) ? { ...i, quantity: qty, status: 'STAGED' } : i));
+    const updatedCart = cartItems.map(i => String(i.id) === String(itemId) ? { ...i, quantity: qty, status: 'STAGED' } : i);
+    setCartItems(updatedCart);
+    const draft = {
+      customerName,
+      customerPhone,
+      vehicleNumber,
+      cartItems: updatedCart,
+      discountAmount,
+      paidAmount,
+      paymentMode
+    };
+    localStorage.setItem('counter_sale_draft', JSON.stringify(draft));
   };
 
-  // Remove Item from Cart (0ms Instant Optimistic Restoration)
+  // Remove Item from Cart (0ms Instant Optimistic Restoration & Clean Deletion)
   const handleRemoveFromCart = (itemId) => {
     const target = cartItems.find(i => String(i.id) === String(itemId));
     if (!target) return;
 
+    // 1. Remove from cart immediately
+    const nextCart = cartItems.filter(i => String(i.id) !== String(itemId));
+    setCartItems(nextCart);
+
+    // 2. Update persistent draft immediately
+    const draft = {
+      customerName,
+      customerPhone,
+      vehicleNumber,
+      cartItems: nextCart,
+      discountAmount,
+      paidAmount,
+      paymentMode
+    };
+    localStorage.setItem('counter_sale_draft', JSON.stringify(draft));
+
+    // 3. If item was confirmed, restore stock once
     if (target.status === 'CONFIRMED') {
       const local = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
       const map = new Map();
@@ -371,7 +410,6 @@ export default function CounterSalePage() {
         setInventory(updatedInv);
 
         try {
-          window.dispatchEvent(new Event('storage'));
           window.dispatchEvent(new Event('master_store_updated'));
           window.dispatchEvent(new Event('inventory_updated'));
         } catch (e) {}
@@ -380,8 +418,6 @@ export default function CounterSalePage() {
         pushCloudInventoryItem(updatedItem).catch(console.warn);
       }
     }
-
-    setCartItems(cartItems.filter(i => String(i.id) !== String(itemId)));
   };
 
   // Clear Cart Completely
@@ -389,14 +425,47 @@ export default function CounterSalePage() {
     if (!window.confirm('Are you sure you want to clear the active cart?')) return;
     
     // Restore any confirmed items
-    const confirmedItems = cartItems.filter(p => p.status === 'CONFIRMED');
-    for (const it of confirmedItems) {
-      await handleRemoveFromCart(it.id);
-    }
+    const confirmedItems = cartItems.filter(p => p && p.status === 'CONFIRMED');
+    const local = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
+    const map = new Map();
+    local.forEach(it => {
+      if (it && (it.part_name || it.item_name || it.name)) {
+        const raw = String(it.part_name || it.item_name || it.name || '').trim();
+        const norm = raw.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (norm) map.set(norm, { ...it, part_name: raw, item_name: raw, name: raw });
+      }
+    });
+
+    confirmedItems.forEach(cItem => {
+      const raw = String(cItem.part_name || cItem.item_name || '').trim();
+      const norm = raw.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const restoreQty = parseInt(cItem.quantity || 1, 10);
+      if (norm && map.has(norm)) {
+        const item = map.get(norm);
+        const curStock = parseInt(item.current_stock !== undefined ? item.current_stock : (item.stock_quantity !== undefined ? item.stock_quantity : (item.quantity !== undefined ? item.quantity : 0)), 10);
+        map.set(norm, {
+          ...item,
+          current_stock: curStock + restoreQty,
+          stock_quantity: curStock + restoreQty,
+          quantity: curStock + restoreQty,
+          updated_at: new Date().toISOString()
+        });
+      }
+    });
+
+    const updatedInv = Array.from(map.values());
+    localStorage.setItem('inventory_items', JSON.stringify(updatedInv));
+    localStorage.setItem('spare_parts', JSON.stringify(updatedInv));
+    localStorage.setItem('local_inventory', JSON.stringify(updatedInv));
+    setInventory(updatedInv);
 
     setCartItems([]);
     localStorage.removeItem('counter_sale_draft');
-    loadInventory();
+
+    try {
+      window.dispatchEvent(new Event('master_store_updated'));
+      window.dispatchEvent(new Event('inventory_updated'));
+    } catch (e) {}
   };
 
   // Submit Counter Sale

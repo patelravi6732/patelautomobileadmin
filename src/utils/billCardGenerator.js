@@ -103,13 +103,13 @@ const renderCanvasInternal = (invoice, garageInfo, logoImg, qrImg) => {
     ctx.drawImage(logoImg, pad, currentY, logoSize, logoSize);
     ctx.restore();
 
-    ctx.strokeStyle = '#f59e0b';
+    ctx.strokeStyle = '#2563eb';
     ctx.lineWidth = 2;
     drawRoundedRect(ctx, pad, currentY, logoSize, logoSize, 14);
     ctx.stroke();
   } else {
-    // Fallback Gold Badge
-    ctx.fillStyle = '#f59e0b';
+    // Fallback Blue Badge
+    ctx.fillStyle = '#2563eb';
     drawRoundedRect(ctx, pad, currentY, logoSize, logoSize, 14);
     ctx.fill();
     ctx.fillStyle = '#ffffff';
@@ -144,8 +144,8 @@ const renderCanvasInternal = (invoice, garageInfo, logoImg, qrImg) => {
 
   currentY += 88;
 
-  // 3. Amber Divider Line
-  ctx.strokeStyle = '#f59e0b';
+  // 3. Royal Blue Divider Line
+  ctx.strokeStyle = '#2563eb';
   ctx.lineWidth = 2.5;
   ctx.beginPath();
   ctx.moveTo(pad, currentY);
@@ -154,20 +154,20 @@ const renderCanvasInternal = (invoice, garageInfo, logoImg, qrImg) => {
 
   currentY += 22;
 
-  // 4. Customer Details Box
+  // 4. Customer Details Box (Clean Slate / Blue Accent)
   const boxHeight = 82;
   const boxY = currentY;
 
-  ctx.fillStyle = '#fffbe5';
+  ctx.fillStyle = '#f8fafc';
   drawRoundedRect(ctx, pad, boxY, width - (pad * 2), boxHeight, 16);
   ctx.fill();
-  ctx.strokeStyle = '#fde68a';
+  ctx.strokeStyle = '#e2e8f0';
   ctx.lineWidth = 1.5;
   drawRoundedRect(ctx, pad, boxY, width - (pad * 2), boxHeight, 16);
   ctx.stroke();
 
   // Customer Details Left
-  ctx.fillStyle = '#b45309';
+  ctx.fillStyle = '#2563eb';
   ctx.font = 'bold 11.5px "Segoe UI", Roboto, system-ui, -apple-system, sans-serif';
   ctx.fillText('CUSTOMER DETAILS', pad + 20, boxY + 24);
 
@@ -181,7 +181,7 @@ const renderCanvasInternal = (invoice, garageInfo, logoImg, qrImg) => {
 
   // Vehicle Details Right
   const col2X = pad + 380;
-  ctx.fillStyle = '#b45309';
+  ctx.fillStyle = '#2563eb';
   ctx.font = 'bold 11.5px "Segoe UI", Roboto, system-ui, -apple-system, sans-serif';
   ctx.fillText('VEHICLE / SERVICE INFO', col2X, boxY + 24);
 
@@ -195,15 +195,15 @@ const renderCanvasInternal = (invoice, garageInfo, logoImg, qrImg) => {
 
   currentY += boxHeight + 22;
 
-  // 5. Dark Navy Table Header
+  // 5. Dark Navy / Slate Table Header
   const tblHeaderY = currentY;
   const tblHeaderH = 40;
 
-  ctx.fillStyle = '#0b132b';
+  ctx.fillStyle = '#0f172a';
   drawRoundedRect(ctx, pad, tblHeaderY, width - (pad * 2), tblHeaderH, 12);
   ctx.fill();
 
-  ctx.fillStyle = '#fcd34d';
+  ctx.fillStyle = '#ffffff';
   ctx.font = 'bold 12.5px "Segoe UI", Roboto, system-ui, -apple-system, sans-serif';
   ctx.fillText('DESCRIPTION', pad + 18, tblHeaderY + 25);
 

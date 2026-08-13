@@ -852,6 +852,16 @@ export async function restoreCloudRecycleBinItem(itemId) {
       const upInvs = [p, ...curInvs.filter(i => String(i.id) !== payloadId)];
       localStorage.setItem('local_invoices', JSON.stringify(upInvs));
       updatedInvs = [p, ...updatedInvs.filter(i => String(i.id) !== payloadId)];
+    } else if (type.includes('counter sale') || type.includes('counter invoice')) {
+      const curSales = JSON.parse(localStorage.getItem('local_counter_sales') || '[]');
+      const upSales = [p, ...curSales.filter(s => String(s.id) !== payloadId)];
+      localStorage.setItem('local_counter_sales', JSON.stringify(upSales));
+      store.counterSales = [p, ...(store.counterSales || []).filter(s => String(s.id) !== payloadId)];
+    } else if (type.includes('counter khata')) {
+      const curKhata = JSON.parse(localStorage.getItem('local_counter_khata') || '[]');
+      const upKhata = [p, ...curKhata.filter(k => String(k.id) !== payloadId)];
+      localStorage.setItem('local_counter_khata', JSON.stringify(upKhata));
+      store.counterKhata = [p, ...(store.counterKhata || []).filter(k => String(k.id) !== payloadId)];
     } else if (type.includes('khata')) {
       const curKhata = JSON.parse(localStorage.getItem('khata_entries') || '[]');
       const upKhata = [p, ...curKhata.filter(k => String(k.id) !== payloadId)];

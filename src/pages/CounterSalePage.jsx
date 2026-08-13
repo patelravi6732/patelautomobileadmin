@@ -11,7 +11,8 @@ import {
   fetchCloudCounterSales, pushCloudCounterSale, deleteCloudCounterSale,
   fetchCloudCounterKhata, pushCloudCounterKhata, deleteCloudCounterKhata,
   atomicRecordCounterPayment, syncCloudInventory, atomicAddInventoryItem,
-  fetchMasterStore, saveMasterStore, pushCloudActiveCounterCart
+  fetchMasterStore, saveMasterStore, pushCloudActiveCounterCart,
+  pushCloudRecycleBinItem
 } from '../utils/cloudSync';
 import { generateCounterSaleCardPhotoAsync, generateBillCanvasBlob } from '../utils/billCardGenerator';
 import { formatDateDMY } from '../utils/dateFormatter';
@@ -725,27 +726,41 @@ export default function CounterSalePage() {
     }
   };
 
-  // Delete Counter Sale Invoice (From Local & MongoDB Atlas)
+  // Delete Counter Sale Invoice (Moves to Recycle Bin & Removes from Active Invoices)
   const handleDeleteInvoice = async (inv) => {
     if (!inv || !inv.id) return;
-    if (!window.confirm(`Are you sure you want to permanently delete the invoice for ${inv.customer_name}?`)) {
+    if (!window.confirm(`Are you sure you want to move the invoice for ${inv.customer_name} to Recycle Bin?`)) {
       return;
     }
 
     try {
-      // 1. Optimistic Local Removal
+      // 1. Move to Recycle Bin (local & cloud)
+      const trashObj = {
+        id: `trash_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+        item_type: 'Counter Sale Invoice',
+        title: `Counter Sale: ${inv.customer_name} (₹${inv.net_total || inv.total_amount || 0})`,
+        deleted_by: user?.user_name || 'Patel Owner (Admin)',
+        deleted_at: new Date().toISOString(),
+        details: `Customer: ${inv.customer_name} • Mobile: ${inv.customer_phone || inv.mobile_number} • Total: ₹${inv.net_total || inv.total_amount || 0} • Status: ${inv.payment_status || 'PAID'}`,
+        payload: inv
+      };
+
+      const existingTrash = JSON.parse(localStorage.getItem('recycle_bin_items') || '[]');
+      localStorage.setItem('recycle_bin_items', JSON.stringify([trashObj, ...existingTrash]));
+      pushCloudRecycleBinItem(trashObj).catch(console.warn);
+
+      // 2. Remove from active invoices
       const filtered = invoices.filter(i => String(i.id) !== String(inv.id));
       setInvoices(filtered);
       localStorage.setItem('local_counter_sales', JSON.stringify(filtered));
 
-      // 2. Delete from MongoDB Atlas
       await deleteCloudCounterSale(inv.id);
       
       try {
         window.dispatchEvent(new Event('master_store_updated'));
       } catch (e) {}
 
-      alert('🗑️ Invoice deleted successfully from Cloud database!');
+      alert(`🗑️ Invoice for ${inv.customer_name} moved to Recycle Bin!`);
       loadInvoices();
     } catch (err) {
       console.error('Error deleting counter sale invoice:', err);
@@ -753,14 +768,30 @@ export default function CounterSalePage() {
     }
   };
 
-  // Delete Counter Khata Debtor (From Local & MongoDB Atlas)
+  // Delete Counter Khata Debtor (Moves to Recycle Bin & Removes from Active Khata)
   const handleDeleteKhataEntry = async (debtor) => {
     if (!debtor || !debtor.id) return;
-    if (!window.confirm(`Are you sure you want to permanently delete the Khata entry for ${debtor.customer_name}?`)) {
+    if (!window.confirm(`Are you sure you want to move the Khata record for ${debtor.customer_name} to Recycle Bin?`)) {
       return;
     }
 
     try {
+      // 1. Move to Recycle Bin (local & cloud)
+      const trashObj = {
+        id: `trash_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+        item_type: 'Counter Khata Entry',
+        title: `Counter Khata: ${debtor.customer_name} (Due: ₹${debtor.pending_amount || 0})`,
+        deleted_by: user?.user_name || 'Patel Owner (Admin)',
+        deleted_at: new Date().toISOString(),
+        details: `Customer: ${debtor.customer_name} • Mobile: ${debtor.customer_phone || debtor.phone} • Pending Due: ₹${debtor.pending_amount || 0}`,
+        payload: debtor
+      };
+
+      const existingTrash = JSON.parse(localStorage.getItem('recycle_bin_items') || '[]');
+      localStorage.setItem('recycle_bin_items', JSON.stringify([trashObj, ...existingTrash]));
+      pushCloudRecycleBinItem(trashObj).catch(console.warn);
+
+      // 2. Remove from active khata
       const filtered = khataDebtors.filter(k => String(k.id) !== String(debtor.id));
       setKhataDebtors(filtered);
       localStorage.setItem('local_counter_khata', JSON.stringify(filtered));
@@ -771,7 +802,7 @@ export default function CounterSalePage() {
         window.dispatchEvent(new Event('master_store_updated'));
       } catch (e) {}
 
-      alert('🗑️ Khata entry deleted successfully from Cloud database!');
+      alert(`🗑️ Khata record for ${debtor.customer_name} moved to Recycle Bin!`);
       loadKhata();
     } catch (err) {
       console.error('Error deleting Khata entry:', err);

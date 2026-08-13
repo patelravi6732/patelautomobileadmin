@@ -59,6 +59,19 @@ export default function App() {
     if (lastVersion !== CURRENT_VERSION) {
       localStorage.setItem('app_build_version', CURRENT_VERSION);
     }
+
+    // Global Protection: Prevent mouse wheel / touchpad scrolling from changing number input values
+    const handleWheelPrevent = (e) => {
+      const activeEl = document.activeElement;
+      if (activeEl && activeEl.tagName === 'INPUT' && activeEl.type === 'number') {
+        activeEl.blur();
+      }
+    };
+
+    window.addEventListener('wheel', handleWheelPrevent, { passive: true });
+    return () => {
+      window.removeEventListener('wheel', handleWheelPrevent);
+    };
   }, []);
 
   return (

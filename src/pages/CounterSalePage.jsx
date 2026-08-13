@@ -100,25 +100,31 @@ export default function CounterSalePage() {
   });
   const [recordingPayment, setRecordingPayment] = useState(false);
 
-  // 1. Fetch Inventory Store
-  const loadInventory = async () => {
-    setLoadingInv(true);
+  // 1. Fetch Inventory Store (0ms Instant Local-First)
+  const loadInventory = () => {
     try {
-      const store = await fetchMasterStore(true);
-      const items = (store.inventory || []).filter(i => i && typeof i === 'object');
       const local = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
       const map = new Map();
-      [...items, ...local].forEach(it => {
-        if (it && (it.id || it.part_name || it.item_name || it.name)) {
-          const key = String(it.id || it.part_name || it.item_name || it.name);
-          map.set(key, it);
+      local.forEach(it => {
+        if (it && (it.part_name || it.item_name || it.name)) {
+          const raw = String(it.part_name || it.item_name || it.name || '').trim();
+          const normKey = raw.toLowerCase().replace(/[^a-z0-9]/g, '');
+          if (normKey) {
+            if (!map.has(normKey)) {
+              map.set(normKey, { ...it, part_name: raw, item_name: raw, name: raw });
+            } else {
+              const prev = map.get(normKey);
+              const prevTime = new Date(prev.updated_at || 0).getTime();
+              const curTime = new Date(it.updated_at || 0).getTime();
+              const preferred = curTime >= prevTime ? it : prev;
+              map.set(normKey, { ...prev, ...preferred, part_name: raw, item_name: raw, name: raw });
+            }
+          }
         }
       });
       setInventory(Array.from(map.values()));
     } catch (e) {
       console.warn('Error loading inventory for counter sale:', e);
-    } finally {
-      setLoadingInv(false);
     }
   };
 
@@ -156,6 +162,9 @@ export default function CounterSalePage() {
     window.addEventListener('storage', handleUpdates);
     window.addEventListener('master_store_updated', handleUpdates);
     window.addEventListener('inventory_updated', handleUpdates);
+
+    // Silently refresh cloud store in background
+    fetchMasterStore().catch(() => null);
 
     return () => {
       window.removeEventListener('storage', handleUpdates);
@@ -250,7 +259,7 @@ export default function CounterSalePage() {
     }
   };
 
-  // Explicit Confirm Parts Button Action (Exact same as Workshop)
+  // Explicit Confirm Parts Button Action (0ms Instant Optimistic with non-blocking Cloud sync)
   const handleConfirmCartParts = async () => {
     const stagedParts = cartItems.filter(p => p.status !== 'CONFIRMED');
     if (stagedParts.length === 0) {
@@ -259,20 +268,56 @@ export default function CounterSalePage() {
     }
 
     setConfirmingParts(true);
-    try {
-      // Deduct stock in real-time from Main Inventory & Cloud
-      await atomicDeductInventoryForSale(stagedParts);
 
-      const updated = cartItems.map(p => ({ ...p, status: 'CONFIRMED' }));
-      setCartItems(updated);
-      alert(`✅ Spare Parts Confirmed!\n\n${stagedParts.length} item(s) confirmed and stock deducted from Inventory successfully.`);
-      loadInventory();
-    } catch (e) {
-      console.error(e);
-      alert('⚠️ Error confirming spare parts stock.');
-    } finally {
-      setConfirmingParts(false);
-    }
+    // 1. INSTANT OPTIMISTIC LOCAL DEDUCTION (0ms)
+    const local = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
+    const map = new Map();
+    local.forEach(it => {
+      if (it && (it.part_name || it.item_name || it.name)) {
+        const raw = String(it.part_name || it.item_name || it.name || '').trim();
+        const norm = raw.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (norm) map.set(norm, { ...it, part_name: raw, item_name: raw, name: raw });
+      }
+    });
+
+    stagedParts.forEach(staged => {
+      const raw = String(staged.part_name || staged.item_name || '').trim();
+      const norm = raw.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const deductQty = parseInt(staged.quantity || 1, 10);
+      if (norm && map.has(norm)) {
+        const item = map.get(norm);
+        const curStock = parseInt(item.current_stock !== undefined ? item.current_stock : (item.stock_quantity !== undefined ? item.stock_quantity : (item.quantity !== undefined ? item.quantity : 0)), 10);
+        const newStock = Math.max(0, curStock - deductQty);
+        map.set(norm, {
+          ...item,
+          current_stock: newStock,
+          stock_quantity: newStock,
+          quantity: newStock,
+          updated_at: new Date().toISOString()
+        });
+      }
+    });
+
+    const updatedInv = Array.from(map.values());
+    localStorage.setItem('inventory_items', JSON.stringify(updatedInv));
+    localStorage.setItem('spare_parts', JSON.stringify(updatedInv));
+    localStorage.setItem('local_inventory', JSON.stringify(updatedInv));
+    setInventory(updatedInv);
+
+    const updatedCart = cartItems.map(p => ({ ...p, status: 'CONFIRMED' }));
+    setCartItems(updatedCart);
+    setConfirmingParts(false);
+
+    try {
+      window.dispatchEvent(new Event('storage'));
+      window.dispatchEvent(new Event('master_store_updated'));
+      window.dispatchEvent(new Event('inventory_updated'));
+    } catch (e) {}
+
+    // 2. Non-blocking cloud background sync
+    atomicDeductInventoryForSale(stagedParts).catch(console.warn);
+
+    alert(`✅ Spare Parts Confirmed!\n\n${stagedParts.length} item(s) confirmed and stock deducted from Inventory successfully.`);
   };
 
   // Update Cart Item Quantity
@@ -287,51 +332,52 @@ export default function CounterSalePage() {
     setCartItems(cartItems.map(i => String(i.id) === String(itemId) ? { ...i, quantity: qty, status: 'STAGED' } : i));
   };
 
-  // Remove Item from Cart (Restores stock if was confirmed)
-  const handleRemoveFromCart = async (itemId) => {
+  // Remove Item from Cart (0ms Instant Optimistic Restoration)
+  const handleRemoveFromCart = (itemId) => {
     const target = cartItems.find(i => String(i.id) === String(itemId));
     if (!target) return;
 
     if (target.status === 'CONFIRMED') {
-      try {
-        const store = await fetchMasterStore();
-        const existingInv = (store.inventory || []).filter(i => i && typeof i === 'object');
-        const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
-        const allMap = new Map();
-        [...existingInv, ...localInv].forEach(it => {
-          if (it && (it.id || it.part_name || it.item_name || it.name)) {
-            allMap.set(String(it.id || it.part_name || it.item_name || it.name), it);
-          }
-        });
+      const local = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
+      const map = new Map();
+      local.forEach(it => {
+        if (it && (it.part_name || it.item_name || it.name)) {
+          const raw = String(it.part_name || it.item_name || it.name || '').trim();
+          const norm = raw.toLowerCase().replace(/[^a-z0-9]/g, '');
+          if (norm) map.set(norm, { ...it, part_name: raw, item_name: raw, name: raw });
+        }
+      });
 
-        const baseInv = Array.from(allMap.values());
-        const targetNorm = String(target.part_name || target.item_name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-        const targetId = String(target.id || '').toLowerCase();
+      const raw = String(target.part_name || target.item_name || '').trim();
+      const norm = raw.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const restoreQty = parseInt(target.quantity || 1, 10);
+      if (norm && map.has(norm)) {
+        const item = map.get(norm);
+        const curStock = parseInt(item.current_stock !== undefined ? item.current_stock : (item.stock_quantity !== undefined ? item.stock_quantity : (item.quantity !== undefined ? item.quantity : 0)), 10);
+        const newStock = curStock + restoreQty;
+        const updatedItem = {
+          ...item,
+          current_stock: newStock,
+          stock_quantity: newStock,
+          quantity: newStock,
+          updated_at: new Date().toISOString()
+        };
+        map.set(norm, updatedItem);
 
-        const updatedInv = baseInv.map(invItem => {
-          if (!invItem) return invItem;
-          const invId = String(invItem.id || '').toLowerCase();
-          const invNorm = String(invItem.part_name || invItem.item_name || invItem.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-          if ((targetId && invId && targetId === invId) || (targetNorm && invNorm && targetNorm === invNorm)) {
-            const curStock = parseInt(invItem.current_stock || invItem.stock_quantity || invItem.quantity || 0, 10);
-            const newStock = curStock + parseInt(target.quantity || 1, 10);
-            return { ...invItem, current_stock: newStock, stock_quantity: newStock, quantity: newStock };
-          }
-          return invItem;
-        });
-
+        const updatedInv = Array.from(map.values());
         localStorage.setItem('inventory_items', JSON.stringify(updatedInv));
         localStorage.setItem('spare_parts', JSON.stringify(updatedInv));
         localStorage.setItem('local_inventory', JSON.stringify(updatedInv));
-        await saveMasterStore({ ...store, inventory: updatedInv });
+        setInventory(updatedInv);
 
         try {
           window.dispatchEvent(new Event('storage'));
           window.dispatchEvent(new Event('master_store_updated'));
           window.dispatchEvent(new Event('inventory_updated'));
         } catch (e) {}
-      } catch (e) {
-        console.warn('Error restoring stock on remove:', e);
+
+        // Non-blocking cloud update
+        pushCloudInventoryItem(updatedItem).catch(console.warn);
       }
     }
 

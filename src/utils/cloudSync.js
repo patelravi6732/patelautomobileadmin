@@ -153,24 +153,40 @@ export async function fetchMasterStore(forceFresh = false) {
         localStorage.setItem('local_counter_sales', JSON.stringify(mergedStore.counterSales));
         localStorage.setItem('local_counter_khata', JSON.stringify(mergedStore.counterKhata));
 
-        const curLocalInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+        const curLocalInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
         const mergedInvMap = new Map();
         [...curLocalInv, ...(mergedStore.inventory || [])].forEach(i => {
-          if (i && typeof i === 'object' && (i.id || i.part_name || i.name)) {
-            const strId = String(i.id || `inv_${String(i.part_name || i.name).toLowerCase().replace(/[^a-z0-9]/g, '')}`);
-            if (!mergedInvMap.has(strId)) {
-              mergedInvMap.set(strId, i);
-            } else {
-              mergedInvMap.set(strId, { ...mergedInvMap.get(strId), ...i });
+          if (i && typeof i === 'object' && (i.id || i.part_name || i.item_name || i.name)) {
+            const rawName = String(i.part_name || i.item_name || i.name || '').trim();
+            const normKey = rawName.toLowerCase().replace(/[^a-z0-9]/g, '') || String(i.id || '').toLowerCase();
+            if (normKey) {
+              if (!mergedInvMap.has(normKey)) {
+                mergedInvMap.set(normKey, { ...i, part_name: rawName, item_name: rawName, name: rawName });
+              } else {
+                const prev = mergedInvMap.get(normKey);
+                const prevTime = new Date(prev.updated_at || 0).getTime();
+                const curTime = new Date(i.updated_at || 0).getTime();
+                const preferred = curTime >= prevTime ? i : prev;
+                mergedInvMap.set(normKey, {
+                  ...prev,
+                  ...preferred,
+                  part_name: rawName,
+                  item_name: rawName,
+                  name: rawName
+                });
+              }
             }
           }
         });
         const finalMergedInv = Array.from(mergedInvMap.values());
         localStorage.setItem('inventory_items', JSON.stringify(finalMergedInv));
         localStorage.setItem('spare_parts', JSON.stringify(finalMergedInv));
+        localStorage.setItem('local_inventory', JSON.stringify(finalMergedInv));
+        mergedStore.inventory = finalMergedInv;
 
         window.dispatchEvent(new Event('storage'));
         window.dispatchEvent(new Event('master_store_updated'));
+        window.dispatchEvent(new Event('inventory_updated'));
       } catch (e) {
         console.warn('Failed to update local master_cloud_cache:', e);
       }
@@ -1547,12 +1563,23 @@ export async function atomicDeductInventoryForSale(saleItems = []) {
   const existingInv = (store.inventory || []).filter(i => i && typeof i === 'object');
   const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
 
-  // Merge map of all inventory
+  // Merge map of all inventory strictly by normalized name
   const allMap = new Map();
-  [...existingInv, ...localInv].forEach(it => {
+  [...localInv, ...existingInv].forEach(it => {
     if (it && (it.id || it.part_name || it.item_name || it.name)) {
-      const key = String(it.id || it.part_name || it.item_name || it.name);
-      allMap.set(key, it);
+      const rawName = String(it.part_name || it.item_name || it.name || '').trim();
+      const normKey = rawName.toLowerCase().replace(/[^a-z0-9]/g, '') || String(it.id || '').toLowerCase();
+      if (normKey) {
+        if (!allMap.has(normKey)) {
+          allMap.set(normKey, { ...it, part_name: rawName, item_name: rawName, name: rawName });
+        } else {
+          const prev = allMap.get(normKey);
+          const prevTime = new Date(prev.updated_at || 0).getTime();
+          const curTime = new Date(it.updated_at || 0).getTime();
+          const preferred = curTime >= prevTime ? it : prev;
+          allMap.set(normKey, { ...prev, ...preferred, part_name: rawName, item_name: rawName, name: rawName });
+        }
+      }
     }
   });
 
@@ -1611,15 +1638,19 @@ export async function atomicAddInventoryItem(itemObj) {
   const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
 
   const allMap = new Map();
-  [...existingInv, ...localInv].forEach(it => {
+  [...localInv, ...existingInv].forEach(it => {
     if (it && (it.id || it.part_name || it.item_name || it.name)) {
-      const key = String(it.id || it.part_name || it.item_name || it.name);
-      allMap.set(key, it);
+      const rawName = String(it.part_name || it.item_name || it.name || '').trim();
+      const normKey = rawName.toLowerCase().replace(/[^a-z0-9]/g, '') || String(it.id || '').toLowerCase();
+      if (normKey) {
+        allMap.set(normKey, it);
+      }
     }
   });
 
-  const newId = itemObj.id || `item_${Date.now()}`;
   const rawName = String(itemObj.part_name || itemObj.item_name || itemObj.name || 'Spare Part').trim();
+  const normKey = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const newId = itemObj.id || `inv_${normKey || Date.now()}`;
   const priceVal = parseFloat(itemObj.price || itemObj.unit_price || itemObj.selling_price || 0);
   const stockVal = parseInt(itemObj.current_stock || itemObj.stock_quantity || itemObj.quantity || 0, 10);
 
@@ -1642,8 +1673,8 @@ export async function atomicAddInventoryItem(itemObj) {
     updated_at: new Date().toISOString()
   };
 
-  const currentList = Array.from(allMap.values()).filter(i => String(i.id) !== String(newId));
-  const updatedInv = [newItem, ...currentList];
+  allMap.set(normKey, newItem);
+  const updatedInv = Array.from(allMap.values());
 
   localStorage.setItem('inventory_items', JSON.stringify(updatedInv));
   localStorage.setItem('spare_parts', JSON.stringify(updatedInv));

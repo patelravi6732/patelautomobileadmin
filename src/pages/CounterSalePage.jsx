@@ -16,6 +16,7 @@ import {
 } from '../utils/cloudSync';
 import { generateCounterSaleCardPhotoAsync, generateBillCanvasBlob } from '../utils/billCardGenerator';
 import { formatDateDMY } from '../utils/dateFormatter';
+import { openWhatsAppChat, sanitizeWhatsAppPhone } from '../utils/whatsappPhotoSharer';
 import AdminPasswordModal from '../components/AdminPasswordModal';
 
 const INVENTORY_CATEGORIES = [
@@ -995,9 +996,10 @@ export default function CounterSalePage() {
   const handleDownloadCard = async (sale) => {
     const url = await generateCounterSaleCardPhotoAsync(sale, garageInfo);
     if (!url) return;
+    const timeCode = Date.now().toString().slice(-4);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `Bill_${(sale.customer_name || 'CounterSale').replace(/\s+/g, '_')}_${formatDateDMY(sale.created_at || Date.now())}.png`;
+    link.download = `Bill_${(sale.customer_name || 'CounterSale').replace(/\s+/g, '_')}_${formatDateDMY(sale.created_at || Date.now())}_${timeCode}.png`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -1007,8 +1009,6 @@ export default function CounterSalePage() {
   const handleShareWhatsApp = async (sale) => {
     if (!sale) return;
     const rawPhone = sale.customer_phone || sale.mobile_number || sale.phone || '';
-    const cleanPhone = rawPhone.replace(/[^0-9]/g, '');
-    const phoneWithCountry = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
     
     // Automatically trigger HD Photo Card download
     handleDownloadCard(sale).catch(() => null);
@@ -1020,20 +1020,20 @@ export default function CounterSalePage() {
 ━━━━━━━━━━━━━━━━━━━━
 📅 *Date:* ${formatDateDMY(sale.created_at || sale.date || Date.now())}
 👤 *Customer:* ${sale.customer_name}
-${sale.vehicle_number ? `🛵 *Vehicle:* ${sale.vehicle_number.toUpperCase()}\n` : ''}
-*Purchased Items:*
+${sale.vehicle_number ? `🛵 *Vehicle:* ${sale.vehicle_number.toUpperCase()}\n` : ''}*Purchased Items:*
 ${itemsList}
 
 ━━━━━━━━━━━━━━━━━━━━
 💰 *Net Total:* ₹${parseFloat(sale.net_total || sale.total_amount || 0).toFixed(2)}
 💵 *Paid Amount:* ₹${parseFloat(sale.paid_amount || 0).toFixed(2)}
-${!isPaid ? `⚠️ *Pending Balance Due:* ₹${parseFloat(sale.pending_amount).toFixed(2)}\n` : '✅ *Status:* PAID IN FULL\n'}
+${!isPaid ? `⚠️ *Pending Balance Due:* *₹${parseFloat(sale.pending_amount).toFixed(2)}*\n📲 *Pay via UPI:* ${garageInfo?.upi_id || 'paytmqr5hlpsp@ptys'}\n` : '✅ *Status:* PAID IN FULL\n'}
 ${garageInfo?.safety_message || 'Thank you for choosing Patel Automobiles! Wish you a safe & smooth ride. 🛵⛑️'}
 
+📸 *Your Official HD Bill Photo Card has been generated & saved.*
 📍 *Address:* ${garageInfo?.address || 'Near Dandi Pond, Dandi, Valsad'}
 📞 *Contact:* ${garageInfo?.phone || '+91 81403 71414'}`;
 
-    window.open(`https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(msg)}`, '_blank');
+    openWhatsAppChat(rawPhone, msg);
   };
 
   // Download Khata Statement Photo Card
@@ -1061,9 +1061,10 @@ ${garageInfo?.safety_message || 'Thank you for choosing Patel Automobiles! Wish 
 
     const url = await generateCounterSaleCardPhotoAsync(invAdapter, garageInfo);
     if (!url) return;
+    const timeCode = Date.now().toString().slice(-4);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `Statement_${(debtor.customer_name || 'Customer').replace(/\s+/g, '_')}_${formatDateDMY(debtor.created_at || Date.now())}.png`;
+    link.download = `Statement_${(debtor.customer_name || 'Customer').replace(/\s+/g, '_')}_${formatDateDMY(debtor.created_at || Date.now())}_${timeCode}.png`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -1073,8 +1074,6 @@ ${garageInfo?.safety_message || 'Thank you for choosing Patel Automobiles! Wish 
   const handleShareKhataReminder = async (debtor) => {
     if (!debtor) return;
     const rawPhone = debtor.customer_phone || debtor.phone || debtor.mobile_number || '';
-    const cleanPhone = rawPhone.replace(/[^0-9]/g, '');
-    const phoneWithCountry = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
     
     // Automatically trigger Statement Photo Card download with QR scanner
     handleDownloadKhataCard(debtor).catch(() => null);
@@ -1092,9 +1091,10 @@ ${garageInfo?.safety_message || 'Thank you for choosing Patel Automobiles! Wish 
 👤 *Payee:* Patel Automobiles
 
 Kindly clear your pending balance at your earliest convenience.
+📸 *Your Statement Photo Card has been saved.*
 📞 *Contact:* ${garageInfo?.phone || '+91 81403 71414'}`;
 
-    window.open(`https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(msg)}`, '_blank');
+    openWhatsAppChat(rawPhone, msg);
   };
 
   // Stats Calculations (100% Crash-Proof)

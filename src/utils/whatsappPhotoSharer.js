@@ -1,140 +1,94 @@
-import html2canvas from 'html2canvas';
+import { generateBillCanvasBlob } from './billCardGenerator';
+import { formatDateDMY } from './dateFormatter';
 
 /**
- * Captures an HTML element as an HD PNG photo card, copies or downloads it,
- * and opens WhatsApp chat with the customer's phone number.
+ * Bulletproof Phone Sanitizer for WhatsApp (India + International)
+ * Strips non-digits, leading zeros, and ensures 91 country code for 10-digit numbers.
  */
-export const sharePhotoToWhatsApp = async (element, customerPhone, customerName = 'Customer', customMessage = '') => {
-  if (!element) return false;
+export const sanitizeWhatsAppPhone = (phone) => {
+  if (!phone) return '';
+  let digits = String(phone).replace(/\D/g, '');
+  while (digits.startsWith('0')) {
+    digits = digits.substring(1);
+  }
+  if (digits.length === 10) {
+    return '91' + digits;
+  }
+  if (digits.length === 12 && digits.startsWith('91')) {
+    return digits;
+  }
+  if (digits.length === 13 && digits.startsWith('910')) {
+    return '91' + digits.substring(3);
+  }
+  if (digits.length >= 10) {
+    return digits.startsWith('91') ? digits : '91' + digits.slice(-10);
+  }
+  return digits;
+};
 
-  let phoneClean = ''.concat(customerPhone || '').replace(/\D/g, '');
-  if (!phoneClean.startsWith('91') && phoneClean.length === 10) {
-    phoneClean = '91' + phoneClean;
+/**
+ * Opens WhatsApp Chat with fallback to anchor click if popup is blocked.
+ */
+export const openWhatsAppChat = (phone, message = '') => {
+  const cleanPhone = sanitizeWhatsAppPhone(phone);
+  if (!cleanPhone || cleanPhone.length < 10) {
+    alert('⚠️ Invalid or missing mobile number for WhatsApp share!');
+    return false;
   }
 
-  const encodedMsg = customMessage ? encodeURIComponent(customMessage) : '';
-  const targetUrl = `https://wa.me/${phoneClean}${encodedMsg ? `?text=${encodedMsg}` : ''}`;
-
-  const openWhatsApp = () => {
-    try {
-      const win = window.open(targetUrl, '_blank');
-      if (!win || win.closed || typeof win.closed === 'undefined') {
-        const a = document.createElement('a');
-        a.href = targetUrl;
-        a.target = '_blank';
-        a.rel = 'noopener noreferrer';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-      }
-    } catch (e) {
-      window.location.href = targetUrl;
-    }
-  };
+  const encodedMsg = message ? encodeURIComponent(message) : '';
+  const targetUrl = `https://api.whatsapp.com/send/?phone=${cleanPhone}&text=${encodedMsg}`;
 
   try {
-    let canvas = null;
-
-    const sanitizeCss = (str) => {
-      if (!str) return str;
-      return str.replace(/oklch\([^)]+\)|oklab\([^)]+\)|light-dark\([^)]+\)|color\([^)]+\)/gi, '#334155');
-    };
-
-    // Attempt 1: High definition html2canvas with oklch CSS sanitizer
-    try {
-      canvas = await html2canvas(element, {
-        scale: 2,
-        useCORS: true,
-        allowTaint: true,
-        backgroundColor: '#ffffff',
-        logging: false,
-        onclone: (clonedDoc) => {
-          try {
-            const styleElements = clonedDoc.querySelectorAll('style');
-            styleElements.forEach((styleEl) => {
-              if (styleEl.textContent && /oklch|oklab|light-dark/i.test(styleEl.textContent)) {
-                styleEl.textContent = sanitizeCss(styleEl.textContent);
-              }
-            });
-
-            const allElements = clonedDoc.querySelectorAll('*');
-            allElements.forEach((el) => {
-              const inlineStyle = el.getAttribute('style');
-              if (inlineStyle && /oklch|oklab|light-dark/i.test(inlineStyle)) {
-                el.setAttribute('style', sanitizeCss(inlineStyle));
-              }
-            });
-          } catch (e) {
-            console.warn('onclone color cleanup warning:', e);
-          }
-        }
-      });
-    } catch (err1) {
-      console.warn('html2canvas attempt 1 failed:', err1);
+    const win = window.open(targetUrl, '_blank');
+    if (!win || win.closed || typeof win.closed === 'undefined') {
+      const a = document.createElement('a');
+      a.href = targetUrl;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
     }
+  } catch (e) {
+    window.location.href = targetUrl;
+  }
+  return true;
+};
 
-    // Attempt 2: Standard html2canvas fallback (scale 1)
-    if (!canvas) {
-      try {
-        canvas = await html2canvas(element, {
-          scale: 1,
-          useCORS: false,
-          allowTaint: true,
-          backgroundColor: '#ffffff',
-          logging: false,
-          onclone: (clonedDoc) => {
-            try {
-              const styleElements = clonedDoc.querySelectorAll('style');
-              styleElements.forEach((styleEl) => {
-                if (styleEl.textContent) styleEl.textContent = sanitizeCss(styleEl.textContent);
-              });
-            } catch (e) {}
-          }
-        });
-      } catch (err2) {
-        console.warn('html2canvas attempt 2 failed:', err2);
-      }
-    }
+/**
+ * Shares Workshop Billing Invoice to WhatsApp:
+ * 1. Generates HD Bill Photo Card & triggers download with unique timestamp
+ * 2. Copies photo to clipboard on desktop
+ * 3. Opens WhatsApp with formatted invoice details & UPI payment link
+ */
+export const shareInvoiceToWhatsApp = async (invoice, garageInfo) => {
+  if (!invoice) return false;
 
-    if (!canvas) {
-      throw new Error('Failed to generate image canvas from element.');
-    }
+  const custName = invoice.customer_name || 'Customer';
+  const custPhone = invoice.mobile_number || invoice.customer_mobile || invoice.service_job?.mobile_number || invoice.phone || '';
+  const vehNum = String(invoice.vehicle_number || invoice.service_job?.vehicle_number || '').toUpperCase();
+  const bikeModel = invoice.bike_model || invoice.service_job?.bike_model || '';
+  const invNumber = invoice.invoice_number || `INV-${String(invoice.id || '').slice(-4)}`;
+  const dateStr = formatDateDMY(invoice.created_at || invoice.visit_date || invoice.date || Date.now());
 
-    // Convert canvas to Blob safely
-    let blob = null;
-    try {
-      blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
-    } catch (blobErr) {
-      console.warn('canvas.toBlob failed, trying toDataURL fallback:', blobErr);
-    }
+  const parts = invoice.service_job?.parts || invoice.service_job?.parts_used || invoice.parts || invoice.items || [];
+  const labourCharge = parseFloat(invoice.service_job?.labour_charge || invoice.labour_charge || 0);
+  const discountAmount = parseFloat(invoice.discount_amount || 0);
+  const grandTotal = parseFloat(invoice.grand_total || invoice.total_amount || invoice.net_total || 0);
+  const rawPaid = parseFloat(invoice.paid_amount !== undefined ? invoice.paid_amount : (invoice.received_amount || (invoice.payment_status === 'PAID' ? grandTotal : 0)));
+  const paidAmount = Math.min(grandTotal, Math.max(0, rawPaid));
+  const pendingAmount = Math.max(0, grandTotal - paidAmount);
+  const isPaid = pendingAmount <= 0;
 
-    if (!blob) {
-      const dataUrl = canvas.toDataURL('image/png');
-      const res = await fetch(dataUrl);
-      blob = await res.blob();
-    }
+  // 1. Generate & Download HD Photo Card
+  const timeCode = Date.now().toString().slice(-4);
+  const fileName = `Bill_${custName.replace(/\s+/g, '_')}_${vehNum || 'Card'}_${timeCode}.png`;
 
-    const fileName = `Bill_${customerName.replace(/\s+/g, '_')}_${Date.now()}.png`;
-
-    // 1. Try Native Web Share API (Mobile / Android / iOS)
-    if (isMobile && navigator.canShare) {
-      const file = new File([blob], fileName, { type: 'image/png' });
-      if (navigator.canShare({ files: [file] })) {
-        try {
-          await navigator.share({
-            title: `Patel Automobiles - ${customerName}`,
-            text: customMessage || `Thank you for visiting Patel Automobiles! Ride safe & always wear a helmet! 🛵⛑️`,
-            files: [file]
-          });
-          return true;
-        } catch (shareErr) {
-          console.warn('Mobile native share cancelled or unsupported:', shareErr);
-        }
-      }
-    }
-
-    // 2. Trigger Auto-Download of Image File
-    try {
+  try {
+    const blob = await generateBillCanvasBlob(invoice, garageInfo);
+    if (blob) {
+      // Auto Download
       const imgUrl = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = imgUrl;
@@ -142,45 +96,127 @@ export const sharePhotoToWhatsApp = async (element, customerPhone, customerName 
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-    } catch (dlErr) {
-      console.warn('Auto download error:', dlErr);
-    }
 
-    // 3. Try Desktop Clipboard Copy
-    let copiedToClipboard = false;
-    if (!isMobile && navigator.clipboard && window.ClipboardItem) {
-      try {
-        await navigator.clipboard.write([
-          new ClipboardItem({
-            'image/png': blob
-          })
-        ]);
-        copiedToClipboard = true;
-      } catch (clipErr) {
-        console.warn('Clipboard image write failed:', clipErr);
+      // Desktop Clipboard Copy
+      if (navigator.clipboard && window.ClipboardItem) {
+        try {
+          await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+        } catch (e) {}
       }
     }
-
-    // 4. OPEN WHATSAPP FIRST (Prevents Chrome popup blocker)
-    openWhatsApp();
-
-    // 5. Guidance notification
-    setTimeout(() => {
-      if (isMobile) {
-        alert(`📸 Bill Photo Download Ho Gayi!\n\nWhatsApp khul gaya hai:\nWhatsApp mein 📎 (Attach Icon) -> Gallery -> Select '${fileName}' to send! 📲`);
-      } else if (copiedToClipboard) {
-        alert(`📸 Bill Photo Copied to Clipboard & Downloaded (${fileName})!\n\nWhatsApp Web khul gaya hai:\n1. Chat box mein Ctrl + V (Paste) dabayein!\n2. Ya 📎 (Attach Icon) -> Photos & Videos -> '${fileName}' select karein! 💻`);
-      } else {
-        alert(`📸 Bill Photo Download Ho Gayi (${fileName})!\n\nWhatsApp Web khul gaya hai:\nWhatsApp mein 📎 (Attach Icon) -> Photos & Videos -> '${fileName}' select karke photo bhej dein! 💻`);
-      }
-    }, 400);
-
-    return true;
-
-  } catch (err) {
-    console.error('Share photo error:', err);
-    alert('Opening WhatsApp chat for customer messaging...');
-    openWhatsApp();
-    return false;
+  } catch (canvasErr) {
+    console.warn('Bill photo card generation warning:', canvasErr);
   }
+
+  // 2. Format Items Breakdown
+  let itemsList = '';
+  if (Array.isArray(parts) && parts.length > 0) {
+    itemsList = parts.map((p, i) => {
+      const pName = p.part_name || p.item_name || p.name || 'Spare Part';
+      const qty = p.quantity || 1;
+      const price = parseFloat(p.selling_price || p.unit_price || p.price || 0) * qty;
+      return `${i + 1}. ${pName} (x${qty}) - ₹${price.toFixed(2)}`;
+    }).join('\n');
+  }
+  if (labourCharge > 0) {
+    itemsList += `${itemsList ? '\n' : ''}• Labour / Service Charges - ₹${labourCharge.toFixed(2)}`;
+  }
+  if (!itemsList) {
+    itemsList = `• Two Wheeler Periodic Service & Inspection - ₹${grandTotal.toFixed(2)}`;
+  }
+
+  // 3. Compose WhatsApp Message
+  const garageName = garageInfo?.garage_name || 'Patel Automobiles';
+  const garagePhone = garageInfo?.phone || '+91 81403 71414';
+  const garageAddress = garageInfo?.address || 'Near Dandi Pond, Dandi, Valsad';
+  const upiId = garageInfo?.upi_id || 'paytmqr5hlpsp@ptys';
+  const safetyMsg = garageInfo?.safety_message || 'Thank you for choosing Patel Automobiles! Wish you a safe & smooth ride. 🛵⛑️';
+
+  const msg = `*${garageName.toUpperCase()} - SERVICE INVOICE* 🛵🔧
+━━━━━━━━━━━━━━━━━━━━
+🧾 *Invoice No:* ${invNumber}
+📅 *Date:* ${dateStr}
+👤 *Customer:* ${custName}
+🛵 *Vehicle:* ${vehNum} ${bikeModel ? `(${bikeModel})` : ''}
+
+*Service Details & Parts:*
+${itemsList}
+
+━━━━━━━━━━━━━━━━━━━━
+${discountAmount > 0 ? `🏷️ *Discount:* - ₹${discountAmount.toFixed(2)}\n` : ''}💰 *Total Amount:* ₹${grandTotal.toFixed(2)}
+💵 *Paid Amount:* ₹${paidAmount.toFixed(2)}
+${!isPaid ? `⚠️ *Pending Balance Due:* *₹${pendingAmount.toFixed(2)}*\n📲 *Pay via UPI:* ${upiId}\n` : '✅ *Status:* PAID IN FULL\n'}
+${safetyMsg}
+
+📸 *Your Official HD Bill Photo Card has been generated and saved.*
+${!isPaid ? `👉 Kindly send ₹${pendingAmount.toFixed(2)} to UPI ID: *${upiId}*\n` : ''}
+📍 *Address:* ${garageAddress}
+📞 *Contact:* ${garagePhone}`;
+
+  return openWhatsAppChat(custPhone, msg);
+};
+
+/**
+ * Shares Khata Book Statement to WhatsApp:
+ */
+export const shareKhataStatementToWhatsApp = async (customer, garageInfo) => {
+  if (!customer) return false;
+
+  const custName = customer.customer_name || 'Customer';
+  const custPhone = customer.phone || customer.mobile_number || '';
+  const vehNum = String(customer.vehicle_number || '').toUpperCase();
+  const bikeModel = customer.bike_model || '';
+  const dateStr = formatDateDMY(customer.created_at || customer.last_service_date || Date.now());
+
+  const grossTotal = parseFloat(customer.gross_total || (parseFloat(customer.total_billed || 0) + parseFloat(customer.discount_amount || 0)));
+  const totalBilled = parseFloat(customer.total_billed || customer.total_amount || 0);
+  const totalPaid = parseFloat(customer.total_paid || customer.paid_amount || 0);
+  const pendingAmount = parseFloat(customer.pending_amount || customer.balance || 0);
+
+  const timeCode = Date.now().toString().slice(-4);
+  const fileName = `Statement_${custName.replace(/\s+/g, '_')}_${vehNum || 'Khata'}_${timeCode}.png`;
+
+  try {
+    const blob = await generateBillCanvasBlob(customer, garageInfo);
+    if (blob) {
+      const imgUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = imgUrl;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      if (navigator.clipboard && window.ClipboardItem) {
+        try {
+          await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+        } catch (e) {}
+      }
+    }
+  } catch (canvasErr) {
+    console.warn('Khata statement photo card generation warning:', canvasErr);
+  }
+
+  const garageName = garageInfo?.garage_name || 'Patel Automobiles';
+  const garagePhone = garageInfo?.phone || '+91 81403 71414';
+  const upiId = garageInfo?.upi_id || 'paytmqr5hlpsp@ptys';
+
+  const msg = `*${garageName.toUpperCase()} - UDHAR KHATA STATEMENT* 📖
+━━━━━━━━━━━━━━━━━━━━
+👤 *Customer:* ${custName}
+${vehNum ? `🛵 *Vehicle:* ${vehNum} ${bikeModel ? `(${bikeModel})` : ''}\n` : ''}📅 *Statement Date:* ${dateStr}
+
+💰 *Total Billed:* ₹${totalBilled.toFixed(2)}
+💵 *Paid so far:* ₹${totalPaid.toFixed(2)}
+⚠️ *Current Outstanding Due:* *₹${pendingAmount.toFixed(2)}*
+
+━━━━━━━━━━━━━━━━━━━━
+📲 *Pay via UPI:* ${upiId}
+👤 *Payee:* ${garageName}
+
+Kindly clear your pending balance at your earliest convenience.
+📸 *Your Statement Photo Card has been downloaded.*
+📞 *Contact:* ${garagePhone}`;
+
+  return openWhatsAppChat(custPhone, msg);
 };

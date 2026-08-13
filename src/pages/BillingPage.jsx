@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { pushCloudRecycleBinItem, fetchCloudInvoices, markIdAsDeleted, fetchCloudDeletedIds, deleteCloudInvoice, deleteCloudJob, pushAuditLog } from '../utils/cloudSync';
 import AdminPasswordModal from '../components/AdminPasswordModal';
 import { LOGO_BASE64 } from '../assets/logoBase64';
-import { sharePhotoToWhatsApp } from '../utils/whatsappPhotoSharer';
+import { shareInvoiceToWhatsApp } from '../utils/whatsappPhotoSharer';
 
 import { generateBillCanvasDataUrl, generateBillCanvasDataUrlAsync, generateBillCanvasBlob } from '../utils/billCardGenerator';
 import { formatDateDMY } from '../utils/dateFormatter';
@@ -249,11 +249,13 @@ export default function BillingPage() {
     if (!targetInv) return;
 
     const custName = targetInv.customer_name || 'Customer';
+    const vehNum = targetInv.vehicle_number || '';
+    const timeCode = Date.now().toString().slice(-4);
     setSharingPhoto(true);
 
     try {
       const blob = await generateBillCanvasBlob(targetInv, garageInfo);
-      const fileName = `Bill_${custName.replace(/\s+/g, '_')}_${targetInv.vehicle_number || ''}.png`;
+      const fileName = `Bill_${custName.replace(/\s+/g, '_')}_${vehNum || 'Card'}_${timeCode}.png`;
 
       const imgUrl = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -281,23 +283,11 @@ export default function BillingPage() {
     if (!targetInv) return;
 
     try {
-      showToast('📲 Preparing WhatsApp Share...', 'Generating Bill Photo Card & Safety Greeting...');
-      await sharePhotoToWhatsApp(targetInv, garageInfo);
+      showToast('📲 Preparing WhatsApp Share...', 'Generating Bill Photo Card & Message...');
+      await shareInvoiceToWhatsApp(targetInv, garageInfo);
     } catch (err) {
-      console.warn('WhatsApp photo share notice, launching text link fallback:', err);
-      const custPhone = targetInv.customer_mobile || targetInv.mobile_number || targetInv.service_job?.mobile_number || '8140371414';
-      let phoneClean = ''.concat(custPhone || '').replace(/\D/g, '');
-      if (!phoneClean.startsWith('91') && phoneClean.length === 10) phoneClean = '91' + phoneClean;
-
-      const contactPhone = garageInfo?.phone || '+91 81403 71414';
-      const garageName = garageInfo?.garage_name || 'Patel Automobiles';
-      const safetyMsg = garageInfo?.safety_message || 'Thank you for choosing us! Wish you a safe & smooth ride. 🛵⛑️';
-
-      let customMsg = `${safetyMsg}\n\n📞 Contact: ${contactPhone}\n— ${garageName}`;
-      const encodedMsg = encodeURIComponent(customMsg);
-      const targetUrl = `https://wa.me/${phoneClean}?text=${encodedMsg}`;
-
-      window.open(targetUrl, '_blank');
+      console.error('WhatsApp share error:', err);
+      showToast('Share Failed', 'Failed to open WhatsApp chat.', 'error');
     }
   };
 

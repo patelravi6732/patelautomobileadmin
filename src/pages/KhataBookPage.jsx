@@ -3,6 +3,7 @@ import { BookOpen, Send, CheckCircle2, IndianRupee, Phone, Bike, Search, Camera,
 import API from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { generateBillCanvasDataUrl, generateBillCanvasDataUrlAsync, generateBillCanvasBlob } from '../utils/billCardGenerator';
+import { shareKhataStatementToWhatsApp } from '../utils/whatsappPhotoSharer';
 
 import { fetchCloudKhataEntries, fetchCloudInvoices, fetchCloudJobs, pushCloudKhataEntry, pushCloudRecycleBinItem, markIdAsDeleted, deleteCloudKhataEntry, fetchCloudDeletedIds, atomicRecordPayment } from '../utils/cloudSync';
 import AdminPasswordModal from '../components/AdminPasswordModal';
@@ -592,11 +593,13 @@ export default function KhataBookPage() {
     if (!targetCust) return;
 
     const custName = targetCust.customer_name || 'Customer';
+    const vehNum = targetCust.vehicle_number || '';
+    const timeCode = Date.now().toString().slice(-4);
     setSharingPhoto(true);
 
     try {
       const blob = await generateBillCanvasBlob(targetCust, garageInfo);
-      const fileName = `Statement_${custName.replace(/\s+/g, '_')}_${targetCust.vehicle_number || ''}.png`;
+      const fileName = `Statement_${custName.replace(/\s+/g, '_')}_${vehNum || 'Khata'}_${timeCode}.png`;
 
       const imgUrl = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -618,20 +621,17 @@ export default function KhataBookPage() {
     }
   };
 
-  const handleOpenWhatsAppChat = (customer) => {
-    const custPhone = customer.phone || '8140371414';
-    let phoneClean = ''.concat(custPhone || '').replace(/\D/g, '');
-    if (!phoneClean.startsWith('91') && phoneClean.length === 10) phoneClean = '91' + phoneClean;
+  const handleOpenWhatsAppChat = async (customer) => {
+    const targetCust = customer || statementCustomer;
+    if (!targetCust) return;
 
-    const contactPhone = garageInfo?.phone || '+91 81403 71414';
-    const garageName = garageInfo?.garage_name || 'Patel Automobiles';
-    const safetyMsg = garageInfo?.safety_message || 'Thank you for choosing us! Wish you a safe & smooth ride. 🛵⛑️';
-
-    let customMsg = `${safetyMsg}\n\n📞 Contact: ${contactPhone}\n— ${garageName}`;
-    const encodedMsg = encodeURIComponent(customMsg);
-    const targetUrl = `https://wa.me/${phoneClean}?text=${encodedMsg}`;
-
-    window.open(targetUrl, '_blank');
+    try {
+      showToast('📲 Preparing WhatsApp Share...', 'Generating Statement Photo Card & Message...');
+      await shareKhataStatementToWhatsApp(targetCust, garageInfo);
+    } catch (err) {
+      console.error('WhatsApp share error:', err);
+      showToast('Share Failed', 'Failed to open WhatsApp chat.', 'error');
+    }
   };
 
   return (

@@ -178,15 +178,16 @@ export default function CounterSalePage() {
 
   // 4. Sync Cross-Device Cart from Master Store
   const syncCrossDeviceCart = async () => {
+    if (isSyncingFromCloud.current) return;
     try {
+      const localDraft = JSON.parse(localStorage.getItem('counter_sale_draft') || 'null');
       const store = await fetchMasterStore();
       const cloudCart = store.activeCounterCart;
       if (cloudCart && typeof cloudCart === 'object') {
-        const localDraft = JSON.parse(localStorage.getItem('counter_sale_draft') || 'null');
         const cloudTime = new Date(cloudCart.updated_at || 0).getTime();
         const localTime = new Date(localDraft?.updated_at || 0).getTime();
 
-        if (cloudTime > localTime || (!localDraft && Array.isArray(cloudCart.cartItems) && cloudCart.cartItems.length > 0)) {
+        if (cloudTime > (localTime + 1000) || (!localDraft && Array.isArray(cloudCart.cartItems) && cloudCart.cartItems.length > 0)) {
           isSyncingFromCloud.current = true;
           setCustomerName(cloudCart.customerName || '');
           setCustomerPhone(cloudCart.customerPhone || '');
@@ -196,7 +197,7 @@ export default function CounterSalePage() {
           setPaidAmount(cloudCart.paidAmount !== undefined ? cloudCart.paidAmount : '');
           setPaymentMode(cloudCart.paymentMode || 'CASH');
           localStorage.setItem('counter_sale_draft', JSON.stringify(cloudCart));
-          setTimeout(() => { isSyncingFromCloud.current = false; }, 300);
+          setTimeout(() => { isSyncingFromCloud.current = false; }, 1000);
         }
       }
     } catch (e) {}
@@ -221,7 +222,7 @@ export default function CounterSalePage() {
 
     const interval = setInterval(() => {
       syncCrossDeviceCart();
-    }, 4000);
+    }, 5000);
 
     return () => {
       clearInterval(interval);
@@ -283,40 +284,43 @@ export default function CounterSalePage() {
     return Math.max(0, cartNetTotal - effectivePaid);
   }, [cartNetTotal, effectivePaid]);
 
-  const hasUnconfirmedParts = useMemo(() => {
-    return cartItems.some(p => p && p.status !== 'CONFIRMED');
-  }, [cartItems]);
-
   // Handle Add Item to Cart (Workshop Style - No premature stock deduction)
   const handleAddToCart = (item) => {
+    if (!item) return;
     const curStock = parseInt(item.current_stock !== undefined ? item.current_stock : (item.stock_quantity !== undefined ? item.stock_quantity : (item.quantity !== undefined ? item.quantity : 0)), 10);
     if (curStock <= 0) {
       alert(`⚠️ '${item.part_name || item.item_name || item.name}' is currently Out of Stock!`);
       return;
     }
 
-    const itemNorm = String(item.part_name || item.item_name || item.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    isSyncingFromCloud.current = true;
+
+    const rawName = String(item.part_name || item.item_name || item.name || 'Spare Part').trim();
+    const itemNorm = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const priceVal = parseFloat(item.price || item.selling_price || item.unit_price || 0);
+
     const existingIndex = cartItems.findIndex(i => {
+      if (!i) return false;
       const iNorm = String(i.part_name || i.item_name || i.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
       return (i.id && item.id && String(i.id) === String(item.id)) || (iNorm && itemNorm && iNorm === itemNorm);
     });
 
     let nextCart = [];
     if (existingIndex >= 0) {
-      const currentQty = cartItems[existingIndex].quantity;
+      const currentQty = cartItems[existingIndex].quantity || 1;
       if (currentQty + 1 > curStock) {
-        alert(`⚠️ Maximum available stock for '${item.part_name || item.item_name || item.name}' is ${curStock} units.`);
+        alert(`⚠️ Maximum available stock for '${rawName}' is ${curStock} units.`);
+        isSyncingFromCloud.current = false;
         return;
       }
-      nextCart = cartItems.map((cItem, idx) => idx === existingIndex ? { ...cItem, quantity: cItem.quantity + 1 } : cItem);
+      nextCart = cartItems.map((cItem, idx) => idx === existingIndex ? { ...cItem, quantity: currentQty + 1 } : cItem);
     } else {
-      const rawName = item.part_name || item.item_name || item.name || 'Spare Part';
       nextCart = [...cartItems, {
         id: item.id || `cart_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
         item_name: rawName,
         part_name: rawName,
-        selling_price: parseFloat(item.price || item.selling_price || item.unit_price || 0),
-        unit_price: parseFloat(item.price || item.selling_price || item.unit_price || 0),
+        selling_price: priceVal,
+        unit_price: priceVal,
         quantity: 1,
         available_stock: curStock
       }];
@@ -325,17 +329,25 @@ export default function CounterSalePage() {
     setCartItems(nextCart);
 
     const draft = {
-      customerName,
-      customerPhone,
-      vehicleNumber,
+      customerName: customerName || '',
+      customerPhone: customerPhone || '',
+      vehicleNumber: vehicleNumber || '',
       cartItems: nextCart,
-      discountAmount,
-      paidAmount,
-      paymentMode,
+      discountAmount: discountAmount || 0,
+      paidAmount: paidAmount !== undefined ? paidAmount : '',
+      paymentMode: paymentMode || 'CASH',
       updated_at: new Date().toISOString()
     };
-    localStorage.setItem('counter_sale_draft', JSON.stringify(draft));
+
+    try {
+      localStorage.setItem('counter_sale_draft', JSON.stringify(draft));
+    } catch (e) {}
+
     pushCloudActiveCounterCart(draft).catch(() => null);
+
+    setTimeout(() => {
+      isSyncingFromCloud.current = false;
+    }, 1500);
   };
 
   // Update Cart Item Quantity

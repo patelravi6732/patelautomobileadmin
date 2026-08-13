@@ -1573,11 +1573,15 @@ export async function atomicRecordCounterPayment(targetId, paymentAmount, paymen
 
   const store = await fetchMasterStore();
   const strId = String(targetId);
+  const saleId = strId.replace(/^ckhata_/, '');
+  const rawId = saleId.replace(/^cs_/, '').replace(/^inv_/, '');
 
   // 1. Update Counter Sales Invoices
   let storeSales = (store.counterSales || []).map(s => {
     if (!s) return s;
-    if (String(s.id) === strId || String(s.invoice_number) === strId) {
+    const sId = String(s.id || '');
+    const sRaw = sId.replace(/^cs_/, '').replace(/^inv_/, '');
+    if (sId === strId || sId === saleId || sRaw === rawId) {
       const curTotal = parseFloat(s.net_total || s.total_amount || s.grand_total || 0);
       const curPaidOld = parseFloat(s.paid_amount || 0);
       const curPaid = Math.min(curTotal, curPaidOld + numAmt);
@@ -1586,7 +1590,8 @@ export async function atomicRecordCounterPayment(targetId, paymentAmount, paymen
         ...s,
         paid_amount: curPaid,
         pending_amount: curPending,
-        payment_status: curPending === 0 ? 'PAID' : 'PARTIAL'
+        payment_status: curPending <= 0 ? 'PAID' : 'UNPAID',
+        payment_mode: paymentMode || s.payment_mode || 'CASH'
       };
     }
     return s;
@@ -1595,10 +1600,13 @@ export async function atomicRecordCounterPayment(targetId, paymentAmount, paymen
   // 2. Update Counter Khata Book Debtors
   let storeKhata = (store.counterKhata || []).map(k => {
     if (!k) return k;
-    if (String(k.id) === strId || String(k.sale_id) === strId || String(k.invoice_number) === strId) {
+    const kId = String(k.id || '');
+    const kSaleId = String(k.sale_id || '');
+    const kRaw = kId.replace(/^ckhata_/, '').replace(/^cs_/, '');
+    if (kId === strId || kSaleId === strId || kSaleId === saleId || kRaw === rawId) {
       const curTotal = parseFloat(k.total_amount || k.net_total || 0);
       const curPaidOld = parseFloat(k.paid_amount || 0);
-      const curPaid = curPaidOld + numAmt;
+      const curPaid = Math.min(curTotal, curPaidOld + numAmt);
       const curPending = Math.max(0, curTotal - curPaid);
       const paymentHistory = Array.isArray(k.payments) ? [...k.payments] : [];
       paymentHistory.push({
@@ -1612,7 +1620,7 @@ export async function atomicRecordCounterPayment(targetId, paymentAmount, paymen
         ...k,
         paid_amount: curPaid,
         pending_amount: curPending,
-        status: curPending === 0 ? 'CLEARED' : 'PENDING',
+        status: curPending <= 0 ? 'CLEARED' : 'UNPAID',
         payments: paymentHistory,
         updated_at: new Date().toISOString()
       };
@@ -1620,7 +1628,7 @@ export async function atomicRecordCounterPayment(targetId, paymentAmount, paymen
     return k;
   });
 
-  // Also update local storage
+  // Update local storage
   localStorage.setItem('local_counter_sales', JSON.stringify(storeSales));
   localStorage.setItem('local_counter_khata', JSON.stringify(storeKhata));
 
@@ -1629,6 +1637,11 @@ export async function atomicRecordCounterPayment(targetId, paymentAmount, paymen
     counterSales: storeSales,
     counterKhata: storeKhata
   });
+
+  try {
+    window.dispatchEvent(new Event('storage'));
+    window.dispatchEvent(new Event('master_store_updated'));
+  } catch (e) {}
 }
 
 export async function syncCloudInventory(inventoryList) {

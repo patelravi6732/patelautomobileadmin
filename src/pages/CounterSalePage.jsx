@@ -841,8 +841,8 @@ export default function CounterSalePage() {
       );
       alert(`✅ Payment of ₹${numAmt.toFixed(2)} recorded successfully!`);
       setPaymentModal({ isOpen: false, debtor: null, amount: '', paymentMode: 'CASH' });
-      loadKhata();
-      loadInvoices();
+      await loadKhata();
+      await loadInvoices();
     } catch (err) {
       console.error('Error recording payment:', err);
       alert('⚠️ Error recording payment.');

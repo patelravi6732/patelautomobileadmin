@@ -63,13 +63,15 @@ export async function fetchMasterStore(forceFresh = false) {
           invoices: Array.isArray(parsed.invoices) ? parsed.invoices : [],
           attendance: Array.isArray(parsed.attendance) ? parsed.attendance : [],
           salaryPayments: Array.isArray(parsed.salaryPayments) ? parsed.salaryPayments : [],
-          deletedIds: Array.isArray(parsed.deletedIds) ? parsed.deletedIds : []
+          deletedIds: Array.isArray(parsed.deletedIds) ? parsed.deletedIds : [],
+          counterSales: Array.isArray(parsed.counterSales) ? parsed.counterSales : [],
+          counterKhata: Array.isArray(parsed.counterKhata) ? parsed.counterKhata : []
         };
       }
     } catch (e) {
       console.warn('Error reading local master_cloud_cache:', e);
     }
-    return { bookings: [], messages: [], jobs: [], inventory: [], recycleBin: [], garageInfo: null, adminProfiles: [], khataEntries: [], customers: [], invoices: [], attendance: [], salaryPayments: [], deletedIds: [] };
+    return { bookings: [], messages: [], jobs: [], inventory: [], recycleBin: [], garageInfo: null, adminProfiles: [], khataEntries: [], customers: [], invoices: [], attendance: [], salaryPayments: [], deletedIds: [], counterSales: [], counterKhata: [] };
   };
 
   const localCache = getLocalCache();
@@ -107,7 +109,9 @@ export async function fetchMasterStore(forceFresh = false) {
           invoices: Array.isArray(res.data.invoices) ? res.data.invoices : [],
           attendance: Array.isArray(res.data.attendance) ? res.data.attendance : [],
           salaryPayments: Array.isArray(res.data.salaryPayments) ? res.data.salaryPayments : [],
-          deletedIds: Array.isArray(res.data.deletedIds) ? res.data.deletedIds : []
+          deletedIds: Array.isArray(res.data.deletedIds) ? res.data.deletedIds : [],
+          counterSales: Array.isArray(res.data.counterSales) ? res.data.counterSales : [],
+          counterKhata: Array.isArray(res.data.counterKhata) ? res.data.counterKhata : []
         };
       }
     } catch (e1) {
@@ -128,7 +132,9 @@ export async function fetchMasterStore(forceFresh = false) {
         invoices: freshStore.invoices || [],
         attendance: freshStore.attendance || [],
         salaryPayments: freshStore.salaryPayments || [],
-        deletedIds: freshStore.deletedIds || []
+        deletedIds: freshStore.deletedIds || [],
+        counterSales: freshStore.counterSales || [],
+        counterKhata: freshStore.counterKhata || []
       };
       try {
         localStorage.setItem('master_cloud_cache', JSON.stringify(mergedStore));
@@ -144,6 +150,8 @@ export async function fetchMasterStore(forceFresh = false) {
         localStorage.setItem('contact_messages', JSON.stringify(mergedStore.messages));
         localStorage.setItem('admin_profiles', JSON.stringify(mergedStore.adminProfiles));
         localStorage.setItem('local_customers', JSON.stringify(mergedStore.customers));
+        localStorage.setItem('local_counter_sales', JSON.stringify(mergedStore.counterSales));
+        localStorage.setItem('local_counter_khata', JSON.stringify(mergedStore.counterKhata));
 
         const curLocalInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
         const mergedInvMap = new Map();

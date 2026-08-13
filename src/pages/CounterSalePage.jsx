@@ -250,28 +250,33 @@ export default function CounterSalePage() {
     return Array.from(set);
   }, [inventory]);
 
-  // Cart Calculations
+  // Cart Calculations (Pure & Safe Memoization - No infinite re-render loops)
   const cartSubtotal = useMemo(() => {
-    return cartItems.reduce((sum, it) => sum + (parseFloat(it.selling_price || it.price || 0) * (parseInt(it.quantity, 10) || 1)), 0);
+    if (!Array.isArray(cartItems)) return 0;
+    return cartItems.reduce((sum, it) => {
+      if (!it) return sum;
+      const price = parseFloat(it.selling_price || it.unit_price || it.price || 0);
+      const qty = parseInt(it.quantity || 1, 10);
+      return sum + (price * qty);
+    }, 0);
   }, [cartItems]);
 
   const numericDiscount = useMemo(() => {
-    return parseFloat(discountAmount) || 0;
+    const d = parseFloat(discountAmount);
+    return isNaN(d) ? 0 : Math.max(0, d);
   }, [discountAmount]);
 
   const cartNetTotal = useMemo(() => {
     return Math.max(0, cartSubtotal - numericDiscount);
   }, [cartSubtotal, numericDiscount]);
 
-  useEffect(() => {
-    if (paidAmount === '' || paidAmount === cartSubtotal || initialDraft?.paidAmount === undefined) {
-      setPaidAmount(cartNetTotal);
-    }
-  }, [cartNetTotal]);
-
   const effectivePaid = useMemo(() => {
-    if (paidAmount === '' || isNaN(parseFloat(paidAmount))) return 0;
-    return Math.min(cartNetTotal, Math.max(0, parseFloat(paidAmount)));
+    if (paidAmount === '' || paidAmount === undefined || paidAmount === null) {
+      return cartNetTotal;
+    }
+    const parsed = parseFloat(paidAmount);
+    if (isNaN(parsed)) return 0;
+    return Math.min(cartNetTotal, Math.max(0, parsed));
   }, [paidAmount, cartNetTotal]);
 
   const cartPendingBalance = useMemo(() => {

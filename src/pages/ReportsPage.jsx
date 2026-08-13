@@ -103,6 +103,9 @@ const computeInstantReports = () => {
       return true;
     };
 
+    const cleanCounterSales = localCounterSales.filter(s => s && s.id && !isDeleted(s.id) && !isDeleted(String(s.id).replace(/^cs_/, '')));
+    const cleanCounterKhata = localCounterKhata.filter(k => k && k.id && !isDeleted(k.id) && !isDeleted(k.sale_id) && !isDeleted(String(k.id).replace(/^ckhata_/, '')));
+
     // 1. Workshop Revenues
     const workshopDailyRevenue = allInvoices
       .filter(inv => isToday(inv.created_at || inv.visit_date || inv.date))
@@ -116,16 +119,16 @@ const computeInstantReports = () => {
       .reduce((acc, inv) => acc + parseFloat(inv.paid_amount || inv.grand_total || 0), 0);
 
     // 2. Counter Sales Revenues
-    const counterDailyRevenue = localCounterSales
+    const counterDailyRevenue = cleanCounterSales
       .filter(s => isToday(s.created_at || s.date))
       .reduce((acc, s) => acc + parseFloat(s.paid_amount || s.net_total || 0), 0);
 
-    const counterMonthlyRevenue = localCounterSales
+    const counterMonthlyRevenue = cleanCounterSales
       .filter(s => isThisMonth(s.created_at || s.date))
       .reduce((acc, s) => acc + parseFloat(s.paid_amount || s.net_total || 0), 0);
 
-    const counterTotalRevenue = localCounterSales
-      .reduce((acc, s) => acc + parseFloat(s.paid_amount || s.net_total || 0), 0);
+    const counterTotalRevenue = cleanCounterSales
+      .reduce((sum, s) => sum + parseFloat(s.paid_amount || s.net_total || 0), 0);
 
     // 3. Combined Total Revenues
     const totalDailyRevenue = workshopDailyRevenue + counterDailyRevenue;
@@ -148,7 +151,7 @@ const computeInstantReports = () => {
       return acc + Math.max(0, grandVal - paidVal);
     }, 0);
 
-    const counterPending = localCounterKhata
+    const counterPending = cleanCounterKhata
       .filter(k => k && k.status !== 'CLEARED')
       .reduce((acc, k) => acc + parseFloat(k.pending_amount || 0), 0);
 
@@ -165,8 +168,8 @@ const computeInstantReports = () => {
       counter_daily: counterDailyRevenue,
       counter_monthly: counterMonthlyRevenue,
       counter_total: counterTotalRevenue,
-      counter_sales_count: localCounterSales.length,
-      total_invoices: allInvoices.length + localCounterSales.length,
+      counter_sales_count: cleanCounterSales.length,
+      total_invoices: allInvoices.length + cleanCounterSales.length,
       inventory_valuation: inventoryValue,
       total_inventory_value: inventoryValue,
       total_inventory_items: cleanInv.length,

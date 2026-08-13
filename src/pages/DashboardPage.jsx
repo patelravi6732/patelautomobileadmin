@@ -154,10 +154,11 @@ const computeInstantStats = () => {
     ).slice(0, 5);
 
     const localCounterSales = JSON.parse(localStorage.getItem('local_counter_sales') || '[]');
-    const counterTodayRevenue = localCounterSales
+    const cleanCounterSales = localCounterSales.filter(s => s && s.id && !isDeleted(s.id) && !isDeleted(String(s.id).replace(/^cs_/, '')));
+    const counterTodayRevenue = cleanCounterSales
       .filter(s => isToday(s.created_at || s.date))
       .reduce((sum, s) => sum + parseFloat(s.paid_amount || s.net_total || 0), 0);
-    const counterTotalRevenue = localCounterSales
+    const counterTotalRevenue = cleanCounterSales
       .reduce((sum, s) => sum + parseFloat(s.paid_amount || s.net_total || 0), 0);
 
     return {

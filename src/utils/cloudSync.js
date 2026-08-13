@@ -1482,18 +1482,37 @@ export async function deleteCloudCounterSale(saleId) {
   if (!saleId) return;
   const strId = String(saleId);
   const rawId = strId.replace(/^cs_/, '').replace(/^inv_/, '');
+  const khataId = `ckhata_${strId}`;
 
+  // 1. Mark in deletedIds
   await markIdAsDeleted(strId).catch(console.warn);
   if (rawId && rawId !== strId) await markIdAsDeleted(rawId).catch(console.warn);
+  await markIdAsDeleted(khataId).catch(console.warn);
 
+  // 2. Remove from local_counter_sales
   const localSales = JSON.parse(localStorage.getItem('local_counter_sales') || '[]');
-  const updatedLocal = localSales.filter(s => String(s.id) !== strId && String(s.id).replace(/^cs_/, '') !== rawId);
-  localStorage.setItem('local_counter_sales', JSON.stringify(updatedLocal));
+  const updatedLocalSales = localSales.filter(s => String(s.id) !== strId && String(s.id).replace(/^cs_/, '') !== rawId);
+  localStorage.setItem('local_counter_sales', JSON.stringify(updatedLocalSales));
 
+  // 3. Remove linked counterKhata debtor
+  const localKhata = JSON.parse(localStorage.getItem('local_counter_khata') || '[]');
+  const updatedLocalKhata = localKhata.filter(k => String(k.id) !== strId && String(k.sale_id) !== strId && String(k.id) !== khataId && String(k.id).replace(/^ckhata_/, '') !== rawId);
+  localStorage.setItem('local_counter_khata', JSON.stringify(updatedLocalKhata));
+
+  // 4. Remove from master store
   const store = await fetchMasterStore();
-  const existing = (store.counterSales || []).filter(s => s && typeof s === 'object');
-  const updatedCloud = existing.filter(s => String(s.id) !== strId && String(s.id).replace(/^cs_/, '') !== rawId);
-  await saveMasterStore({ ...store, counterSales: updatedCloud });
+  const existingSales = (store.counterSales || []).filter(s => s && typeof s === 'object');
+  const updatedCloudSales = existingSales.filter(s => String(s.id) !== strId && String(s.id).replace(/^cs_/, '') !== rawId);
+
+  const existingKhata = (store.counterKhata || []).filter(k => k && typeof k === 'object');
+  const updatedCloudKhata = existingKhata.filter(k => String(k.id) !== strId && String(k.sale_id) !== strId && String(k.id) !== khataId && String(k.id).replace(/^ckhata_/, '') !== rawId);
+
+  await saveMasterStore({ ...store, counterSales: updatedCloudSales, counterKhata: updatedCloudKhata });
+
+  try {
+    window.dispatchEvent(new Event('storage'));
+    window.dispatchEvent(new Event('master_store_updated'));
+  } catch (e) {}
 }
 
 export async function fetchCloudCounterKhata() {

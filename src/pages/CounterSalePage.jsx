@@ -888,6 +888,39 @@ ${garageInfo?.safety_message || 'Thank you for choosing Patel Automobiles! Wish 
     window.open(`https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
+  // Download Khata Statement Photo Card
+  const handleDownloadKhataCard = async (debtor) => {
+    if (!debtor) return;
+    const invAdapter = {
+      id: debtor.id,
+      customer_name: debtor.customer_name,
+      customer_phone: debtor.customer_phone || debtor.phone,
+      mobile_number: debtor.customer_phone || debtor.phone,
+      vehicle_number: debtor.vehicle_number || '',
+      created_at: debtor.created_at || Date.now(),
+      items: [{
+        item_name: debtor.items_summary || 'Spare Parts Counter Purchase',
+        quantity: 1,
+        unit_price: parseFloat(debtor.total_amount || 0),
+        total: parseFloat(debtor.total_amount || 0)
+      }],
+      subtotal: parseFloat(debtor.total_amount || 0),
+      grand_total: parseFloat(debtor.total_amount || 0),
+      total_amount: parseFloat(debtor.total_amount || 0),
+      paid_amount: parseFloat(debtor.paid_amount || 0),
+      pending_amount: parseFloat(debtor.pending_amount || 0)
+    };
+
+    const url = await generateCounterSaleCardPhotoAsync(invAdapter, garageInfo);
+    if (!url) return;
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Statement_${(debtor.customer_name || 'Customer').replace(/\s+/g, '_')}_${formatDateDMY(debtor.created_at || Date.now())}.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   // WhatsApp Khata Reminder Helper
   const handleShareKhataReminder = async (debtor) => {
     if (!debtor) return;
@@ -895,6 +928,9 @@ ${garageInfo?.safety_message || 'Thank you for choosing Patel Automobiles! Wish 
     const cleanPhone = rawPhone.replace(/[^0-9]/g, '');
     const phoneWithCountry = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
     
+    // Automatically trigger Statement Photo Card download with QR scanner
+    handleDownloadKhataCard(debtor).catch(() => null);
+
     const msg = `*PATEL AUTOMOBILES - PAYMENT REMINDER* 🛵
 ━━━━━━━━━━━━━━━━━━━━
 👤 *Customer:* ${debtor.customer_name}
@@ -1645,6 +1681,16 @@ Kindly clear your pending balance at your earliest convenience.
                         className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-1 active:scale-98"
                       >
                         <DollarSign className="w-3.5 h-3.5" /> Record Payment
+                      </button>
+
+                      {/* Download Statement Card */}
+                      <button
+                        type="button"
+                        onClick={() => handleDownloadKhataCard(debtor)}
+                        className="p-2 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-xl transition-colors active:scale-95"
+                        title="Download Statement Photo Card"
+                      >
+                        <Download className="w-4 h-4" />
                       </button>
 
                       {/* WhatsApp Reminder Button with WhatsApp Icon */}

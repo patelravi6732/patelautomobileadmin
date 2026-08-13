@@ -538,9 +538,61 @@ export default function CounterSalePage() {
     setCartItems(nextCart);
   };
 
-  // Clear Cart Completely
+  // Clear Cart Completely (Restores Stock if parts were already confirmed)
   const handleClearCart = async () => {
     if (!window.confirm('Are you sure you want to clear the active cart?')) return;
+
+    const confirmedItems = cartItems.filter(i => i && i.is_deducted);
+    if (confirmedItems.length > 0) {
+      try {
+        const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
+        const cloudInv = await fetchCloudInventory().catch(() => []);
+        const allInvMap = new Map();
+        [...cloudInv, ...localInv].forEach(item => {
+          if (item && (item.id || item.part_name || item.item_name || item.name)) {
+            const rawName = String(item.part_name || item.item_name || item.name || '').trim();
+            const key = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (!allInvMap.has(key)) allInvMap.set(key, item);
+          }
+        });
+
+        let invList = Array.from(allInvMap.values());
+        confirmedItems.forEach(itemToRemove => {
+          const pId = String(itemToRemove.inventory_id || itemToRemove.part_id || itemToRemove.id || '').replace(/[^a-z0-9]/g, '');
+          const pName = String(itemToRemove.part_name || itemToRemove.item_name || itemToRemove.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase().trim();
+          const returnQty = parseInt(itemToRemove.quantity || 1, 10);
+
+          invList = invList.map(invItem => {
+            if (!invItem) return invItem;
+            const invId = String(invItem.id || '').replace(/[^a-z0-9]/g, '');
+            const invName = String(invItem.part_name || invItem.item_name || invItem.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase().trim();
+            const isMatch = (pId && invId && pId === invId) || (pName && invName && (pName === invName || pName.includes(invName) || invName.includes(pName)));
+            if (isMatch) {
+              const cur = parseInt(invItem.current_stock !== undefined ? invItem.current_stock : (invItem.stock_quantity !== undefined ? invItem.stock_quantity : (invItem.quantity !== undefined ? invItem.quantity : 0)), 10);
+              const restored = cur + returnQty;
+              const updated = { ...invItem, current_stock: restored, stock_quantity: restored, quantity: restored, updated_at: new Date().toISOString() };
+              pushCloudInventoryItem(updated).catch(console.warn);
+              return updated;
+            }
+            return invItem;
+          });
+        });
+
+        localStorage.setItem('inventory_items', JSON.stringify(invList));
+        localStorage.setItem('spare_parts', JSON.stringify(invList));
+        localStorage.setItem('local_inventory', JSON.stringify(invList));
+        setInventory(invList);
+        await syncCloudInventory(invList).catch(console.warn);
+        try {
+          window.dispatchEvent(new Event('inventory_updated'));
+          window.dispatchEvent(new Event('master_store_updated'));
+        } catch (e) {}
+        loadInventory();
+      } catch (e) {
+        console.warn('Error restoring stock on clear cart:', e);
+      }
+    }
+
     setCartItems([]);
     localStorage.removeItem('counter_sale_draft');
     pushCloudActiveCounterCart(null).catch(() => null);

@@ -563,7 +563,7 @@ export default function CounterSalePage() {
     if (cartItems.length === 0 && !customerName && !customerPhone) return;
     if (!window.confirm('Are you sure you want to clear the active cart and customer details?')) return;
 
-    const itemsToRestore = cartItems.filter(i => i && (i.is_deducted || (i.deducted_qty && i.deducted_qty > 0)));
+    const itemsToRestore = cartItems.filter(i => i && (i.is_deducted || (i.deducted_qty && i.deducted_qty > 0) || i.status === 'CONFIRMED'));
 
     // 1. Clear all inputs and cart immediately at 0ms
     setCartItems([]);
@@ -577,7 +577,7 @@ export default function CounterSalePage() {
     if (itemsToRestore.length > 0) {
       try {
         for (const itemToRemove of itemsToRestore) {
-          const returnQty = parseInt(itemToRemove.deducted_qty !== undefined ? itemToRemove.deducted_qty : (itemToRemove.is_deducted ? itemToRemove.quantity : 0), 10);
+          const returnQty = parseInt(itemToRemove.deducted_qty !== undefined ? itemToRemove.deducted_qty : (itemToRemove.is_deducted ? itemToRemove.quantity : (itemToRemove.status === 'CONFIRMED' ? itemToRemove.quantity : 0)), 10);
           if (returnQty > 0) {
             await atomicRestoreInventoryStock({
               partId: itemToRemove.inventory_id || itemToRemove.part_id || itemToRemove.id,

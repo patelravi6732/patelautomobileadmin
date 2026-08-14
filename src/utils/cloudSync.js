@@ -1861,30 +1861,12 @@ export async function atomicDeductInventoryStock({ partId, partName, quantity })
   localStorage.setItem('spare_parts', JSON.stringify(updatedLocal));
   localStorage.setItem('local_inventory', JSON.stringify(updatedLocal));
 
-  // 2. Update Cloud Master Store
+  // 2. Update Cloud Master Store directly with updatedLocal
   try {
-    const store = await fetchMasterStore();
-    const cloudInv = (store.inventory || []).filter(i => i && typeof i === 'object');
-    let hasCloudDeducted = false;
-    const updatedCloud = cloudInv.map(i => {
-      if (isMatch(i) && !hasCloudDeducted) {
-        hasCloudDeducted = true;
-        const curStock = parseInt(i.current_stock !== undefined ? i.current_stock : (i.stock_quantity !== undefined ? i.stock_quantity : (i.quantity !== undefined ? i.quantity : 0)), 10) || 0;
-        const newStock = Math.max(0, curStock - qty);
-        return {
-          ...i,
-          current_stock: newStock,
-          stock_quantity: newStock,
-          quantity: newStock,
-          updated_at: new Date().toISOString()
-        };
-      }
-      return i;
-    });
-
+    const store = await fetchMasterStore(true);
     await saveMasterStore({
       ...store,
-      inventory: updatedCloud.length > 0 ? updatedCloud : updatedLocal
+      inventory: updatedLocal
     });
   } catch (err) {
     console.warn('atomicDeductInventoryStock cloud update notice:', err);
@@ -1943,30 +1925,12 @@ export async function atomicRestoreInventoryStock({ partId, partName, quantity }
   localStorage.setItem('spare_parts', JSON.stringify(updatedLocal));
   localStorage.setItem('local_inventory', JSON.stringify(updatedLocal));
 
-  // 2. Update Cloud Master Store
+  // 2. Update Cloud Master Store directly with updatedLocal
   try {
-    const store = await fetchMasterStore();
-    const cloudInv = (store.inventory || []).filter(i => i && typeof i === 'object');
-    let hasCloudRestored = false;
-    const updatedCloud = cloudInv.map(i => {
-      if (isMatch(i) && !hasCloudRestored) {
-        hasCloudRestored = true;
-        const curStock = parseInt(i.current_stock !== undefined ? i.current_stock : (i.stock_quantity !== undefined ? i.stock_quantity : (i.quantity !== undefined ? i.quantity : 0)), 10) || 0;
-        const newStock = Math.max(0, curStock + qty);
-        return {
-          ...i,
-          current_stock: newStock,
-          stock_quantity: newStock,
-          quantity: newStock,
-          updated_at: new Date().toISOString()
-        };
-      }
-      return i;
-    });
-
+    const store = await fetchMasterStore(true);
     await saveMasterStore({
       ...store,
-      inventory: updatedCloud.length > 0 ? updatedCloud : updatedLocal
+      inventory: updatedLocal
     });
   } catch (err) {
     console.warn('atomicRestoreInventoryStock cloud update notice:', err);

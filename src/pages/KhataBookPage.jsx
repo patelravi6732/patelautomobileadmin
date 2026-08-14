@@ -169,7 +169,15 @@ export default function KhataBookPage() {
       // Read stores safely
       const localKhata = JSON.parse(localStorage.getItem('khata_entries') || '[]').filter(k => k && !isDeleted(k.id) && !isDeleted(k.job_id));
       const cloudKhata = (await fetchCloudKhataEntries().catch(() => [])).filter(k => k && !isDeleted(k.id) && !isDeleted(k.job_id));
-      const combinedKhata = [...localKhata, ...cloudKhata];
+      
+      const khataEntryMap = new Map();
+      [...cloudKhata, ...localKhata].forEach(k => {
+        if (k && (k.id || k._id || k.date || k.created_at)) {
+          const entryKey = String(k.id || k._id || `${k.job_id}_${k.date}_${k.amount}`);
+          khataEntryMap.set(entryKey, k);
+        }
+      });
+      const combinedKhata = Array.from(khataEntryMap.values());
 
       // Build Credit Payment Map (Sum of all CREDIT entries)
       const creditMap = new Map();

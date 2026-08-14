@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { 
   Wrench, CheckCircle2, Clock, AlertTriangle, IndianRupee, 
-  ArrowUpRight, Package, Calendar, Activity, ChevronRight, ShoppingBag 
+  ArrowUpRight, Package, Calendar, Activity, ChevronRight, ShoppingBag, Tag 
 } from 'lucide-react';
 import API from '../services/api';
 import { fetchMasterStore, fetchCloudAdminProfiles, getCleanDeletedIds } from '../utils/cloudSync';
@@ -25,6 +25,7 @@ const computeInstantStats = () => {
           grand_total: parseFloat(inv.grand_total || inv.total_amount || 0),
           paid_amount: parseFloat(inv.paid_amount !== undefined ? inv.paid_amount : (inv.grand_total || inv.total_amount || 0)),
           pending_amount: parseFloat(inv.pending_amount !== undefined ? inv.pending_amount : 0),
+          discount_amount: parseFloat(inv.discount_amount || inv.discount || 0),
           created_at: inv.created_at || new Date().toISOString()
         });
       }
@@ -47,7 +48,7 @@ const computeInstantStats = () => {
       if (!alreadyHasInvoice && !allMap.has(key) && !allMap.has(strJobId)) {
         const partsVal = parseFloat(j.parts_total || 0);
         const labourVal = parseFloat(j.labour_charge || 100);
-        const discountVal = parseFloat(j.discount_amount || 0);
+        const discountVal = parseFloat(j.discount_amount || j.discount || 0);
         const totalVal = parseFloat(j.grand_total || j.total_amount || j.live_total || Math.max(0, partsVal + labourVal - discountVal));
         const paidVal = j.paid_amount !== undefined ? parseFloat(j.paid_amount) : totalVal;
         const pendingVal = j.pending_amount !== undefined ? parseFloat(j.pending_amount) : Math.max(0, totalVal - paidVal);
@@ -63,6 +64,7 @@ const computeInstantStats = () => {
           total_amount: totalVal,
           paid_amount: paidVal,
           pending_amount: pendingVal,
+          discount_amount: discountVal,
           payment_status: pendingVal > 0 ? 'PENDING' : 'PAID',
           created_at: j.finished_at || j.completed_at || j.created_at || new Date().toISOString()
         });
@@ -180,6 +182,22 @@ const computeInstantStats = () => {
     const counterTotalRevenue = cleanCounterSales
       .reduce((sum, s) => sum + parseFloat(s.paid_amount || s.net_total || 0), 0);
 
+    // DISCOUNT CALCULATIONS (Workshop + Counter Sale)
+    const workshopTodayDiscount = allInvoices
+      .filter(inv => isToday(inv.created_at || inv.visit_date || inv.date))
+      .reduce((sum, inv) => sum + parseFloat(inv.discount_amount || inv.discount || 0), 0);
+    const workshopTotalDiscount = allInvoices
+      .reduce((sum, inv) => sum + parseFloat(inv.discount_amount || inv.discount || 0), 0);
+
+    const counterTodayDiscount = cleanCounterSales
+      .filter(s => isToday(s.created_at || s.date))
+      .reduce((sum, s) => sum + parseFloat(s.discount || s.discount_amount || 0), 0);
+    const counterTotalDiscount = cleanCounterSales
+      .reduce((sum, s) => sum + parseFloat(s.discount || s.discount_amount || 0), 0);
+
+    const todayTotalDiscount = workshopTodayDiscount + counterTodayDiscount;
+    const grandTotalDiscount = workshopTotalDiscount + counterTotalDiscount;
+
     return {
       today_services: todayServices,
       completed_services: completedServices,
@@ -190,6 +208,12 @@ const computeInstantStats = () => {
       today_revenue: todayRevenue,
       counter_today_revenue: counterTodayRevenue,
       counter_total_revenue: counterTotalRevenue,
+      today_discount: todayTotalDiscount,
+      total_discount: grandTotalDiscount,
+      workshop_today_discount: workshopTodayDiscount,
+      workshop_total_discount: workshopTotalDiscount,
+      counter_today_discount: counterTodayDiscount,
+      counter_total_discount: counterTotalDiscount,
       low_stock_count: lowStockItems.length,
       recent_jobs: recentJobs,
       low_stock_items: lowStockItems
@@ -203,6 +227,12 @@ const computeInstantStats = () => {
       today_revenue: 0,
       counter_today_revenue: 0,
       counter_total_revenue: 0,
+      today_discount: 0,
+      total_discount: 0,
+      workshop_today_discount: 0,
+      workshop_total_discount: 0,
+      counter_today_discount: 0,
+      counter_total_discount: 0,
       low_stock_count: 0,
       recent_jobs: [],
       low_stock_items: []
@@ -261,6 +291,7 @@ export default function DashboardPage() {
     { title: "Pending Services", value: stats?.pending_services || 0, icon: Clock, color: "text-amber-600", bg: "bg-amber-50", border: "border-amber-100" },
     { title: "Today's Service Revenue", value: `₹${(stats?.today_revenue || 0).toLocaleString('en-IN')}`, icon: IndianRupee, color: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-100" },
     { title: "Today's Counter Sale", value: `₹${(stats?.counter_today_revenue || 0).toLocaleString('en-IN')}`, icon: ShoppingBag, color: "text-indigo-600", bg: "bg-indigo-50", border: "border-indigo-100" },
+    { title: "Total Discount Given", value: `₹${(stats?.total_discount || 0).toLocaleString('en-IN')}`, subtitle: `Today: ₹${(stats?.today_discount || 0).toLocaleString('en-IN')}`, icon: Tag, color: "text-orange-600", bg: "bg-orange-50", border: "border-orange-100" },
     { title: "Pending Payments Dues", value: `₹${(stats?.pending_payments || 0).toLocaleString('en-IN')}`, icon: IndianRupee, color: "text-purple-600", bg: "bg-purple-50", border: "border-purple-100" },
     { title: "Low Stock Alert", value: `${stats?.low_stock_count || 0} Items`, icon: AlertTriangle, color: "text-red-600", bg: "bg-red-50", border: "border-red-100" },
   ];
@@ -285,17 +316,20 @@ export default function DashboardPage() {
       </div>
 
       {/* METRIC CARDS GRID */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {metricCards.map((card, idx) => {
           const Icon = card.icon;
           return (
-            <div key={idx} className={`bg-white p-6 rounded-2xl border ${card.border} soft-shadow flex items-center justify-between`}>
-              <div className="space-y-1">
-                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">{card.title}</span>
-                <span className="text-2xl font-extrabold text-slate-900 font-poppins block">{card.value}</span>
+            <div key={idx} className={`bg-white p-5 rounded-2xl border ${card.border} soft-shadow flex items-center justify-between`}>
+              <div className="space-y-1 min-w-0 pr-2">
+                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block truncate">{card.title}</span>
+                <span className="text-xl font-extrabold text-slate-900 font-poppins block">{card.value}</span>
+                {card.subtitle && (
+                  <span className="text-[11px] font-bold text-orange-600 block">{card.subtitle}</span>
+                )}
               </div>
-              <div className={`w-12 h-12 rounded-xl ${card.bg} ${card.color} flex items-center justify-center shrink-0`}>
-                <Icon className="w-6 h-6" />
+              <div className={`w-11 h-11 rounded-xl ${card.bg} ${card.color} flex items-center justify-center shrink-0`}>
+                <Icon className="w-5 h-5" />
               </div>
             </div>
           );

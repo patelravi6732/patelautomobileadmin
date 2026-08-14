@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BarChart3, IndianRupee, Package, Users, TrendingUp, AlertCircle, Wrench, ShoppingBag, PieChart } from 'lucide-react';
+import { BarChart3, IndianRupee, Package, Users, TrendingUp, AlertCircle, Wrench, ShoppingBag, PieChart, Tag, Percent, ArrowDownRight } from 'lucide-react';
 import API from '../services/api';
 import { fetchCloudDeletedIds, fetchCloudInvoices, fetchCloudInventory } from '../utils/cloudSync';
 
@@ -23,6 +23,7 @@ const computeInstantReports = () => {
           grand_total: parseFloat(inv.grand_total || inv.total_amount || 0),
           paid_amount: parseFloat(inv.paid_amount !== undefined ? inv.paid_amount : (inv.grand_total || inv.total_amount || 0)),
           pending_amount: parseFloat(inv.pending_amount !== undefined ? inv.pending_amount : 0),
+          discount_amount: parseFloat(inv.discount_amount || inv.discount || 0),
           created_at: inv.created_at || new Date().toISOString()
         });
       }
@@ -34,7 +35,7 @@ const computeInstantReports = () => {
       if (!allMap.has(key) && !allMap.has(String(j.id))) {
         const partsVal = parseFloat(j.parts_total || 0);
         const labourVal = parseFloat(j.labour_charge || 100);
-        const discountVal = parseFloat(j.discount_amount || 0);
+        const discountVal = parseFloat(j.discount_amount || j.discount || 0);
         const totalVal = parseFloat(j.grand_total || j.total_amount || j.live_total || Math.max(0, partsVal + labourVal - discountVal));
         const paidVal = j.paid_amount !== undefined ? parseFloat(j.paid_amount) : totalVal;
         const pendingVal = j.pending_amount !== undefined ? parseFloat(j.pending_amount) : Math.max(0, totalVal - paidVal);
@@ -50,6 +51,7 @@ const computeInstantReports = () => {
           total_amount: totalVal,
           paid_amount: paidVal,
           pending_amount: pendingVal,
+          discount_amount: discountVal,
           payment_status: pendingVal > 0 ? 'PENDING' : 'PAID',
           created_at: j.finished_at || j.completed_at || j.created_at || new Date().toISOString()
         });
@@ -106,7 +108,7 @@ const computeInstantReports = () => {
     const cleanCounterSales = localCounterSales.filter(s => s && s.id && !isDeleted(s.id) && !isDeleted(String(s.id).replace(/^cs_/, '')));
     const cleanCounterKhata = localCounterKhata.filter(k => k && k.id && !isDeleted(k.id) && !isDeleted(k.sale_id) && !isDeleted(String(k.id).replace(/^ckhata_/, '')));
 
-    // 1. Workshop Revenues
+    // 1. Workshop Revenues & Discounts
     const workshopDailyRevenue = allInvoices
       .filter(inv => isToday(inv.created_at || inv.visit_date || inv.date))
       .reduce((acc, inv) => acc + parseFloat(inv.paid_amount || inv.grand_total || 0), 0);
@@ -118,7 +120,21 @@ const computeInstantReports = () => {
     const workshopTotalRevenue = allInvoices
       .reduce((acc, inv) => acc + parseFloat(inv.paid_amount || inv.grand_total || 0), 0);
 
-    // 2. Counter Sales Revenues
+    const workshopDailyDiscount = allInvoices
+      .filter(inv => isToday(inv.created_at || inv.visit_date || inv.date))
+      .reduce((acc, inv) => acc + parseFloat(inv.discount_amount || inv.discount || 0), 0);
+
+    const workshopMonthlyDiscount = allInvoices
+      .filter(inv => isThisMonth(inv.created_at || inv.visit_date || inv.date))
+      .reduce((acc, inv) => acc + parseFloat(inv.discount_amount || inv.discount || 0), 0);
+
+    const workshopTotalDiscount = allInvoices
+      .reduce((acc, inv) => acc + parseFloat(inv.discount_amount || inv.discount || 0), 0);
+
+    const workshopGrossTotal = allInvoices
+      .reduce((acc, inv) => acc + parseFloat(inv.grand_total || inv.total_amount || 0) + parseFloat(inv.discount_amount || inv.discount || 0), 0);
+
+    // 2. Counter Sales Revenues & Discounts
     const counterDailyRevenue = cleanCounterSales
       .filter(s => isToday(s.created_at || s.date))
       .reduce((acc, s) => acc + parseFloat(s.paid_amount || s.net_total || 0), 0);
@@ -130,10 +146,30 @@ const computeInstantReports = () => {
     const counterTotalRevenue = cleanCounterSales
       .reduce((sum, s) => sum + parseFloat(s.paid_amount || s.net_total || 0), 0);
 
-    // 3. Combined Total Revenues
+    const counterDailyDiscount = cleanCounterSales
+      .filter(s => isToday(s.created_at || s.date))
+      .reduce((acc, s) => acc + parseFloat(s.discount || s.discount_amount || 0), 0);
+
+    const counterMonthlyDiscount = cleanCounterSales
+      .filter(s => isThisMonth(s.created_at || s.date))
+      .reduce((acc, s) => acc + parseFloat(s.discount || s.discount_amount || 0), 0);
+
+    const counterTotalDiscount = cleanCounterSales
+      .reduce((sum, s) => sum + parseFloat(s.discount || s.discount_amount || 0), 0);
+
+    const counterGrossTotal = cleanCounterSales
+      .reduce((sum, s) => sum + parseFloat(s.subtotal || s.total_amount || (parseFloat(s.net_total || 0) + parseFloat(s.discount || 0))), 0);
+
+    // 3. Combined Total Revenues & Discounts
     const totalDailyRevenue = workshopDailyRevenue + counterDailyRevenue;
     const totalMonthlyRevenue = workshopMonthlyRevenue + counterMonthlyRevenue;
     const grandTotalRevenue = workshopTotalRevenue + counterTotalRevenue;
+
+    const totalDailyDiscount = workshopDailyDiscount + counterDailyDiscount;
+    const totalMonthlyDiscount = workshopMonthlyDiscount + counterMonthlyDiscount;
+    const grandTotalDiscount = workshopTotalDiscount + counterTotalDiscount;
+
+    const grandGrossTotal = workshopGrossTotal + counterGrossTotal;
 
     // 4. Inventory Valuation
     const cleanInv = localInventory.filter(i => i && !isDeleted(i.id) && !isDeleted(i.part_name));
@@ -161,13 +197,25 @@ const computeInstantReports = () => {
       daily_revenue: totalDailyRevenue,
       monthly_revenue: totalMonthlyRevenue,
       grand_total_revenue: grandTotalRevenue,
+      daily_discount: totalDailyDiscount,
+      monthly_discount: totalMonthlyDiscount,
+      grand_total_discount: grandTotalDiscount,
+      grand_gross_total: grandGrossTotal,
       workshop_daily: workshopDailyRevenue,
       workshop_monthly: workshopMonthlyRevenue,
       workshop_total: workshopTotalRevenue,
+      workshop_daily_discount: workshopDailyDiscount,
+      workshop_monthly_discount: workshopMonthlyDiscount,
+      workshop_total_discount: workshopTotalDiscount,
+      workshop_gross_total: workshopGrossTotal,
       workshop_invoices_count: allInvoices.length,
       counter_daily: counterDailyRevenue,
       counter_monthly: counterMonthlyRevenue,
       counter_total: counterTotalRevenue,
+      counter_daily_discount: counterDailyDiscount,
+      counter_monthly_discount: counterMonthlyDiscount,
+      counter_total_discount: counterTotalDiscount,
+      counter_gross_total: counterGrossTotal,
       counter_sales_count: cleanCounterSales.length,
       total_invoices: allInvoices.length + cleanCounterSales.length,
       inventory_valuation: inventoryValue,
@@ -183,13 +231,25 @@ const computeInstantReports = () => {
       daily_revenue: 0,
       monthly_revenue: 0,
       grand_total_revenue: 0,
+      daily_discount: 0,
+      monthly_discount: 0,
+      grand_total_discount: 0,
+      grand_gross_total: 0,
       workshop_daily: 0,
       workshop_monthly: 0,
       workshop_total: 0,
+      workshop_daily_discount: 0,
+      workshop_monthly_discount: 0,
+      workshop_total_discount: 0,
+      workshop_gross_total: 0,
       workshop_invoices_count: 0,
       counter_daily: 0,
       counter_monthly: 0,
       counter_total: 0,
+      counter_daily_discount: 0,
+      counter_monthly_discount: 0,
+      counter_total_discount: 0,
+      counter_gross_total: 0,
       counter_sales_count: 0,
       total_invoices: 0,
       inventory_valuation: 0,
@@ -234,9 +294,9 @@ export default function ReportsPage() {
       
       <div>
         <h1 className="text-2xl font-bold text-slate-900 font-poppins flex items-center gap-2.5">
-          <BarChart3 className="w-7 h-7 text-blue-600" /> Garage Analytics & Revenue Reports
+          <BarChart3 className="w-7 h-7 text-blue-600" /> Garage Analytics, Revenue & Discount Reports
         </h1>
-        <p className="text-xs text-slate-500">Executive financial metrics, Workshop Services vs. Spare Parts Counter Sales, and inventory valuation.</p>
+        <p className="text-xs text-slate-500">Executive financial metrics, Workshop Services vs. Spare Parts Counter Sales, Discounts given, and inventory valuation.</p>
       </div>
 
       {loading ? (
@@ -245,9 +305,9 @@ export default function ReportsPage() {
         <div className="space-y-8">
           
           {/* COMBINED EXECUTIVE FINANCIAL METRICS */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
             
-            <div className="bg-white p-6 rounded-3xl border border-slate-200/80 soft-shadow space-y-2">
+            <div className="bg-white p-5 rounded-3xl border border-slate-200/80 soft-shadow space-y-1.5">
               <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Today Total Revenue</span>
               <span className="text-2xl font-black text-emerald-600 font-poppins block">
                 ₹{(reports?.daily_revenue || 0).toLocaleString('en-IN')}
@@ -257,7 +317,22 @@ export default function ReportsPage() {
               </span>
             </div>
 
-            <div className="bg-white p-6 rounded-3xl border border-slate-200/80 soft-shadow space-y-2">
+            <div className="bg-white p-5 rounded-3xl border border-orange-200/80 bg-orange-50/20 soft-shadow space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-orange-700 uppercase tracking-wider block">Total Discount Given</span>
+                <span className="p-1 rounded-lg bg-orange-100 text-orange-600">
+                  <Tag className="w-3.5 h-3.5" />
+                </span>
+              </div>
+              <span className="text-2xl font-black text-orange-600 font-poppins block">
+                ₹{(reports?.grand_total_discount || 0).toLocaleString('en-IN')}
+              </span>
+              <span className="text-[11px] text-orange-600 font-semibold block">
+                Today: ₹{(reports?.daily_discount || 0).toLocaleString('en-IN')} • Month: ₹{(reports?.monthly_discount || 0).toLocaleString('en-IN')}
+              </span>
+            </div>
+
+            <div className="bg-white p-5 rounded-3xl border border-slate-200/80 soft-shadow space-y-1.5">
               <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Monthly Total Revenue</span>
               <span className="text-2xl font-black text-blue-600 font-poppins block">
                 ₹{(reports?.monthly_revenue || 0).toLocaleString('en-IN')}
@@ -267,7 +342,7 @@ export default function ReportsPage() {
               </span>
             </div>
 
-            <div className="bg-white p-6 rounded-3xl border border-slate-200/80 soft-shadow space-y-2">
+            <div className="bg-white p-5 rounded-3xl border border-slate-200/80 soft-shadow space-y-1.5">
               <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Live Inventory Valuation</span>
               <span className="text-2xl font-black text-purple-600 font-poppins block">
                 ₹{(reports?.total_inventory_value || 0).toLocaleString('en-IN')}
@@ -277,7 +352,7 @@ export default function ReportsPage() {
               </span>
             </div>
 
-            <div className="bg-white p-6 rounded-3xl border border-slate-200/80 soft-shadow space-y-2">
+            <div className="bg-white p-5 rounded-3xl border border-slate-200/80 soft-shadow space-y-1.5">
               <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Total Pending Dues</span>
               <span className="text-2xl font-black text-rose-600 font-poppins block">
                 ₹{(reports?.total_pending_payments || 0).toLocaleString('en-IN')}
@@ -325,6 +400,17 @@ export default function ReportsPage() {
                 </div>
               </div>
 
+              <div className="p-3.5 bg-orange-50/50 rounded-2xl border border-orange-100 space-y-2">
+                <div className="flex justify-between items-center text-xs font-semibold text-orange-900">
+                  <span>Workshop Discounts Given:</span>
+                  <span className="font-bold text-orange-700">₹{(reports?.workshop_total_discount || 0).toLocaleString('en-IN')} Total</span>
+                </div>
+                <div className="flex justify-between items-center text-[11px] text-orange-600">
+                  <span>Today: <strong>₹{(reports?.workshop_daily_discount || 0).toLocaleString('en-IN')}</strong></span>
+                  <span>This Month: <strong>₹{(reports?.workshop_monthly_discount || 0).toLocaleString('en-IN')}</strong></span>
+                </div>
+              </div>
+
               <div className="flex justify-between items-center text-xs text-slate-600 pt-2 border-t border-slate-100">
                 <span>Total Lifetime Workshop Revenue:</span>
                 <span className="font-mono font-black text-slate-900 text-sm">
@@ -366,6 +452,17 @@ export default function ReportsPage() {
                 </div>
               </div>
 
+              <div className="p-3.5 bg-orange-50/50 rounded-2xl border border-orange-100 space-y-2">
+                <div className="flex justify-between items-center text-xs font-semibold text-orange-900">
+                  <span>Counter Sale Discounts Given:</span>
+                  <span className="font-bold text-orange-700">₹{(reports?.counter_total_discount || 0).toLocaleString('en-IN')} Total</span>
+                </div>
+                <div className="flex justify-between items-center text-[11px] text-orange-600">
+                  <span>Today: <strong>₹{(reports?.counter_daily_discount || 0).toLocaleString('en-IN')}</strong></span>
+                  <span>This Month: <strong>₹{(reports?.counter_monthly_discount || 0).toLocaleString('en-IN')}</strong></span>
+                </div>
+              </div>
+
               <div className="flex justify-between items-center text-xs text-slate-600 pt-2 border-t border-slate-100">
                 <span>Total Lifetime Counter Sales:</span>
                 <span className="font-mono font-black text-slate-900 text-sm">
@@ -374,6 +471,66 @@ export default function ReportsPage() {
               </div>
             </div>
 
+          </div>
+
+          {/* DEDICATED FINANCIAL AUDIT & DISCOUNT SUMMARY TABLE */}
+          <div className="bg-white p-6 rounded-3xl border border-slate-200/80 soft-shadow space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <PieChart className="w-5 h-5 text-blue-600" />
+                <h3 className="text-base font-bold text-slate-900 font-poppins">Complete Financial & Discount Audit</h3>
+              </div>
+              <span className="text-xs text-slate-500 font-medium">Detailed side-by-side reconciliation</span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-slate-200/80 text-slate-500 font-bold uppercase tracking-wider bg-slate-50/70">
+                    <th className="py-3 px-4 rounded-l-xl">Department / Operation</th>
+                    <th className="py-3 px-4">Count</th>
+                    <th className="py-3 px-4">Gross Bill (Before Disc)</th>
+                    <th className="py-3 px-4 text-orange-600">Total Discount Given</th>
+                    <th className="py-3 px-4 text-emerald-600">Net Revenue Collected</th>
+                    <th className="py-3 px-4 text-rose-600 rounded-r-xl">Pending Dues</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+                  <tr className="hover:bg-slate-50/50 transition-colors">
+                    <td className="py-3.5 px-4 font-bold text-slate-900 flex items-center gap-2">
+                      <Wrench className="w-4 h-4 text-blue-600 shrink-0" /> Workshop Repair Services
+                    </td>
+                    <td className="py-3.5 px-4 font-mono">{reports?.workshop_invoices_count || 0} Bills</td>
+                    <td className="py-3.5 px-4 font-mono font-bold">₹{(reports?.workshop_gross_total || 0).toLocaleString('en-IN')}</td>
+                    <td className="py-3.5 px-4 font-mono font-bold text-orange-600">- ₹{(reports?.workshop_total_discount || 0).toLocaleString('en-IN')}</td>
+                    <td className="py-3.5 px-4 font-mono font-bold text-emerald-600">₹{(reports?.workshop_total || 0).toLocaleString('en-IN')}</td>
+                    <td className="py-3.5 px-4 font-mono font-bold text-rose-600">₹{(reports?.workshop_pending || 0).toLocaleString('en-IN')}</td>
+                  </tr>
+
+                  <tr className="hover:bg-slate-50/50 transition-colors">
+                    <td className="py-3.5 px-4 font-bold text-slate-900 flex items-center gap-2">
+                      <ShoppingBag className="w-4 h-4 text-indigo-600 shrink-0" /> Counter Spare Parts Sales
+                    </td>
+                    <td className="py-3.5 px-4 font-mono">{reports?.counter_sales_count || 0} Invoices</td>
+                    <td className="py-3.5 px-4 font-mono font-bold">₹{(reports?.counter_gross_total || 0).toLocaleString('en-IN')}</td>
+                    <td className="py-3.5 px-4 font-mono font-bold text-orange-600">- ₹{(reports?.counter_total_discount || 0).toLocaleString('en-IN')}</td>
+                    <td className="py-3.5 px-4 font-mono font-bold text-emerald-600">₹{(reports?.counter_total || 0).toLocaleString('en-IN')}</td>
+                    <td className="py-3.5 px-4 font-mono font-bold text-rose-600">₹{(reports?.counter_pending || 0).toLocaleString('en-IN')}</td>
+                  </tr>
+
+                  <tr className="bg-slate-900 text-white font-bold text-xs rounded-xl">
+                    <td className="py-4 px-4 rounded-l-xl flex items-center gap-2 text-amber-400 font-extrabold font-poppins">
+                      ⭐ Combined Total Garage Operations
+                    </td>
+                    <td className="py-4 px-4 font-mono font-bold text-slate-300">{reports?.total_invoices || 0} Records</td>
+                    <td className="py-4 px-4 font-mono font-extrabold text-white">₹{(reports?.grand_gross_total || 0).toLocaleString('en-IN')}</td>
+                    <td className="py-4 px-4 font-mono font-extrabold text-amber-400">- ₹{(reports?.grand_total_discount || 0).toLocaleString('en-IN')}</td>
+                    <td className="py-4 px-4 font-mono font-extrabold text-emerald-400">₹{(reports?.grand_total_revenue || 0).toLocaleString('en-IN')}</td>
+                    <td className="py-4 px-4 font-mono font-extrabold text-rose-400 rounded-r-xl">₹{(reports?.total_pending_payments || 0).toLocaleString('en-IN')}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
 
         </div>

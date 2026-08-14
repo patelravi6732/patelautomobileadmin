@@ -310,9 +310,11 @@ export async function saveMasterStore(storeData) {
         const prevTime = new Date(localJob.updated_at || localJob.created_at || 0).getTime();
         const curTime = new Date(cloudJob.updated_at || cloudJob.created_at || 0).getTime();
         const preferred = prevTime >= curTime ? localJob : cloudJob;
+        const isFinished = localJob.status === 'FINISHED' || cloudJob.status === 'FINISHED' || localJob.status === 'COMPLETED' || cloudJob.status === 'COMPLETED';
         return {
           ...cloudJob,
           ...preferred,
+          status: isFinished ? 'FINISHED' : (preferred.status || 'IN_PROGRESS'),
           parts: preferred.parts || [],
           parts_total: preferred.parts_total !== undefined ? preferred.parts_total : 0,
           live_total: preferred.live_total !== undefined ? preferred.live_total : 0

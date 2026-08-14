@@ -157,10 +157,12 @@ export default function WorkshopPage() {
             const prevTime = new Date(existing.updated_at || existing.created_at || 0).getTime();
             const curTime = new Date(sanitizedJob.updated_at || sanitizedJob.created_at || 0).getTime();
             const preferred = curTime >= prevTime ? sanitizedJob : existing;
+            const isFinishedLock = existing.status === 'FINISHED' || sanitizedJob.status === 'FINISHED' || existing.status === 'COMPLETED' || sanitizedJob.status === 'COMPLETED';
 
             allMap.set(existingKey, {
               ...existing,
               ...sanitizedJob,
+              status: isFinishedLock ? 'FINISHED' : (preferred.status || 'IN_PROGRESS'),
               parts: preferred.parts || [],
               parts_total: parseFloat(preferred.parts_total !== undefined ? preferred.parts_total : (sanitizedJob.parts_total || existing.parts_total || 0)),
               labour_charge: parseFloat(preferred.labour_charge !== undefined ? preferred.labour_charge : (sanitizedJob.labour_charge || existing.labour_charge || 0)),

@@ -52,16 +52,11 @@ export default function InventoryPage() {
     const isItemDeleted = (item) => {
       if (!item) return true;
       const itId = String(item.id || '').toLowerCase().trim();
-      const itName = String(item.part_name || item.item_name || item.name || '').toLowerCase().trim();
-      const itNorm = itName.replace(/[^a-z0-9]/g, '');
-      if (!itId && !itName) return false;
+      if (!itId) return false;
       return allDeletedIds.some(d => {
         if (!d) return false;
         const dStr = String(d).toLowerCase().trim();
-        const dNorm = dStr.replace(/[^a-z0-9]/g, '');
-        return (itId && dStr && itId === dStr) || 
-               (itName && dStr && itName === dStr) || 
-               (itNorm && dNorm && itNorm === dNorm);
+        return itId === dStr;
       });
     };
 
@@ -183,6 +178,18 @@ export default function InventoryPage() {
       created_at: nowIso,
       updated_at: nowIso
     };
+
+    // Unblock this item from any local or cloud deleted lists
+    const localDel = JSON.parse(localStorage.getItem('deleted_ids') || '[]');
+    const localDelItems = JSON.parse(localStorage.getItem('deleted_item_ids') || '[]');
+    const isMatchingDeleted = (d) => {
+      if (!d) return false;
+      const s = String(d).toLowerCase().trim();
+      const n = s.replace(/[^a-z0-9]/g, '');
+      return s === newPartObj.id.toLowerCase() || s === rawName.toLowerCase() || (normName && n === normName);
+    };
+    localStorage.setItem('deleted_ids', JSON.stringify(localDel.filter(d => !isMatchingDeleted(d))));
+    localStorage.setItem('deleted_item_ids', JSON.stringify(localDelItems.filter(d => !isMatchingDeleted(d))));
 
     try {
       await pushCloudInventoryItem(newPartObj);

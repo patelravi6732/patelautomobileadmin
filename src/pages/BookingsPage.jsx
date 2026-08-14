@@ -72,9 +72,9 @@ export default function BookingsPage() {
 
     const allBookingsMap = new Map();
     [...localBookings, ...cloudBookings, ...backendBookings].forEach(b => {
-      if (b && typeof b === 'object' && (b.id || b.vehicle_number)) {
-        const uniqueKey = String(b.id || `${b.vehicle_number}_${b.preferred_date}`);
-        if (!deletedIds.includes(uniqueKey) && !deletedIds.includes(String(b.id))) {
+      if (b && typeof b === 'object' && b.id) {
+        const uniqueKey = String(b.id);
+        if (!deletedIds.includes(uniqueKey)) {
           const existing = allBookingsMap.get(uniqueKey);
           if (!existing) {
             allBookingsMap.set(uniqueKey, b);
@@ -246,21 +246,21 @@ export default function BookingsPage() {
     setConfirmModal({ isOpen: false, booking: null, actionType: 'ACCEPT' });
     const newStatus = actionType === 'ACCEPT' ? 'ACCEPTED' : 'REJECTED';
 
-    // 1. Update local storage local_bookings immediately
+    // 1. Update local storage strictly by booking.id (never touch other bookings of same vehicle)
     const existingLocal = JSON.parse(localStorage.getItem('local_bookings') || '[]');
     const updatedLocal = existingLocal.map(b => {
-      if (String(b.id) === String(booking.id) || (b.vehicle_number === booking.vehicle_number && b.preferred_date === booking.preferred_date)) {
+      if (String(b.id) === String(booking.id)) {
         return { ...b, status: newStatus };
       }
       return b;
     });
     localStorage.setItem('local_bookings', JSON.stringify(updatedLocal));
 
-    // 2. Update Global Cloud Store
-    updateCloudBookingStatus(booking.id, newStatus, booking.vehicle_number, booking.preferred_date).catch(console.warn);
+    // 2. Update Global Cloud Store strictly by booking.id
+    updateCloudBookingStatus(booking.id, newStatus).catch(console.warn);
 
-    // 3. Update React state
-    setBookings(prev => prev.map(b => (String(b.id) === String(booking.id) || (b.vehicle_number === booking.vehicle_number && b.preferred_date === booking.preferred_date)) ? { ...b, status: newStatus } : b));
+    // 3. Update React state strictly by booking.id
+    setBookings(prev => prev.map(b => (String(b.id) === String(booking.id) ? { ...b, status: newStatus } : b)));
 
     try {
       if (actionType === 'ACCEPT') {
@@ -303,21 +303,21 @@ export default function BookingsPage() {
     existingJobs.push(newJobCard);
     localStorage.setItem('workshop_jobs', JSON.stringify(existingJobs));
 
-    // 1. Update local_bookings in localStorage to CONVERTED
+    // 1. Update local_bookings strictly by booking.id
     const localBookings = JSON.parse(localStorage.getItem('local_bookings') || '[]');
     const updatedLocal = localBookings.map(b => 
-      (String(b.id) === String(bookingObj.id) || (b.vehicle_number === bookingObj.vehicle_number && b.preferred_date === bookingObj.preferred_date))
+      (String(b.id) === String(bookingObj.id))
         ? { ...b, status: 'CONVERTED' }
         : b
     );
     localStorage.setItem('local_bookings', JSON.stringify(updatedLocal));
 
-    // 2. Update Global Cloud Store to CONVERTED
-    updateCloudBookingStatus(bookingObj.id, 'CONVERTED', bookingObj.vehicle_number, bookingObj.preferred_date).catch(console.warn);
+    // 2. Update Global Cloud Store strictly by booking.id
+    updateCloudBookingStatus(bookingObj.id, 'CONVERTED').catch(console.warn);
 
-    // 3. Update React state immediately
+    // 3. Update React state immediately strictly by booking.id
     setBookings(prev => prev.map(b => 
-      (String(b.id) === String(bookingObj.id) || (b.vehicle_number === bookingObj.vehicle_number && b.preferred_date === bookingObj.preferred_date))
+      (String(b.id) === String(bookingObj.id))
         ? { ...b, status: 'CONVERTED' }
         : b
     ));

@@ -415,14 +415,14 @@ export async function pushCloudBooking(newBooking) {
   window.dispatchEvent(new Event('master_store_updated'));
 }
 
-export async function updateCloudBookingStatus(bookingId, newStatus, vehicleNumber = null, prefDate = null) {
-  if (!bookingId && !vehicleNumber) return;
+export async function updateCloudBookingStatus(bookingId, newStatus) {
+  if (!bookingId) return;
+  const strId = String(bookingId);
   const store = await fetchMasterStore();
   const existing = (store.bookings || []).filter(b => b && typeof b === 'object');
   const updatedBookings = existing.map(b => {
-    const isMatch = (bookingId && (b.id === bookingId || String(b.id) === String(bookingId))) ||
-                    (vehicleNumber && prefDate && b.vehicle_number === vehicleNumber && b.preferred_date === prefDate);
-    if (isMatch) {
+    const bId = String(b.id || '');
+    if (bId === strId) {
       return { ...b, status: newStatus };
     }
     return b;
@@ -1087,15 +1087,22 @@ export async function atomicFinishWorkshopJob({ finishedJob, invoice, khataDebit
     storeKhata = [khataDebit, ...storeKhata.filter(k => String(k.id) !== String(khataDebit.id) && String(k.job_id) !== String(khataDebit.job_id))];
   }
 
-  // Update matching bookings to COMPLETED
+  // Update strictly the linked booking to COMPLETED (never touch other bookings of the same vehicle)
   let storeBookings = (store.bookings || []).filter(b => b && typeof b === 'object');
-  if (finishedJob && finishedJob.vehicle_number) {
-    const fVeh = String(finishedJob.vehicle_number).replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+  const targetBookingId = finishedJob?.booking_id ? String(finishedJob.booking_id) : null;
+  if (targetBookingId) {
     storeBookings = storeBookings.map(b => {
-      const bVeh = String(b.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-      if (bVeh === fVeh) return { ...b, status: 'COMPLETED' };
+      if (String(b.id) === targetBookingId) return { ...b, status: 'COMPLETED' };
       return b;
     });
+    try {
+      const localBookings = JSON.parse(localStorage.getItem('local_bookings') || '[]');
+      const updatedLocalBookings = localBookings.map(b => {
+        if (String(b.id) === targetBookingId) return { ...b, status: 'COMPLETED' };
+        return b;
+      });
+      localStorage.setItem('local_bookings', JSON.stringify(updatedLocalBookings));
+    } catch(e){}
   }
 
   await saveMasterStore({

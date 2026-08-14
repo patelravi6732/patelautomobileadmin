@@ -61,11 +61,14 @@ export default function AttendancePage() {
       const parsed = garageInfo.mechanics_list.split(',').map(m => m.trim()).filter(m => m && !m.toLowerCase().includes('unassigned'));
       if (parsed.length > 0) {
         setMechanicOptions(parsed);
-        setSelectedMechanic(parsed[0]);
-        setSalaryForm(prev => ({ ...prev, mechanic_name: parsed[0] }));
+        setSelectedMechanic(prev => (prev && parsed.includes(prev) ? prev : parsed[0]));
+        setSalaryForm(prev => ({
+          ...prev,
+          mechanic_name: (prev?.mechanic_name && parsed.includes(prev.mechanic_name)) ? prev.mechanic_name : parsed[0]
+        }));
       }
     }
-  }, [garageInfo]);
+  }, [garageInfo?.mechanics_list]);
 
   const fetchData = async () => {
     let apiAtt = [], apiSum = [], apiCal = [], apiSal = [];

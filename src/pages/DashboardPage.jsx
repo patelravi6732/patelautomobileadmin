@@ -12,47 +12,133 @@ const computeInstantStats = () => {
     const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
     const localInvoices = JSON.parse(localStorage.getItem('local_invoices') || '[]');
     const localInventory = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+    const localKhataEntries = JSON.parse(localStorage.getItem('khata_entries') || '[]');
+    const localCounterSales = JSON.parse(localStorage.getItem('local_counter_sales') || '[]');
+    const localCounterKhata = JSON.parse(localStorage.getItem('local_counter_khata') || '[]');
     const deletedIds = JSON.parse(localStorage.getItem('deleted_ids') || '[]');
 
-    const isDeleted = (id) => id && (deletedIds.includes(String(id)) || deletedIds.includes(String(id).replace(/^inv_/, '').replace(/^job_/, '')));
+    const cleanRawId = (id) => String(id || '').replace(/^(inv_|job_|khata_|booking_)+/gi, '').trim();
+    const isDeleted = (id) => {
+      if (!id) return false;
+      const s = String(id).trim();
+      const raw = cleanRawId(s);
+      return deletedIds.some(d => {
+        if (!d) return false;
+        const dStr = String(d).trim();
+        const dRaw = cleanRawId(dStr);
+        return s === dStr || (raw && dRaw && raw === dRaw);
+      });
+    };
+
+    // Khata credit map for existing invoices
+    const khataCreditMap = new Map();
+    localKhataEntries.forEach(k => {
+      if (k && k.type === 'CREDIT' && (parseFloat(k.amount || 0) > 0)) {
+        const rawJobId = cleanRawId(k.job_id || k.id);
+        if (rawJobId) {
+          khataCreditMap.set(rawJobId, (khataCreditMap.get(rawJobId) || 0) + parseFloat(k.amount));
+        }
+        const veh = (k.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+        if (veh) {
+          khataCreditMap.set(`veh_${veh}`, (khataCreditMap.get(`veh_${veh}`) || 0) + parseFloat(k.amount));
+        }
+      }
+    });
 
     const allMap = new Map();
     localInvoices.forEach(inv => {
       if (inv && !isDeleted(inv.id) && !isDeleted(inv.invoice_number)) {
-        const key = String(inv.id || inv.invoice_number || inv.job_id);
-        allMap.set(key, {
+        const rawId = cleanRawId(inv.job_id || inv.id || inv.invoice_number);
+        const invNum = inv.invoice_number || '';
+        const vehNum = (inv.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+        const dateDay = inv.created_at ? new Date(inv.created_at).toISOString().slice(0, 10) : '';
+
+        const grandVal = parseFloat(inv.grand_total || inv.total_amount || 0);
+        const rawPaid = inv.paid_amount !== undefined && inv.paid_amount !== null
+          ? parseFloat(inv.paid_amount)
+          : (inv.received_amount !== undefined && inv.received_amount !== null
+            ? parseFloat(inv.received_amount)
+            : (inv.payment_status === 'PAID' ? grandVal : 0));
+        
+        const extraCredit = Math.max(
+          rawId ? (khataCreditMap.get(rawId) || 0) : 0,
+          vehNum ? (khataCreditMap.get(`veh_${vehNum}`) || 0) : 0
+        );
+        const paidVal = Math.min(grandVal, Math.max(rawPaid, extraCredit));
+        const pendingVal = Math.max(0, grandVal - paidVal);
+
+        const normalized = {
           ...inv,
-          grand_total: parseFloat(inv.grand_total || inv.total_amount || 0),
-          paid_amount: parseFloat(inv.paid_amount !== undefined ? inv.paid_amount : (inv.grand_total || inv.total_amount || 0)),
-          pending_amount: parseFloat(inv.pending_amount !== undefined ? inv.pending_amount : 0),
+          grand_total: grandVal,
+          paid_amount: paidVal,
+          pending_amount: pendingVal,
           discount_amount: parseFloat(inv.discount_amount || inv.discount || 0),
+          payment_status: pendingVal === 0 ? 'PAID' : (paidVal > 0 ? 'PARTIAL' : 'PENDING'),
           created_at: inv.created_at || new Date().toISOString()
-        });
+        };
+
+        let existingKey = null;
+        for (const [k, existing] of allMap.entries()) {
+          const exRawId = cleanRawId(existing.job_id || existing.id || existing.invoice_number);
+          const exVeh = (existing.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+          const exDateDay = existing.created_at ? new Date(existing.created_at).toISOString().slice(0, 10) : '';
+          const exTotal = parseFloat(existing.grand_total || existing.total_amount || 0);
+
+          if (rawId && exRawId && rawId === exRawId) { existingKey = k; break; }
+          if (invNum && existing.invoice_number && invNum === existing.invoice_number) { existingKey = k; break; }
+          if (vehNum && exVeh && vehNum === exVeh && dateDay && exDateDay && dateDay === exDateDay && Math.abs(grandVal - exTotal) < 1) { existingKey = k; break; }
+        }
+
+        if (!existingKey) {
+          const newKey = rawId ? `bill_${rawId}` : `${vehNum}_${dateDay}_${grandVal.toFixed(0)}`;
+          allMap.set(newKey, normalized);
+        } else {
+          const prev = allMap.get(existingKey);
+          const maxPaid = Math.min(grandVal, Math.max(parseFloat(prev.paid_amount || 0), paidVal));
+          const minPending = Math.max(0, grandVal - maxPaid);
+          allMap.set(existingKey, {
+            ...prev,
+            ...normalized,
+            paid_amount: maxPaid,
+            pending_amount: minPending,
+            payment_status: minPending === 0 ? 'PAID' : (maxPaid > 0 ? 'PARTIAL' : 'PENDING')
+          });
+        }
       }
     });
 
     const finishedJobs = localJobs.filter(j => j && (j.status === 'FINISHED' || j.status === 'COMPLETED') && !isDeleted(j.id) && !isDeleted(j.vehicle_number));
     finishedJobs.forEach((j, idx) => {
-      const key = `bill_${j.id || idx}`;
       const strJobId = String(j.id || '');
-      const strVehNum = String(j.vehicle_number || '').trim().toLowerCase();
+      const strVehNum = (j.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+      const jDateDay = (j.finished_at || j.completed_at || j.created_at || '').slice(0, 10);
+      const partsVal = parseFloat(j.parts_total || 0);
+      const labourVal = parseFloat(j.labour_charge || 100);
+      const discountVal = parseFloat(j.discount_amount || j.discount || 0);
+      const totalVal = parseFloat(j.grand_total || j.total_amount || j.live_total || Math.max(0, partsVal + labourVal - discountVal));
 
-      const alreadyHasInvoice = Array.from(allMap.values()).some(inv => {
-        if (!inv) return false;
-        const invJobId = String(inv.job_id || inv.id || '');
-        const invVeh = String(inv.vehicle_number || '').trim().toLowerCase();
-        return (strJobId && invJobId && (invJobId === strJobId || invJobId.includes(strJobId))) ||
-               (strVehNum && invVeh && strVehNum === invVeh);
-      });
+      let alreadyHasInvoice = false;
+      for (const inv of allMap.values()) {
+        if (!inv) continue;
+        const invRawId = cleanRawId(inv.job_id || inv.id || inv.invoice_number);
+        const invVeh = (inv.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+        const invDateDay = (inv.created_at || '').slice(0, 10);
+        const invTotal = parseFloat(inv.grand_total || inv.total_amount || 0);
 
-      if (!alreadyHasInvoice && !allMap.has(key) && !allMap.has(strJobId)) {
-        const partsVal = parseFloat(j.parts_total || 0);
-        const labourVal = parseFloat(j.labour_charge || 100);
-        const discountVal = parseFloat(j.discount_amount || j.discount || 0);
-        const totalVal = parseFloat(j.grand_total || j.total_amount || j.live_total || Math.max(0, partsVal + labourVal - discountVal));
-        const paidVal = j.paid_amount !== undefined ? parseFloat(j.paid_amount) : totalVal;
-        const pendingVal = j.pending_amount !== undefined ? parseFloat(j.pending_amount) : Math.max(0, totalVal - paidVal);
+        if (strJobId && invRawId && (invRawId === strJobId || invRawId.includes(strJobId))) { alreadyHasInvoice = true; break; }
+        if (strVehNum && invVeh && strVehNum === invVeh && jDateDay && invDateDay && jDateDay === invDateDay && Math.abs(totalVal - invTotal) < 1) { alreadyHasInvoice = true; break; }
+      }
 
+      if (!alreadyHasInvoice) {
+        const rawPaid = j.paid_amount !== undefined ? parseFloat(j.paid_amount) : totalVal;
+        const extraCredit = Math.max(
+          cleanRawId(strJobId) ? (khataCreditMap.get(cleanRawId(strJobId)) || 0) : 0,
+          strVehNum ? (khataCreditMap.get(`veh_${strVehNum}`) || 0) : 0
+        );
+        const paidVal = Math.min(totalVal, Math.max(rawPaid, extraCredit));
+        const pendingVal = Math.max(0, totalVal - paidVal);
+
+        const key = `bill_${strJobId || idx}`;
         allMap.set(key, {
           id: j.id || key,
           invoice_number: `INV-${String(j.id || idx).slice(-4)}`,
@@ -65,7 +151,7 @@ const computeInstantStats = () => {
           paid_amount: paidVal,
           pending_amount: pendingVal,
           discount_amount: discountVal,
-          payment_status: pendingVal > 0 ? 'PENDING' : 'PAID',
+          payment_status: pendingVal > 0 ? (paidVal > 0 ? 'PARTIAL' : 'PENDING') : 'PAID',
           created_at: j.finished_at || j.completed_at || j.created_at || new Date().toISOString()
         });
       }
@@ -75,8 +161,6 @@ const computeInstantStats = () => {
     const activeJobs = localJobs.filter(j => j && j.status !== 'FINISHED' && j.status !== 'COMPLETED' && j.status !== 'CANCELLED' && !isDeleted(j.id));
     
     const now = new Date();
-    const todayISO = now.toISOString().split('T')[0];
-
     const isToday = (dateVal) => {
       if (!dateVal) return true;
       const dStr = String(dateVal).trim();
@@ -132,7 +216,8 @@ const computeInstantStats = () => {
     const completedServices = allInvoices.length;
     const pendingServices = activeJobs.length;
 
-    const todayRevenue = allInvoices
+    // Today's collected payments from today's invoices
+    const todayDirectRevenue = allInvoices
       .filter(inv => isToday(inv.created_at || inv.visit_date || inv.date))
       .reduce((acc, inv) => {
         const grandVal = parseFloat(inv.grand_total || inv.total_amount || 0);
@@ -140,6 +225,26 @@ const computeInstantStats = () => {
         const paidVal = Math.min(grandVal, Math.max(0, rawPaid));
         return acc + paidVal;
       }, 0);
+
+    // Payments collected TODAY via Khata Book on past days' invoices
+    const cleanKhataEntries = localKhataEntries.filter(k => k && k.id && !isDeleted(k.id) && !isDeleted(String(k.id).replace(/^khata_/, '')));
+    const todayOlderInvoicesKhataCollections = cleanKhataEntries
+      .filter(k => {
+        if (!k || k.type !== 'CREDIT' || !isToday(k.date || k.created_at)) return false;
+        const kJobId = cleanRawId(k.job_id || k.id);
+        const kVeh = (k.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+        // Check if this credit belongs to an invoice created TODAY (already counted above)
+        const isTodayInvoice = allInvoices.some(inv => {
+          if (!isToday(inv.created_at || inv.visit_date || inv.date)) return false;
+          const invRawId = cleanRawId(inv.job_id || inv.id || inv.invoice_number);
+          const invVeh = (inv.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+          return (kJobId && invRawId && kJobId === invRawId) || (kVeh && invVeh && kVeh === invVeh);
+        });
+        return !isTodayInvoice;
+      })
+      .reduce((sum, k) => sum + parseFloat(k.amount || 0), 0);
+
+    const todayRevenue = todayDirectRevenue + todayOlderInvoicesKhataCollections;
 
     // 1. Workshop Services Pending Dues
     const workshopPendingDues = allInvoices.reduce((acc, inv) => {
@@ -151,17 +256,14 @@ const computeInstantStats = () => {
     }, 0);
 
     // 2. Counter Khata Debtors Pending Dues
-    const localCounterKhata = JSON.parse(localStorage.getItem('local_counter_khata') || '[]');
     const cleanCounterKhata = localCounterKhata.filter(k => k && k.id && !isDeleted(k.id) && !isDeleted(String(k.id).replace(/^ckhata_/, '')));
     const counterKhataPendingDues = cleanCounterKhata
       .filter(k => k && String(k.status).toUpperCase() !== 'PAID' && parseFloat(k.pending_amount || 0) > 0)
       .reduce((sum, k) => sum + (parseFloat(k.pending_amount || 0) || 0), 0);
 
     // 3. Khata Book (General Khata) Pending Dues
-    const localKhataEntries = JSON.parse(localStorage.getItem('khata_entries') || '[]');
-    const cleanKhataEntries = localKhataEntries.filter(k => k && k.id && !isDeleted(k.id) && !isDeleted(String(k.id).replace(/^khata_/, '')));
     const generalKhataPendingDues = cleanKhataEntries
-      .filter(k => k && String(k.status).toUpperCase() !== 'PAID' && parseFloat(k.pending_amount || 0) > 0)
+      .filter(k => k && String(k.status).toUpperCase() !== 'PAID' && k.type === 'DEBIT' && parseFloat(k.pending_amount || 0) > 0)
       .reduce((sum, k) => sum + (parseFloat(k.pending_amount || 0) || 0), 0);
 
     // TOTAL PENDING PAYMENT DUES (Workshop + Counter Khata + Khata Book)
@@ -174,7 +276,6 @@ const computeInstantStats = () => {
       (a, b) => new Date(b.created_at || b.finished_at || Date.now()) - new Date(a.created_at || a.finished_at || Date.now())
     ).slice(0, 5);
 
-    const localCounterSales = JSON.parse(localStorage.getItem('local_counter_sales') || '[]');
     const cleanCounterSales = localCounterSales.filter(s => s && s.id && !isDeleted(s.id) && !isDeleted(String(s.id).replace(/^cs_/, '')));
     const counterTodayRevenue = cleanCounterSales
       .filter(s => isToday(s.created_at || s.date))

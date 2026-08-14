@@ -1149,6 +1149,13 @@ export const atomicRecordPayment = async ({
     jobs: storeJobs,
     khataEntries: storeKhata
   });
+
+  try {
+    window.dispatchEvent(new Event('storage'));
+    window.dispatchEvent(new Event('khata_updated'));
+    window.dispatchEvent(new Event('invoices_updated'));
+    window.dispatchEvent(new Event('master_store_updated'));
+  } catch (e) {}
 }
 
 export async function pushCloudInvoice(invObj) {

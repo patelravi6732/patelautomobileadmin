@@ -440,54 +440,61 @@ export default function CounterSalePage() {
   // Handle Add Item to Cart (Workshop Style)
   const handleAddToCart = (item) => {
     if (!item) return;
-    const curStock = parseInt(item.current_stock !== undefined ? item.current_stock : (item.stock_quantity !== undefined ? item.stock_quantity : (item.quantity !== undefined ? item.quantity : 0)), 10);
-    if (curStock <= 0) {
-      alert(`⚠️ '${item.part_name || item.item_name || item.name}' is currently Out of Stock!`);
-      return;
-    }
+    const invItem = inventory.find(inv => {
+      const invId = String(inv.id || '').trim();
+      const invNorm = String(inv.part_name || inv.item_name || inv.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const itId = String(item.id || '').trim();
+      const itNorm = String(item.part_name || item.item_name || item.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      return (itId && invId && itId === invId) || (itNorm && invNorm && itNorm === invNorm);
+    }) || item;
 
-    const rawName = String(item.part_name || item.item_name || item.name || 'Spare Part').trim();
+    const liveStock = parseInt(invItem.current_stock !== undefined ? invItem.current_stock : (invItem.stock_quantity !== undefined ? invItem.stock_quantity : (invItem.quantity !== undefined ? invItem.quantity : 0)), 10);
+    const rawName = String(invItem.part_name || invItem.item_name || invItem.name || 'Spare Part').trim();
     const itemNorm = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
-    const priceVal = parseFloat(item.price || item.selling_price || item.unit_price || 0);
+    const priceVal = parseFloat(invItem.price || invItem.selling_price || invItem.unit_price || 0);
 
     const existingIndex = cartItems.findIndex(i => {
       if (!i) return false;
       const iNorm = String(i.part_name || i.item_name || i.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-      return (i.id && item.id && String(i.id) === String(item.id)) || (iNorm && itemNorm && iNorm === itemNorm);
+      return (i.id && invItem.id && String(i.id) === String(invItem.id)) || (iNorm && itemNorm && iNorm === itemNorm);
     });
 
-    let nextCart = [];
     if (existingIndex >= 0) {
       const existing = cartItems[existingIndex];
       const currentQty = existing.quantity || 1;
-      const alreadyDeducted = existing.deducted_qty || 0;
-      if ((currentQty + 1 - alreadyDeducted) > curStock) {
-        alert(`⚠️ Maximum available stock for '${rawName}' is ${curStock} units.`);
+      const alreadyDeducted = parseInt(existing.deducted_qty || 0, 10);
+      const maxAllowed = liveStock + alreadyDeducted;
+      if (currentQty + 1 > maxAllowed) {
+        alert(`⚠️ Maximum available stock for '${rawName}' is ${maxAllowed} unit(s).`);
         return;
       }
-      nextCart = cartItems.map((cItem, idx) => idx === existingIndex ? {
+      const nextCart = cartItems.map((cItem, idx) => idx === existingIndex ? {
         ...cItem,
         quantity: currentQty + 1,
         status: (currentQty + 1 === alreadyDeducted) ? 'CONFIRMED' : 'STAGED',
         is_deducted: (currentQty + 1 === alreadyDeducted)
       } : cItem);
+      setCartItems(nextCart);
     } else {
-      nextCart = [...cartItems, {
-        id: item.id || `cart_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-        inventory_id: item.id,
+      if (liveStock <= 0) {
+        alert(`⚠️ '${rawName}' is currently Out of Stock!`);
+        return;
+      }
+      const nextCart = [...cartItems, {
+        id: invItem.id || `cart_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+        inventory_id: invItem.id,
         item_name: rawName,
         part_name: rawName,
         selling_price: priceVal,
         unit_price: priceVal,
         quantity: 1,
-        available_stock: curStock,
+        available_stock: liveStock,
         deducted_qty: 0,
         status: 'STAGED',
         is_deducted: false
       }];
+      setCartItems(nextCart);
     }
-
-    setCartItems(nextCart);
   };
 
   // Update Cart Item Quantity (Synchronous UI Update + Auto-Restores Stock when confirmed items are decremented)
@@ -496,11 +503,21 @@ export default function CounterSalePage() {
     if (isNaN(qty) || qty <= 0) return;
     const target = cartItems.find(i => String(i.id) === String(itemId));
     if (!target) return;
-    const curStock = target.available_stock || 999;
+
+    const invItem = inventory.find(inv => {
+      const invId = String(inv.id || '').trim();
+      const invNorm = String(inv.part_name || inv.item_name || inv.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const tId = String(target.inventory_id || target.part_id || target.id || '').trim();
+      const tNorm = String(target.part_name || target.item_name || target.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      return (tId && invId && tId === invId) || (tNorm && invNorm && tNorm === invNorm);
+    });
+
+    const liveStock = parseInt(invItem?.current_stock !== undefined ? invItem.current_stock : (invItem?.stock_quantity !== undefined ? invItem.stock_quantity : 0), 10);
     const alreadyDeducted = parseInt(target.deducted_qty !== undefined ? target.deducted_qty : (target.is_deducted ? target.quantity : 0), 10);
+    const maxAllowed = liveStock + alreadyDeducted;
     
-    if (qty > alreadyDeducted && (qty - alreadyDeducted) > curStock) {
-      alert(`⚠️ Only ${curStock} additional units available in stock!`);
+    if (qty > maxAllowed) {
+      alert(`⚠️ Maximum available stock for '${target.part_name || target.item_name}' is ${maxAllowed} unit(s)!`);
       return;
     }
 
@@ -1293,15 +1310,6 @@ export default function CounterSalePage() {
                     <Receipt className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600" /> Customer & Billing Cart
                   </h3>
                   <div className="flex items-center gap-2">
-                    {(cartItems.length > 0 || customerName || customerPhone) && (
-                      <button
-                        type="button"
-                        onClick={handleClearCart}
-                        className="text-[11px] text-rose-500 hover:text-rose-700 font-bold hover:underline cursor-pointer"
-                      >
-                        Clear Cart
-                      </button>
-                    )}
                     <span className="px-2 py-0.5 bg-blue-50 text-blue-700 font-bold text-[11px] sm:text-xs rounded-lg font-mono">
                       {cartItems.length} {cartItems.length === 1 ? 'Item' : 'Items'}
                     </span>

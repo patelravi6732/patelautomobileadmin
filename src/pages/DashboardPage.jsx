@@ -286,8 +286,15 @@ const computeInstantStats = () => {
     // TOTAL PENDING PAYMENT DUES (Workshop + Counter Khata + Khata Book)
     const totalPendingDues = workshopPendingDues + counterKhataPendingDues + generalKhataPendingDues;
 
-    const cleanInv = localInventory.filter(i => i && !isDeleted(i.id) && !isDeleted(i.part_name));
-    const lowStockItems = cleanInv.filter(i => (parseInt(i.current_stock || 0, 10)) <= (parseInt(i.min_stock_alert !== undefined ? i.min_stock_alert : 2, 10)));
+    const isItemDeleted = (item) => {
+      if (!item) return true;
+      const itId = String(item.id || '').toLowerCase().trim();
+      if (!itId) return false;
+      return allDeletedList.some(d => String(d).toLowerCase().trim() === itId);
+    };
+
+    const cleanInv = localInventory.filter(i => i && typeof i === 'object' && !isItemDeleted(i));
+    const lowStockItems = cleanInv.filter(i => (parseInt(i.current_stock !== undefined ? i.current_stock : 0, 10)) <= (parseInt(i.min_stock_alert !== undefined && i.min_stock_alert !== '' ? i.min_stock_alert : 2, 10)));
 
     const recentJobs = [...localJobs].filter(j => !isDeleted(j.id)).sort(
       (a, b) => new Date(b.created_at || b.finished_at || Date.now()) - new Date(a.created_at || a.finished_at || Date.now())

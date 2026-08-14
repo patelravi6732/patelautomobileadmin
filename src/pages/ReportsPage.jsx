@@ -283,10 +283,17 @@ const computeInstantReports = () => {
     const grandTotalRevenue = workshopTotalRevenue + counterTotalRevenue;
 
     // 4. Inventory Valuation
-    const cleanInv = localInventory.filter(i => i && !isDeleted(i.id) && !isDeleted(i.part_name));
+    const isItemDeleted = (item) => {
+      if (!item) return true;
+      const itId = String(item.id || '').toLowerCase().trim();
+      if (!itId) return false;
+      return allDeletedList.some(d => String(d).toLowerCase().trim() === itId);
+    };
+
+    const cleanInv = localInventory.filter(i => i && typeof i === 'object' && !isItemDeleted(i));
     const inventoryValue = cleanInv.reduce((acc, item) => {
       const price = parseFloat(item.price || item.selling_price || item.unit_price || 0);
-      const stock = parseInt(item.current_stock || item.stock_quantity || item.quantity || 0, 10);
+      const stock = parseInt(item.current_stock !== undefined ? item.current_stock : (item.stock_quantity !== undefined ? item.stock_quantity : (item.quantity !== undefined ? item.quantity : 0)), 10);
       return acc + (price * stock);
     }, 0);
 

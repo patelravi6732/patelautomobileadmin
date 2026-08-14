@@ -492,7 +492,7 @@ export default function CounterSalePage() {
     setCartItems(nextCart);
   };
 
-  // Update Cart Item Quantity (Auto-Restores Stock when confirmed items are decremented)
+  // Update Cart Item Quantity (Synchronous UI Update + Auto-Restores Stock when confirmed items are decremented)
   const handleUpdateQty = async (itemId, newQty) => {
     const qty = parseInt(newQty, 10);
     if (isNaN(qty) || qty <= 0) return;
@@ -506,9 +506,21 @@ export default function CounterSalePage() {
       return;
     }
 
-    // If decreasing quantity below the already confirmed/deducted count, restore the difference back to inventory
-    if (alreadyDeducted > qty) {
-      const returnQty = alreadyDeducted - qty;
+    // 1. UPDATE CART STATE SYNCHRONOUSLY FIRST (Prevents race conditions & compounding on rapid clicking)
+    const returnQty = (alreadyDeducted > qty) ? (alreadyDeducted - qty) : 0;
+    const nextDeducted = Math.min(qty, alreadyDeducted);
+
+    const updatedCart = cartItems.map(i => String(i.id) === String(itemId) ? {
+      ...i,
+      quantity: qty,
+      deducted_qty: nextDeducted,
+      status: (qty <= nextDeducted && nextDeducted > 0) ? 'CONFIRMED' : 'STAGED',
+      is_deducted: (qty <= nextDeducted && nextDeducted > 0)
+    } : i);
+    setCartItems(updatedCart);
+
+    // 2. RESTORE EXACT DIFFERENCE TO INVENTORY STOCK
+    if (returnQty > 0) {
       try {
         await atomicRestoreInventoryStock({
           partId: target.inventory_id || target.part_id || target.id,
@@ -520,15 +532,6 @@ export default function CounterSalePage() {
         console.warn('Error restoring stock on quantity decrement:', err);
       }
     }
-
-    const updatedCart = cartItems.map(i => String(i.id) === String(itemId) ? {
-      ...i,
-      quantity: qty,
-      deducted_qty: Math.min(qty, alreadyDeducted),
-      status: (qty <= alreadyDeducted) ? 'CONFIRMED' : 'STAGED',
-      is_deducted: (qty <= alreadyDeducted)
-    } : i);
-    setCartItems(updatedCart);
   };
 
   // Remove Item from Cart (0ms Instant UI Response + Restores Confirmed Stock back to Inventory)

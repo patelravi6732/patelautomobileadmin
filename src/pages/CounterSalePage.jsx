@@ -151,13 +151,11 @@ export default function CounterSalePage() {
       const isDeleted = (item) => {
         if (!item) return true;
         const itId = String(item.id || '').toLowerCase().trim();
-        const itName = String(item.part_name || item.item_name || item.name || '').toLowerCase().trim();
-        const itNorm = itName.replace(/[^a-z0-9]/g, '');
+        if (!itId) return false;
         return localDeleted.some(d => {
           if (!d) return false;
           const dStr = String(d).toLowerCase().trim();
-          const dNorm = dStr.replace(/[^a-z0-9]/g, '');
-          return (itId && dStr && itId === dStr) || (itName && dStr && itName === dStr) || (itNorm && dNorm && itNorm === dNorm);
+          return itId === dStr;
         });
       };
 

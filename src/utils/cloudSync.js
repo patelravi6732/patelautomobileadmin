@@ -1756,3 +1756,81 @@ export async function atomicAddInventoryItem(itemObj) {
 
   return newItem;
 }
+
+export async function atomicDeductInventoryStock({ partId, partName, quantity }) {
+  const qty = parseInt(quantity || 1, 10);
+  if (qty <= 0) return;
+
+  const targetId = String(partId || '').trim();
+  const rawName = String(partName || '').trim().toLowerCase();
+  const normName = rawName.replace(/[^a-z0-9]/g, '');
+
+  const isMatch = (item) => {
+    if (!item) return false;
+    const itId = String(item.id || '').trim();
+    const itName = String(item.part_name || item.item_name || item.name || '').trim().toLowerCase();
+    const itNorm = itName.replace(/[^a-z0-9]/g, '');
+    return (targetId && itId && targetId === itId) ||
+           (normName && itNorm && (normName === itNorm || normName.includes(itNorm) || itNorm.includes(normName))) ||
+           (rawName && itName && rawName === itName);
+  };
+
+  // 1. Update local storage
+  const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
+  let updatedTargetItem = null;
+  const updatedLocal = localInv.map(i => {
+    if (isMatch(i)) {
+      const curStock = parseInt(i.current_stock !== undefined ? i.current_stock : (i.stock_quantity !== undefined ? i.stock_quantity : (i.quantity !== undefined ? i.quantity : 10)), 10);
+      const newStock = Math.max(0, curStock - qty);
+      const updated = {
+        ...i,
+        current_stock: newStock,
+        stock_quantity: newStock,
+        quantity: newStock,
+        updated_at: new Date().toISOString()
+      };
+      updatedTargetItem = updated;
+      return updated;
+    }
+    return i;
+  });
+
+  localStorage.setItem('inventory_items', JSON.stringify(updatedLocal));
+  localStorage.setItem('spare_parts', JSON.stringify(updatedLocal));
+  localStorage.setItem('local_inventory', JSON.stringify(updatedLocal));
+
+  // 2. Update Cloud Master Store
+  try {
+    const store = await fetchMasterStore();
+    const cloudInv = (store.inventory || []).filter(i => i && typeof i === 'object');
+    const updatedCloud = cloudInv.map(i => {
+      if (isMatch(i)) {
+        const curStock = parseInt(i.current_stock !== undefined ? i.current_stock : (i.stock_quantity !== undefined ? i.stock_quantity : (i.quantity !== undefined ? i.quantity : 10)), 10);
+        const newStock = Math.max(0, curStock - qty);
+        return {
+          ...i,
+          current_stock: newStock,
+          stock_quantity: newStock,
+          quantity: newStock,
+          updated_at: new Date().toISOString()
+        };
+      }
+      return i;
+    });
+
+    await saveMasterStore({
+      ...store,
+      inventory: updatedCloud.length > 0 ? updatedCloud : updatedLocal
+    });
+  } catch (err) {
+    console.warn('atomicDeductInventoryStock cloud update notice:', err);
+  }
+
+  try {
+    window.dispatchEvent(new Event('storage'));
+    window.dispatchEvent(new Event('master_store_updated'));
+    window.dispatchEvent(new Event('inventory_updated'));
+  } catch (e) {}
+
+  return updatedTargetItem;
+}

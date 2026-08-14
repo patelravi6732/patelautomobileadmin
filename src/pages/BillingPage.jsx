@@ -51,26 +51,40 @@ export default function BillingPage() {
       console.warn('Backend API offline for billing, deriving from local & cloud invoices:', err);
     }
 
+    const localDeleted = JSON.parse(localStorage.getItem('deleted_ids') || '[]');
     const deletedIds = await fetchCloudDeletedIds().catch(() => []);
-    const isDeleted = (id) => id && (deletedIds.includes(String(id)) || deletedIds.includes(String(id).replace(/^inv_/, '').replace(/^job_/, '')));
+    const allDeleted = Array.from(new Set([...localDeleted, ...deletedIds]));
 
-    const cloudInvs = await fetchCloudInvoices().catch(() => []);
+    const cleanRawId = (id) => String(id || '').replace(/^(inv_|job_|khata_|booking_)+/gi, '').trim();
+
+    const isDeleted = (id) => {
+      if (!id) return false;
+      const s = String(id).trim();
+      const raw = cleanRawId(s);
+      return allDeleted.some(d => {
+        if (!d) return false;
+        const dStr = String(d).trim();
+        const dRaw = cleanRawId(dStr);
+        return s === dStr || (raw && dRaw && raw === dRaw);
+      });
+    };
+
+    const cloudInvs = (await fetchCloudInvoices().catch(() => [])).filter(inv => inv && !isDeleted(inv.id) && !isDeleted(inv.invoice_number) && !isDeleted(inv.job_id));
     const rawLocalInvs = JSON.parse(localStorage.getItem('local_invoices') || '[]');
     const localInvs = rawLocalInvs.filter(inv => inv && !isDeleted(inv.id) && !isDeleted(inv.invoice_number) && !isDeleted(inv.job_id));
 
-    // Keep local storage strictly clean of any item deleted on other devices
+    // Keep local storage strictly clean of any item deleted
     if (localInvs.length !== rawLocalInvs.length) {
       localStorage.setItem('local_invoices', JSON.stringify(localInvs));
     }
 
     const rawJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
-    const finishedJobs = rawJobs.filter(j => j && (j.status === 'FINISHED' || j.status === 'COMPLETED') && !isDeleted(j.id) && !isDeleted(j.vehicle_number));
-    if (finishedJobs.length !== rawJobs.filter(j => j && (j.status === 'FINISHED' || j.status === 'COMPLETED')).length) {
-      const cleanJobs = rawJobs.filter(j => !isDeleted(j.id));
-      localStorage.setItem('workshop_jobs', JSON.stringify(cleanJobs));
-    }
+    const finishedJobs = rawJobs.filter(j => j && (j.status === 'FINISHED' || j.status === 'COMPLETED') && !isDeleted(j.id) && !isDeleted(j.booking_id));
 
-    const derivedInvs = finishedJobs.map((j, idx) => {
+    // Identify jobs already present in invoices
+    const existingRawIds = new Set([...localInvs, ...cloudInvs].map(i => cleanRawId(i.job_id || i.id || i.invoice_number)).filter(Boolean));
+
+    const derivedInvs = finishedJobs.filter(j => !existingRawIds.has(cleanRawId(j.id))).map((j, idx) => {
       const partsVal = parseFloat(j.parts_total || 0);
       const labourVal = parseFloat(j.labour_charge || 100);
       const discountVal = parseFloat(j.discount_amount || 0);
@@ -81,6 +95,7 @@ export default function BillingPage() {
 
       return {
         id: j.id || `job_${idx}`,
+        job_id: j.id,
         invoice_number: `INV-${String(j.id || idx).slice(-4)}`,
         customer_name: j.customer_name || 'Valued Customer',
         mobile_number: j.mobile_number || 'N/A',
@@ -103,7 +118,7 @@ export default function BillingPage() {
     const khataCreditMap = new Map();
     localKhata.forEach(k => {
       if (k && k.type === 'CREDIT' && (parseFloat(k.amount || 0) > 0)) {
-        const rawJobId = String(k.job_id || k.id || '').replace(/^(inv_|job_|khata_|booking_)/, '');
+        const rawJobId = cleanRawId(k.job_id || k.id);
         if (rawJobId) {
           khataCreditMap.set(rawJobId, (khataCreditMap.get(rawJobId) || 0) + parseFloat(k.amount));
         }
@@ -114,7 +129,7 @@ export default function BillingPage() {
     [...localInvs, ...cloudInvs, ...derivedInvs, ...backendInvs].forEach(inv => {
       if (inv && typeof inv === 'object') {
         const strId = String(inv.id || '');
-        const rawId = strId.replace(/^(inv_|job_|khata_|booking_)/, '');
+        const rawId = cleanRawId(inv.job_id || inv.id || inv.invoice_number);
         const invNum = inv.invoice_number || '';
         const vehNum = (inv.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
         const dateMinute = inv.created_at ? new Date(inv.created_at).toISOString().slice(0, 16) : '';

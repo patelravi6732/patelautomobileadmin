@@ -98,10 +98,11 @@ export default function InventoryPage() {
           allMap.set(rawId, newItemObj);
         } else {
           const existing = allMap.get(rawId);
+          const minStock = Math.min(existing.current_stock, parsedStock);
           allMap.set(rawId, {
-            ...existing,
             ...newItemObj,
-            current_stock: newItemObj.current_stock !== undefined ? newItemObj.current_stock : existing.current_stock,
+            ...existing,
+            current_stock: minStock,
             price: newItemObj.price || existing.price || 0
           });
         }

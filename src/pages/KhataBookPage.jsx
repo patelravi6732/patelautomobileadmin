@@ -253,7 +253,7 @@ export default function KhataBookPage() {
         
         let directPaid = parseFloat(inv.paid_amount || (inv.payment_status === 'PAID' ? totalVal : 0));
         const extraCredits = (rawId ? (creditMap.get(`job_${rawId}`) || 0) : 0);
-        const totalPaid = Math.min(totalVal, Math.max(directPaid, extraCredits, directPaid + extraCredits));
+        const totalPaid = Math.min(totalVal, Math.max(directPaid, extraCredits));
         const pendingVal = Math.max(0, totalVal - totalPaid);
         const statusStr = String(inv.payment_status || inv.status || '').toUpperCase();
 
@@ -301,7 +301,7 @@ export default function KhataBookPage() {
         
         let directPaid = parseFloat(job.paid_amount || (job.payment_status === 'PAID' ? totalVal : 0));
         const extraCredits = (rawId ? (creditMap.get(`job_${rawId}`) || 0) : 0);
-        const totalPaid = Math.min(totalVal, Math.max(directPaid, extraCredits, directPaid + extraCredits));
+        const totalPaid = Math.min(totalVal, Math.max(directPaid, extraCredits));
         const pendingVal = Math.max(0, totalVal - totalPaid);
         const statusStr = String(job.payment_status || job.status || '').toUpperCase();
 
@@ -347,7 +347,7 @@ export default function KhataBookPage() {
         const billed = parseFloat(k.total_billed !== undefined ? k.total_billed : (k.amount || k.grand_total || k.total_amount || 0));
         let directPaid = parseFloat(k.total_paid !== undefined ? k.total_paid : (k.paid_amount || 0));
         const extraCredits = (rawId ? (creditMap.get(`job_${rawId}`) || 0) : 0);
-        const totalPaid = Math.min(billed, Math.max(directPaid, extraCredits, directPaid + extraCredits));
+        const totalPaid = Math.min(billed, Math.max(directPaid, extraCredits));
         const pending = Math.max(0, billed - totalPaid);
         const discountVal = parseFloat(k.discount_amount || k.discount || 0);
 

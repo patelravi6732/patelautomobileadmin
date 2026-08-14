@@ -4,7 +4,7 @@ import {
   IndianRupee, Package, Bike, User, Phone, Check, Receipt, UserCheck, Users, Lock, Search, ChevronDown, Edit2, Tag
 } from 'lucide-react';
 import API from '../services/api';
-import { fetchCloudJobs, updateCloudJobStatus, deleteCloudJob, fetchCloudInventory, pushCloudJob, pushCloudRecycleBinItem, pushCloudKhataEntry, pushCloudInvoice, updateCloudBookingStatus, fetchCloudDeletedIds, fetchCloudBookings, atomicFinishWorkshopJob, pushCloudInventoryItem, deleteJobToRecycleBin, pushAuditLog } from '../utils/cloudSync';
+import { fetchCloudJobs, updateCloudJobStatus, deleteCloudJob, fetchCloudInventory, pushCloudJob, pushCloudRecycleBinItem, pushCloudKhataEntry, pushCloudInvoice, updateCloudBookingStatus, fetchCloudDeletedIds, fetchCloudBookings, atomicFinishWorkshopJob, pushCloudInventoryItem, deleteJobToRecycleBin, pushAuditLog, atomicDeductInventoryStock } from '../utils/cloudSync';
 import { useAuth } from '../context/AuthContext';
 import AdminPasswordModal from '../components/AdminPasswordModal';
 
@@ -309,11 +309,14 @@ export default function WorkshopPage() {
             if (!existing) {
               allInvMap.set(rawId, cleanItem);
             } else {
-              if (parsedStock < existing.current_stock) {
-                allInvMap.set(rawId, { ...existing, ...cleanItem, current_stock: parsedStock });
-              } else if (cleanItem.price !== existing.price || cleanItem.min_stock_alert !== existing.min_stock_alert) {
-                allInvMap.set(rawId, { ...existing, ...cleanItem });
-              }
+              const minStock = Math.min(existing.current_stock, parsedStock);
+              allInvMap.set(rawId, {
+                ...cleanItem,
+                ...existing,
+                current_stock: minStock,
+                stock_quantity: minStock,
+                quantity: minStock
+              });
             }
           }
         }
@@ -532,7 +535,7 @@ export default function WorkshopPage() {
     setSelectedJob(updatedJob);
     setJobs(prev => prev.map(j => (isMatchJob(j) ? updatedJob : j)));
     
-    // 1. Deduct Inventory stock IMMEDIATELY (10 -> 9)
+    // 1. Deduct Inventory stock IMMEDIATELY (10 -> 9) across local and cloud
     const baseInv = (inventory && inventory.length > 0) ? inventory : (localInv.length > 0 ? localInv : [partObj]);
     const partNormName = String(partObj.part_name || partObj.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
@@ -550,7 +553,8 @@ export default function WorkshopPage() {
           ...invItem,
           current_stock: newQty,
           stock_quantity: newQty,
-          quantity: newQty
+          quantity: newQty,
+          updated_at: new Date().toISOString()
         };
         updatedTargetItem = updatedObj;
         return updatedObj;
@@ -562,6 +566,14 @@ export default function WorkshopPage() {
     localStorage.setItem('spare_parts', JSON.stringify(updatedInv));
     localStorage.setItem('local_inventory', JSON.stringify(updatedInv));
     setInventory(updatedInv);
+
+    // Call atomic cloud deduction
+    atomicDeductInventoryStock({
+      partId: partObj.id,
+      partName: partObj.part_name || partObj.name,
+      quantity: qty
+    }).catch(console.warn);
+
     try {
       window.dispatchEvent(new Event('storage'));
       window.dispatchEvent(new Event('master_store_updated'));
@@ -576,10 +588,6 @@ export default function WorkshopPage() {
     }
     localStorage.setItem('workshop_jobs', JSON.stringify(updatedLocal));
     pushCloudJob(updatedJob).catch(console.warn);
-
-    if (updatedTargetItem) {
-      pushCloudInventoryItem(updatedTargetItem).catch(console.warn);
-    }
 
     setShowPartModal(false);
 

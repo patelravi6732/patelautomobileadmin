@@ -139,12 +139,12 @@ export default function CounterSalePage() {
   });
   const [recordingPayment, setRecordingPayment] = useState(false);
 
-  // 1. Fetch Inventory Store (0ms Instant Local-First)
-  const loadInventory = () => {
+  // 1. Fetch Inventory Store (0ms Instant Local-First + Cloud Merge)
+  const loadInventory = async () => {
     try {
       const raw = localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]';
       const local = JSON.parse(raw);
-      if (!Array.isArray(local)) { setInventory([]); return; }
+      const cloud = await fetchCloudInventory().catch(() => []);
 
       const localDeleted = JSON.parse(localStorage.getItem('deleted_ids') || '[]');
       const isDeleted = (item) => {
@@ -161,27 +161,19 @@ export default function CounterSalePage() {
       };
 
       const map = new Map();
-      local.forEach(it => {
+      [...(Array.isArray(cloud) ? cloud : []), ...(Array.isArray(local) ? local : [])].forEach(it => {
         if (it && typeof it === 'object' && !isDeleted(it) && (it.part_name || it.item_name || it.name)) {
           const rawName = String(it.part_name || it.item_name || it.name || '').trim();
           const normKey = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
           if (normKey) {
-            if (!map.has(normKey)) {
-              map.set(normKey, { ...it, part_name: rawName, item_name: rawName, name: rawName });
-            } else {
-              const prev = map.get(normKey);
-              const prevTime = new Date(prev.updated_at || 0).getTime();
-              const curTime = new Date(it.updated_at || 0).getTime();
-              const preferred = curTime >= prevTime ? it : prev;
-              map.set(normKey, { ...prev, ...preferred, part_name: rawName, item_name: rawName, name: rawName });
-            }
+            map.set(normKey, { ...it, part_name: rawName, item_name: rawName, name: rawName });
           }
         }
       });
-      setInventory(Array.from(map.values()));
+      const finalItems = Array.from(map.values());
+      setInventory(finalItems);
     } catch (e) {
       console.warn('Error loading inventory for counter sale:', e);
-      setInventory([]);
     }
   };
 
@@ -858,7 +850,9 @@ export default function CounterSalePage() {
         updated_at: new Date().toISOString()
       };
 
-      await pushCloudInventoryItem(newPartObj);
+      const savedItem = await pushCloudInventoryItem(newPartObj);
+
+      setInventory(prev => [savedItem || newPartObj, ...prev.filter(i => String(i.part_name || '').toLowerCase() !== rawName.toLowerCase())]);
 
       alert(`✅ '${rawName}' successfully added to Main Inventory and Catalog!`);
       setShowAddPartModal(false);
@@ -869,7 +863,7 @@ export default function CounterSalePage() {
         current_stock: '',
         min_stock_alert: '5'
       });
-      loadInventory();
+      await loadInventory();
     } catch (err) {
       console.error('Error adding spare part:', err);
       alert('⚠️ Failed to add spare part. Please try again.');

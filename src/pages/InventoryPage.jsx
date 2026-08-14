@@ -131,7 +131,7 @@ export default function InventoryPage() {
       category: 'General',
       price: '',
       current_stock: '',
-      min_stock_alert: ''
+      min_stock_alert: '5'
     });
     setShowAddModal(true);
   };

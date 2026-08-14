@@ -592,7 +592,7 @@ export async function pushCloudInventoryItem(newItem) {
   const rawName = String(newItem.part_name || newItem.item_name || newItem.name || '').trim();
   const newName = rawName.toLowerCase();
   const newNorm = newName.replace(/[^a-z0-9]/g, '');
-  const newId = rawId || `inv_${newNorm || Date.now()}`;
+  const newId = rawId || `part_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
   const stockVal = parseInt(newItem.current_stock !== undefined ? newItem.current_stock : (newItem.stock_quantity !== undefined ? newItem.stock_quantity : (newItem.quantity !== undefined ? newItem.quantity : 0)), 10);
   const priceVal = parseFloat(newItem.price || newItem.selling_price || newItem.unit_price || 0);

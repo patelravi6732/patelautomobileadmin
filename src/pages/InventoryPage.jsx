@@ -161,9 +161,9 @@ export default function InventoryPage() {
   const saveNewPart = async (data) => {
     const nowIso = new Date().toISOString();
     const rawName = String(data.part_name || '').trim();
-    const normName = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const uniqueId = `part_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const newPartObj = {
-      id: `inv_${normName || Date.now()}`,
+      id: uniqueId,
       part_name: rawName,
       name: rawName,
       item_name: rawName,
@@ -185,8 +185,7 @@ export default function InventoryPage() {
     const isMatchingDeleted = (d) => {
       if (!d) return false;
       const s = String(d).toLowerCase().trim();
-      const n = s.replace(/[^a-z0-9]/g, '');
-      return s === newPartObj.id.toLowerCase() || s === rawName.toLowerCase() || (normName && n === normName);
+      return s === uniqueId.toLowerCase();
     };
     localStorage.setItem('deleted_ids', JSON.stringify(localDel.filter(d => !isMatchingDeleted(d))));
     localStorage.setItem('deleted_item_ids', JSON.stringify(localDelItems.filter(d => !isMatchingDeleted(d))));

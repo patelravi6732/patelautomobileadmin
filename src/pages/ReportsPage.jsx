@@ -12,13 +12,30 @@ const computeInstantReports = () => {
     const localCounterKhata = JSON.parse(localStorage.getItem('local_counter_khata') || '[]');
     const localKhataEntries = JSON.parse(localStorage.getItem('khata_entries') || '[]');
     const deletedIds = JSON.parse(localStorage.getItem('deleted_ids') || '[]');
+    const recycleItems = JSON.parse(localStorage.getItem('recycle_bin_items') || '[]');
 
-    const cleanRawId = (id) => String(id || '').replace(/^(inv_|job_|khata_|booking_)+/gi, '').trim();
+    const deletedTrashIds = [];
+    recycleItems.forEach(item => {
+      if (item) {
+        if (item.id) deletedTrashIds.push(String(item.id));
+        if (item.payload) {
+          if (item.payload.id) deletedTrashIds.push(String(item.payload.id));
+          if (item.payload.invoice_number) deletedTrashIds.push(String(item.payload.invoice_number));
+          if (item.payload.job_id) deletedTrashIds.push(String(item.payload.job_id));
+          if (item.payload.booking_id) deletedTrashIds.push(String(item.payload.booking_id));
+          if (item.payload.sale_id) deletedTrashIds.push(String(item.payload.sale_id));
+        }
+      }
+    });
+
+    const allDeletedList = [...deletedIds, ...deletedTrashIds];
+    const cleanRawId = (id) => String(id || '').replace(/^(inv_|job_|khata_|booking_|cs_|ckhata_|trash_)+/gi, '').trim();
+
     const isDeleted = (id) => {
       if (!id) return false;
       const s = String(id).trim();
       const raw = cleanRawId(s);
-      return deletedIds.some(d => {
+      return allDeletedList.some(d => {
         if (!d) return false;
         const dStr = String(d).trim();
         const dRaw = cleanRawId(dStr);
@@ -29,7 +46,7 @@ const computeInstantReports = () => {
     // Khata credit map for existing invoices
     const khataCreditMap = new Map();
     localKhataEntries.forEach(k => {
-      if (k && k.type === 'CREDIT' && (parseFloat(k.amount || 0) > 0)) {
+      if (k && k.type === 'CREDIT' && (parseFloat(k.amount || 0) > 0) && !isDeleted(k.id) && !isDeleted(k.job_id)) {
         const rawJobId = cleanRawId(k.job_id || k.id);
         if (rawJobId) {
           khataCreditMap.set(rawJobId, (khataCreditMap.get(rawJobId) || 0) + parseFloat(k.amount));
@@ -43,7 +60,7 @@ const computeInstantReports = () => {
 
     const allMap = new Map();
     localInvoices.forEach(inv => {
-      if (inv && !isDeleted(inv.id) && !isDeleted(inv.invoice_number)) {
+      if (inv && !isDeleted(inv.id) && !isDeleted(inv.invoice_number) && !isDeleted(inv.job_id)) {
         const rawId = cleanRawId(inv.job_id || inv.id || inv.invoice_number);
         const invNum = inv.invoice_number || '';
         const vehNum = (inv.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();

@@ -384,7 +384,13 @@ export default function BillingPage() {
   const handleDeleteWithPassword = async (adminPassword) => {
     if (!deleteModal.invoice) return;
     const targetInv = deleteModal.invoice;
-    const targetId = targetInv.id;
+    const targetId = String(targetInv.id || '');
+    const targetInvNum = targetInv.invoice_number || '';
+    const targetJobId = String(targetInv.job_id || '');
+    const rawTargetId = targetId.replace(/^inv_/, '').replace(/^job_/, '');
+    const targetVeh = (targetInv.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+    const targetDateDay = targetInv.created_at ? new Date(targetInv.created_at).toISOString().slice(0, 10) : '';
+    const targetTotal = parseFloat(targetInv.grand_total || targetInv.total_amount || 0);
 
     // 1. Move to Recycle Bin (local & cloud)
     const trashObj = {
@@ -402,30 +408,88 @@ export default function BillingPage() {
     pushCloudRecycleBinItem(trashObj).catch(console.warn);
     pushAuditLog('DELETE', 'Billing', `Deleted bill #${targetInv.invoice_number || targetId} for ${targetInv.customer_name || 'Customer'}`).catch(console.warn);
 
-    // 2. Mark as permanently deleted & purge from stores
-    markIdAsDeleted(targetId).catch(console.warn);
-    if (targetInv.invoice_number) markIdAsDeleted(targetInv.invoice_number).catch(console.warn);
-    deleteCloudInvoice(targetId).catch(console.warn);
-    deleteCloudJob(targetId).catch(console.warn);
+    // 2. Mark as permanently deleted in deletedIds
+    const idsToMark = [
+      targetId,
+      rawTargetId,
+      `inv_${rawTargetId}`,
+      `job_${rawTargetId}`
+    ];
+    if (targetInvNum) idsToMark.push(String(targetInvNum));
+    if (targetJobId) {
+      idsToMark.push(targetJobId);
+      idsToMark.push(targetJobId.replace(/^job_/, '').replace(/^inv_/, ''));
+    }
 
+    const localDeleted = JSON.parse(localStorage.getItem('deleted_ids') || '[]');
+    const updatedDeleted = Array.from(new Set([...localDeleted, ...idsToMark.filter(Boolean)]));
+    localStorage.setItem('deleted_ids', JSON.stringify(updatedDeleted));
+
+    for (const idToMark of idsToMark) {
+      if (idToMark) markIdAsDeleted(idToMark).catch(console.warn);
+    }
+
+    // 3. Purge from local_invoices
     const localInvoices = JSON.parse(localStorage.getItem('local_invoices') || '[]');
-    const updatedLocalInvs = localInvoices.filter(inv => String(inv.id) !== String(targetId) && inv.invoice_number !== targetInv.invoice_number);
+    const updatedLocalInvs = localInvoices.filter(inv => {
+      if (!inv) return false;
+      const iId = String(inv.id || '');
+      const iRaw = iId.replace(/^inv_/, '').replace(/^job_/, '');
+      const iJobId = String(inv.job_id || '').replace(/^inv_/, '').replace(/^job_/, '');
+      const iNum = String(inv.invoice_number || '');
+      const iVeh = (inv.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+      const iDateDay = inv.created_at ? new Date(inv.created_at).toISOString().slice(0, 10) : '';
+      const iTotal = parseFloat(inv.grand_total || inv.total_amount || 0);
+
+      if (iId === targetId || iRaw === rawTargetId || (targetJobId && iJobId === targetJobId)) return false;
+      if (targetInvNum && iNum === targetInvNum) return false;
+      if (targetVeh && iVeh && targetVeh === iVeh && targetDateDay && iDateDay && targetDateDay === iDateDay && Math.abs(targetTotal - iTotal) < 1) return false;
+      return true;
+    });
     localStorage.setItem('local_invoices', JSON.stringify(updatedLocalInvs));
 
-    const rawTargetId = String(targetId).replace(/^inv_/, '').replace(/^job_/, '');
-    const targetVeh = (targetInv.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-
+    // 4. Purge from workshop_jobs
     const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
     const updatedJobs = localJobs.filter(j => {
+      if (!j) return false;
       const jId = String(j.id || '');
       const jRaw = jId.replace(/^inv_/, '').replace(/^job_/, '');
       const jVeh = (j.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-      if (jId === String(targetId) || jRaw === rawTargetId) return false;
+      const jDateDay = (j.finished_at || j.completed_at || j.created_at || '').slice(0, 10);
+      const jTotal = parseFloat(j.grand_total || j.total_amount || j.live_total || 0);
+
+      if (jId === targetId || jRaw === rawTargetId || (targetJobId && jRaw === targetJobId)) return false;
+      if (targetVeh && jVeh && targetVeh === jVeh && targetDateDay && jDateDay && targetDateDay === jDateDay && Math.abs(targetTotal - jTotal) < 1) return false;
       return true;
     });
     localStorage.setItem('workshop_jobs', JSON.stringify(updatedJobs));
 
-    setInvoices(prev => prev.filter(inv => String(inv.id) !== String(targetId) && inv.invoice_number !== targetInv.invoice_number));
+    // 5. Purge from khata_entries
+    const localKhata = JSON.parse(localStorage.getItem('khata_entries') || '[]');
+    const updatedKhata = localKhata.filter(k => {
+      if (!k) return false;
+      const kJobId = String(k.job_id || '').replace(/^inv_/, '').replace(/^job_/, '');
+      const kVeh = (k.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+      const kDateDay = (k.date || k.created_at || '').slice(0, 10);
+      if (kJobId && (kJobId === rawTargetId || (targetJobId && kJobId === targetJobId))) return false;
+      if (targetVeh && kVeh && targetVeh === kVeh && targetDateDay && kDateDay && targetDateDay === kDateDay) return false;
+      return true;
+    });
+    localStorage.setItem('khata_entries', JSON.stringify(updatedKhata));
+
+    // 6. Purge from cloud master store
+    deleteCloudInvoice(targetId, targetInvNum).catch(console.warn);
+    if (targetJobId) deleteCloudJob(targetJobId).catch(console.warn);
+
+    // 7. Dispatch events immediately so Dashboard, Reports, KhataBook recalculate immediately
+    try {
+      window.dispatchEvent(new Event('storage'));
+      window.dispatchEvent(new Event('invoices_updated'));
+      window.dispatchEvent(new Event('khata_updated'));
+      window.dispatchEvent(new Event('master_store_updated'));
+    } catch (e) {}
+
+    setInvoices(updatedLocalInvs);
     setDeleteModal({ isOpen: false, invoice: null });
 
     try {
@@ -435,7 +499,7 @@ export default function BillingPage() {
     } catch (err) {
       console.warn('Backend API offline, moved invoice to Recycle Bin locally:', err);
     } finally {
-      alert('🗑️ Invoice moved to Recycle Bin permanently!');
+      alert('🗑️ Invoice deleted and moved to Recycle Bin! Revenue & pending dues updated.');
       fetchInvoices();
     }
   };

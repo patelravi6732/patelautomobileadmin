@@ -118,40 +118,66 @@ export async function fetchMasterStore(forceFresh = false) {
     }
 
     if (freshStore) {
+      const allDeleted = Array.from(new Set([
+        ...(freshStore.deletedIds || []),
+        ...JSON.parse(localStorage.getItem('deleted_ids') || '[]'),
+        ...JSON.parse(localStorage.getItem('deleted_item_ids') || '[]')
+      ])).map(String);
+
+      const isCleanDeleted = (item) => {
+        if (!item) return true;
+        const id = String(item.id || '');
+        const rawId = id.replace(/^(inv_|job_|khata_|booking_|cs_|ckhata_|trash_)+/gi, '').trim();
+        const invNum = String(item.invoice_number || '');
+        const jobId = String(item.job_id || '').replace(/^(inv_|job_|khata_|booking_|cs_|ckhata_|trash_)+/gi, '').trim();
+        return allDeleted.some(d => {
+          if (!d) return false;
+          const dStr = String(d).trim();
+          const dRaw = dStr.replace(/^(inv_|job_|khata_|booking_|cs_|ckhata_|trash_)+/gi, '').trim();
+          return id === dStr || invNum === dStr || (rawId && dRaw && rawId === dRaw) || (jobId && dRaw && jobId === dRaw);
+        });
+      };
+
+      const cleanJobs = (freshStore.jobs || []).filter(j => !isCleanDeleted(j));
+      const cleanInvoices = (freshStore.invoices || []).filter(i => !isCleanDeleted(i));
+      const cleanKhata = (freshStore.khataEntries || []).filter(k => !isCleanDeleted(k));
+      const cleanSales = (freshStore.counterSales || []).filter(s => !isCleanDeleted(s));
+      const cleanCounterKhata = (freshStore.counterKhata || []).filter(k => !isCleanDeleted(k));
+
       const mergedStore = {
         bookings: freshStore.bookings || [],
         messages: freshStore.messages || [],
-        jobs: freshStore.jobs || [],
+        jobs: cleanJobs,
         inventory: freshStore.inventory || [],
         recycleBin: freshStore.recycleBin || [],
         garageInfo: freshStore.garageInfo || localCache.garageInfo,
         adminProfiles: freshStore.adminProfiles || [],
-        khataEntries: freshStore.khataEntries || [],
+        khataEntries: cleanKhata,
         customers: freshStore.customers || [],
-        invoices: freshStore.invoices || [],
+        invoices: cleanInvoices,
         attendance: freshStore.attendance || [],
         salaryPayments: freshStore.salaryPayments || [],
-        deletedIds: freshStore.deletedIds || [],
-        counterSales: freshStore.counterSales || [],
-        counterKhata: freshStore.counterKhata || [],
+        deletedIds: allDeleted,
+        counterSales: cleanSales,
+        counterKhata: cleanCounterKhata,
         activeCounterCart: freshStore.activeCounterCart || null
       };
       try {
         localStorage.setItem('master_cloud_cache', JSON.stringify(mergedStore));
 
-        localStorage.setItem('workshop_jobs', JSON.stringify(mergedStore.jobs));
-        localStorage.setItem('local_invoices', JSON.stringify(mergedStore.invoices));
+        localStorage.setItem('workshop_jobs', JSON.stringify(cleanJobs));
+        localStorage.setItem('local_invoices', JSON.stringify(cleanInvoices));
         localStorage.setItem('recycle_bin_items', JSON.stringify(mergedStore.recycleBin));
-        localStorage.setItem('deleted_item_ids', JSON.stringify(mergedStore.deletedIds));
-        localStorage.setItem('deleted_ids', JSON.stringify(mergedStore.deletedIds));
-        localStorage.setItem('khata_entries', JSON.stringify(mergedStore.khataEntries));
+        localStorage.setItem('deleted_item_ids', JSON.stringify(allDeleted));
+        localStorage.setItem('deleted_ids', JSON.stringify(allDeleted));
+        localStorage.setItem('khata_entries', JSON.stringify(cleanKhata));
         localStorage.setItem('local_bookings', JSON.stringify(mergedStore.bookings));
         localStorage.setItem('local_messages', JSON.stringify(mergedStore.messages));
         localStorage.setItem('contact_messages', JSON.stringify(mergedStore.messages));
         localStorage.setItem('admin_profiles', JSON.stringify(mergedStore.adminProfiles));
         localStorage.setItem('local_customers', JSON.stringify(mergedStore.customers));
-        localStorage.setItem('local_counter_sales', JSON.stringify(mergedStore.counterSales));
-        localStorage.setItem('local_counter_khata', JSON.stringify(mergedStore.counterKhata));
+        localStorage.setItem('local_counter_sales', JSON.stringify(cleanSales));
+        localStorage.setItem('local_counter_khata', JSON.stringify(cleanCounterKhata));
 
         const curLocalInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
         const mergedInvMap = new Map();
@@ -222,24 +248,50 @@ export async function saveMasterStore(storeData) {
     const localKhata = JSON.parse(localStorage.getItem('khata_entries') || '[]');
     const localCust = JSON.parse(localStorage.getItem('local_customers') || '[]');
     const localInvList = JSON.parse(localStorage.getItem('local_invoices') || '[]');
+    const allDeletedIds = Array.from(new Set([
+      ...(storeData.deletedIds || []),
+      ...(curCache.deletedIds || []),
+      ...JSON.parse(localStorage.getItem('deleted_ids') || '[]'),
+      ...JSON.parse(localStorage.getItem('deleted_item_ids') || '[]')
+    ])).map(String);
+
+    const isDeletedItem = (item) => {
+      if (!item) return true;
+      const id = String(item.id || '');
+      const rawId = id.replace(/^(inv_|job_|khata_|booking_|cs_|ckhata_|trash_)+/gi, '').trim();
+      const invNum = String(item.invoice_number || '');
+      const jobId = String(item.job_id || '').replace(/^(inv_|job_|khata_|booking_|cs_|ckhata_|trash_)+/gi, '').trim();
+      return allDeletedIds.some(d => {
+        if (!d) return false;
+        const dStr = String(d).trim();
+        const dRaw = dStr.replace(/^(inv_|job_|khata_|booking_|cs_|ckhata_|trash_)+/gi, '').trim();
+        return id === dStr || invNum === dStr || (rawId && dRaw && rawId === dRaw) || (jobId && dRaw && jobId === dRaw);
+      });
+    };
+
+    const rawJobs = Array.isArray(storeData.jobs) ? storeData.jobs : (curCache.jobs || localJobs);
+    const rawInvs = Array.isArray(storeData.invoices) ? storeData.invoices : (curCache.invoices || localInvList);
+    const rawKhata = Array.isArray(storeData.khataEntries) ? storeData.khataEntries : (curCache.khataEntries || localKhata);
+    const rawSales = Array.isArray(storeData.counterSales) ? storeData.counterSales : (curCache.counterSales || []);
+    const rawCounterKhata = Array.isArray(storeData.counterKhata) ? storeData.counterKhata : (curCache.counterKhata || []);
 
     storeData = {
       ...storeData,
       bookings: Array.isArray(storeData.bookings) && storeData.bookings.length > 0 ? storeData.bookings : (Array.isArray(curCache.bookings) && curCache.bookings.length > 0 ? curCache.bookings : localBookings),
       messages: Array.isArray(storeData.messages) && storeData.messages.length > 0 ? storeData.messages : (Array.isArray(curCache.messages) && curCache.messages.length > 0 ? curCache.messages : localMessages),
-      jobs: Array.isArray(storeData.jobs) ? storeData.jobs : (curCache.jobs || localJobs),
+      jobs: rawJobs.filter(j => !isDeletedItem(j)),
       inventory: Array.isArray(storeData.inventory) ? storeData.inventory : (curCache.inventory || localInv),
       recycleBin: Array.isArray(storeData.recycleBin) ? storeData.recycleBin : (curCache.recycleBin || localRecycle),
       garageInfo: storeData.garageInfo || curCache.garageInfo || JSON.parse(localStorage.getItem('garage_info') || 'null'),
       adminProfiles: storeData.adminProfiles || curCache.adminProfiles || JSON.parse(localStorage.getItem('admin_profiles') || '[]'),
-      khataEntries: Array.isArray(storeData.khataEntries) ? storeData.khataEntries : (curCache.khataEntries || localKhata),
+      khataEntries: rawKhata.filter(k => !isDeletedItem(k)),
       customers: Array.isArray(storeData.customers) ? storeData.customers : (curCache.customers || localCust),
-      invoices: Array.isArray(storeData.invoices) ? storeData.invoices : (curCache.invoices || localInvList),
+      invoices: rawInvs.filter(i => !isDeletedItem(i)),
       attendance: Array.isArray(storeData.attendance) ? storeData.attendance : (curCache.attendance || []),
       salaryPayments: Array.isArray(storeData.salaryPayments) ? storeData.salaryPayments : (curCache.salaryPayments || []),
-      deletedIds: Array.isArray(storeData.deletedIds) ? storeData.deletedIds : (curCache.deletedIds || JSON.parse(localStorage.getItem('deleted_ids') || '[]')),
-      counterSales: Array.isArray(storeData.counterSales) ? storeData.counterSales : (curCache.counterSales || []),
-      counterKhata: Array.isArray(storeData.counterKhata) ? storeData.counterKhata : (curCache.counterKhata || []),
+      deletedIds: allDeletedIds,
+      counterSales: rawSales.filter(s => !isDeletedItem(s)),
+      counterKhata: rawCounterKhata.filter(k => !isDeletedItem(k)),
       activeCounterCart: storeData.activeCounterCart !== undefined ? storeData.activeCounterCart : (curCache.activeCounterCart || null)
     };
 

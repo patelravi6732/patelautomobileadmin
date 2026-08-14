@@ -128,30 +128,8 @@ export const shareInvoiceToWhatsApp = async (invoice, garageInfo) => {
   // 3. Compose WhatsApp Message
   const garageName = garageInfo?.garage_name || 'Patel Automobiles';
   const garagePhone = garageInfo?.phone || '+91 81403 71414';
-  const garageAddress = garageInfo?.address || 'Near Dandi Pond, Dandi, Valsad';
-  const upiId = garageInfo?.upi_id || 'paytmqr5hlpsp@ptys';
-  const safetyMsg = garageInfo?.safety_message || 'Thank you for choosing Patel Automobiles! Wish you a safe & smooth ride. 🛵⛑️';
 
-  const msg = `*${garageName.toUpperCase()} - SERVICE INVOICE* 🛵🔧
-━━━━━━━━━━━━━━━━━━━━
-🧾 *Invoice No:* ${invNumber}
-📅 *Date:* ${dateStr}
-👤 *Customer:* ${custName}
-🛵 *Vehicle:* ${vehNum} ${bikeModel ? `(${bikeModel})` : ''}
-
-*Service Details & Parts:*
-${itemsList}
-
-━━━━━━━━━━━━━━━━━━━━
-${discountAmount > 0 ? `🏷️ *Discount:* - ₹${discountAmount.toFixed(2)}\n` : ''}💰 *Total Amount:* ₹${grandTotal.toFixed(2)}
-💵 *Paid Amount:* ₹${paidAmount.toFixed(2)}
-${!isPaid ? `⚠️ *Pending Balance Due:* *₹${pendingAmount.toFixed(2)}*\n📲 *Pay via UPI:* ${upiId}\n` : '✅ *Status:* PAID IN FULL\n'}
-${safetyMsg}
-
-📸 *Your Official HD Bill Photo Card has been generated and saved.*
-${!isPaid ? `👉 Kindly send ₹${pendingAmount.toFixed(2)} to UPI ID: *${upiId}*\n` : ''}
-📍 *Address:* ${garageAddress}
-📞 *Contact:* ${garagePhone}`;
+  const msg = `Thank you for choosing ${garageName}! Wish you a safe & smooth ride. 🛵⛑️\n\n📞 Contact: ${garagePhone}\n— ${garageName}`;
 
   return openWhatsAppChat(custPhone, msg);
 };
@@ -165,14 +143,6 @@ export const shareKhataStatementToWhatsApp = async (customer, garageInfo) => {
   const custName = customer.customer_name || 'Customer';
   const custPhone = customer.phone || customer.mobile_number || '';
   const vehNum = String(customer.vehicle_number || '').toUpperCase();
-  const bikeModel = customer.bike_model || '';
-  const dateStr = formatDateDMY(customer.created_at || customer.last_service_date || Date.now());
-
-  const grossTotal = parseFloat(customer.gross_total || (parseFloat(customer.total_billed || 0) + parseFloat(customer.discount_amount || 0)));
-  const totalBilled = parseFloat(customer.total_billed || customer.total_amount || 0);
-  const totalPaid = parseFloat(customer.total_paid || customer.paid_amount || 0);
-  const pendingAmount = parseFloat(customer.pending_amount || customer.balance || 0);
-
   const timeCode = Date.now().toString().slice(-4);
   const fileName = `Statement_${custName.replace(/\s+/g, '_')}_${vehNum || 'Khata'}_${timeCode}.png`;
 
@@ -199,24 +169,8 @@ export const shareKhataStatementToWhatsApp = async (customer, garageInfo) => {
 
   const garageName = garageInfo?.garage_name || 'Patel Automobiles';
   const garagePhone = garageInfo?.phone || '+91 81403 71414';
-  const upiId = garageInfo?.upi_id || 'paytmqr5hlpsp@ptys';
 
-  const msg = `*${garageName.toUpperCase()} - UDHAR KHATA STATEMENT* 📖
-━━━━━━━━━━━━━━━━━━━━
-👤 *Customer:* ${custName}
-${vehNum ? `🛵 *Vehicle:* ${vehNum} ${bikeModel ? `(${bikeModel})` : ''}\n` : ''}📅 *Statement Date:* ${dateStr}
-
-💰 *Total Billed:* ₹${totalBilled.toFixed(2)}
-💵 *Paid so far:* ₹${totalPaid.toFixed(2)}
-⚠️ *Current Outstanding Due:* *₹${pendingAmount.toFixed(2)}*
-
-━━━━━━━━━━━━━━━━━━━━
-📲 *Pay via UPI:* ${upiId}
-👤 *Payee:* ${garageName}
-
-Kindly clear your pending balance at your earliest convenience.
-📸 *Your Statement Photo Card has been downloaded.*
-📞 *Contact:* ${garagePhone}`;
+  const msg = `Thank you for choosing ${garageName}! Wish you a safe & smooth ride. 🛵⛑️\n\n📞 Contact: ${garagePhone}\n— ${garageName}`;
 
   return openWhatsAppChat(custPhone, msg);
 };

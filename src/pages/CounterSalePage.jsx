@@ -985,25 +985,10 @@ export default function CounterSalePage() {
     // Automatically trigger HD Photo Card download
     handleDownloadCard(sale).catch(() => null);
 
-    const itemsList = (sale.items || []).map((it, i) => `${i + 1}. ${it.part_name || it.item_name} (x${it.quantity}) - ₹${parseFloat(it.total || (it.unit_price * it.quantity)).toFixed(2)}`).join('\n');
-    
-    const isPaid = parseFloat(sale.pending_amount || 0) <= 0;
-    const msg = `*PATEL AUTOMOBILES - SPARE PARTS CASH MEMO* 🛵🔧
-━━━━━━━━━━━━━━━━━━━━
-📅 *Date:* ${formatDateDMY(sale.created_at || sale.date || Date.now())}
-👤 *Customer:* ${sale.customer_name}
-${sale.vehicle_number ? `🛵 *Vehicle:* ${sale.vehicle_number.toUpperCase()}\n` : ''}*Purchased Items:*
-${itemsList}
+    const garageName = garageInfo?.garage_name || 'Patel Automobiles';
+    const garagePhone = garageInfo?.phone || '+91 81403 71414';
 
-━━━━━━━━━━━━━━━━━━━━
-💰 *Net Total:* ₹${parseFloat(sale.net_total || sale.total_amount || 0).toFixed(2)}
-💵 *Paid Amount:* ₹${parseFloat(sale.paid_amount || 0).toFixed(2)}
-${!isPaid ? `⚠️ *Pending Balance Due:* *₹${parseFloat(sale.pending_amount).toFixed(2)}*\n📲 *Pay via UPI:* ${garageInfo?.upi_id || 'paytmqr5hlpsp@ptys'}\n` : '✅ *Status:* PAID IN FULL\n'}
-${garageInfo?.safety_message || 'Thank you for choosing Patel Automobiles! Wish you a safe & smooth ride. 🛵⛑️'}
-
-📸 *Your Official HD Bill Photo Card has been generated & saved.*
-📍 *Address:* ${garageInfo?.address || 'Near Dandi Pond, Dandi, Valsad'}
-📞 *Contact:* ${garageInfo?.phone || '+91 81403 71414'}`;
+    const msg = `Thank you for choosing ${garageName}! Wish you a safe & smooth ride. 🛵⛑️\n\n📞 Contact: ${garagePhone}\n— ${garageName}`;
 
     openWhatsAppChat(rawPhone, msg);
   };
@@ -1050,21 +1035,10 @@ ${garageInfo?.safety_message || 'Thank you for choosing Patel Automobiles! Wish 
     // Automatically trigger Statement Photo Card download with QR scanner
     handleDownloadKhataCard(debtor).catch(() => null);
 
-    const msg = `*PATEL AUTOMOBILES - PAYMENT REMINDER* 🛵
-━━━━━━━━━━━━━━━━━━━━
-👤 *Customer:* ${debtor.customer_name}
-📦 *Items:* ${debtor.items_summary || 'Spare Parts'}
-💰 *Total Bill:* ₹${parseFloat(debtor.total_amount || 0).toFixed(2)}
-💵 *Paid so far:* ₹${parseFloat(debtor.paid_amount || 0).toFixed(2)}
-⚠️ *Pending Balance Due:* *₹${parseFloat(debtor.pending_amount || 0).toFixed(2)}*
+    const garageName = garageInfo?.garage_name || 'Patel Automobiles';
+    const garagePhone = garageInfo?.phone || '+91 81403 71414';
 
-━━━━━━━━━━━━━━━━━━━━
-📲 *Pay via UPI:* ${garageInfo?.upi_id || 'paytmqr5hlpsp@ptys'}
-👤 *Payee:* Patel Automobiles
-
-Kindly clear your pending balance at your earliest convenience.
-📸 *Your Statement Photo Card has been saved.*
-📞 *Contact:* ${garageInfo?.phone || '+91 81403 71414'}`;
+    const msg = `Thank you for choosing ${garageName}! Wish you a safe & smooth ride. 🛵⛑️\n\n📞 Contact: ${garagePhone}\n— ${garageName}`;
 
     openWhatsAppChat(rawPhone, msg);
   };

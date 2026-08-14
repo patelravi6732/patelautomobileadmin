@@ -1842,7 +1842,7 @@ export async function atomicDeductInventoryStock({ partId, partName, quantity })
   const updatedLocal = localInv.map(i => {
     if (isMatch(i) && !hasDeducted) {
       hasDeducted = true;
-      const curStock = parseInt(i.current_stock !== undefined ? i.current_stock : (i.stock_quantity !== undefined ? i.stock_quantity : (i.quantity !== undefined ? i.quantity : 0)), 10);
+      const curStock = parseInt(i.current_stock !== undefined ? i.current_stock : (i.stock_quantity !== undefined ? i.stock_quantity : (i.quantity !== undefined ? i.quantity : 0)), 10) || 0;
       const newStock = Math.max(0, curStock - qty);
       const updated = {
         ...i,
@@ -1869,7 +1869,7 @@ export async function atomicDeductInventoryStock({ partId, partName, quantity })
     const updatedCloud = cloudInv.map(i => {
       if (isMatch(i) && !hasCloudDeducted) {
         hasCloudDeducted = true;
-        const curStock = parseInt(i.current_stock !== undefined ? i.current_stock : (i.stock_quantity !== undefined ? i.stock_quantity : (i.quantity !== undefined ? i.quantity : 0)), 10);
+        const curStock = parseInt(i.current_stock !== undefined ? i.current_stock : (i.stock_quantity !== undefined ? i.stock_quantity : (i.quantity !== undefined ? i.quantity : 0)), 10) || 0;
         const newStock = Math.max(0, curStock - qty);
         return {
           ...i,
@@ -1900,7 +1900,7 @@ export async function atomicDeductInventoryStock({ partId, partName, quantity })
 }
 
 export async function atomicRestoreInventoryStock({ partId, partName, quantity }) {
-  const qty = parseInt(quantity || 1, 10);
+  const qty = Math.max(1, parseInt(quantity, 10) || 1);
   if (qty <= 0) return;
 
   const targetId = String(partId || '').trim();
@@ -1916,7 +1916,7 @@ export async function atomicRestoreInventoryStock({ partId, partName, quantity }
            (normName && itNorm && normName === itNorm);
   };
 
-  // 1. Update local storage (Restore EXACTLY ONCE)
+  // 1. Update local storage (Restore EXACTLY ONCE with Pure Numeric Math)
   const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
   let updatedTargetItem = null;
   let hasRestored = false;
@@ -1924,8 +1924,8 @@ export async function atomicRestoreInventoryStock({ partId, partName, quantity }
   const updatedLocal = localInv.map(i => {
     if (isMatch(i) && !hasRestored) {
       hasRestored = true;
-      const curStock = parseInt(i.current_stock !== undefined ? i.current_stock : (i.stock_quantity !== undefined ? i.stock_quantity : (i.quantity !== undefined ? i.quantity : 0)), 10);
-      const newStock = curStock + qty;
+      const curStock = parseInt(i.current_stock !== undefined ? i.current_stock : (i.stock_quantity !== undefined ? i.stock_quantity : (i.quantity !== undefined ? i.quantity : 0)), 10) || 0;
+      const newStock = Math.max(0, curStock + qty);
       const updated = {
         ...i,
         current_stock: newStock,
@@ -1951,8 +1951,8 @@ export async function atomicRestoreInventoryStock({ partId, partName, quantity }
     const updatedCloud = cloudInv.map(i => {
       if (isMatch(i) && !hasCloudRestored) {
         hasCloudRestored = true;
-        const curStock = parseInt(i.current_stock !== undefined ? i.current_stock : (i.stock_quantity !== undefined ? i.stock_quantity : (i.quantity !== undefined ? i.quantity : 0)), 10);
-        const newStock = curStock + qty;
+        const curStock = parseInt(i.current_stock !== undefined ? i.current_stock : (i.stock_quantity !== undefined ? i.stock_quantity : (i.quantity !== undefined ? i.quantity : 0)), 10) || 0;
+        const newStock = Math.max(0, curStock + qty);
         return {
           ...i,
           current_stock: newStock,

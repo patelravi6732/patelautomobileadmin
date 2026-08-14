@@ -154,49 +154,17 @@ export default function WorkshopPage() {
             allMap.set(newKey, sanitizedJob);
           } else {
             const existing = allMap.get(existingKey);
-            const existingParts = Array.isArray(existing.parts) ? existing.parts : [];
-            const currentParts = Array.isArray(sanitizedJob.parts) ? sanitizedJob.parts : [];
-
-            // Smart Union Merging of Parts by Part ID or Normalized Name
-            const mergedPartsMap = new Map();
-            [...existingParts, ...currentParts].forEach(p => {
-              if (p && (p.id || p.part_name || p.name)) {
-                const rawName = String(p.part_name || p.name || '').trim();
-                const pKey = rawName ? rawName.toLowerCase().replace(/[^a-z0-9]/g, '') : String(p.inventory_id || p.part_id || p.id || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-                if (pKey) {
-                  if (!mergedPartsMap.has(pKey)) {
-                    mergedPartsMap.set(pKey, p);
-                  } else {
-                    const exP = mergedPartsMap.get(pKey);
-                    const exQty = parseInt(exP.quantity || 1, 10);
-                    const curQty = parseInt(p.quantity || 1, 10);
-                    const finalQty = Math.max(exQty, curQty);
-                    const unitPrice = parseFloat(p.price || p.unit_price || exP.price || exP.unit_price || 0);
-                    mergedPartsMap.set(pKey, {
-                      ...exP,
-                      ...p,
-                      quantity: finalQty,
-                      staged_total: finalQty * unitPrice,
-                      status: (p.status === 'CONFIRMED' || exP.status === 'CONFIRMED') ? 'CONFIRMED' : (p.status || exP.status || 'STAGED'),
-                      is_confirmed: Boolean(p.is_confirmed || exP.is_confirmed),
-                      is_deducted: Boolean(p.is_deducted || exP.is_deducted)
-                    });
-                  }
-                }
-              }
-            });
-
-            const finalParts = Array.from(mergedPartsMap.values());
-            const finalPartsTotal = finalParts.reduce((acc, p) => acc + parseFloat(p.staged_total || (parseFloat(p.price || p.unit_price || 0) * parseInt(p.quantity || 1, 10))), 0);
-            const finalLabour = parseFloat(sanitizedJob.labour_charge !== undefined ? sanitizedJob.labour_charge : (existing.labour_charge || 0));
+            const prevTime = new Date(existing.updated_at || existing.created_at || 0).getTime();
+            const curTime = new Date(sanitizedJob.updated_at || sanitizedJob.created_at || 0).getTime();
+            const preferred = curTime >= prevTime ? sanitizedJob : existing;
 
             allMap.set(existingKey, {
               ...existing,
               ...sanitizedJob,
-              parts: finalParts,
-              parts_total: finalPartsTotal,
-              labour_charge: finalLabour,
-              live_total: finalPartsTotal + finalLabour
+              parts: preferred.parts || [],
+              parts_total: parseFloat(preferred.parts_total !== undefined ? preferred.parts_total : (sanitizedJob.parts_total || existing.parts_total || 0)),
+              labour_charge: parseFloat(preferred.labour_charge !== undefined ? preferred.labour_charge : (sanitizedJob.labour_charge || existing.labour_charge || 0)),
+              live_total: parseFloat(preferred.live_total !== undefined ? preferred.live_total : (sanitizedJob.live_total || existing.live_total || 0))
             });
           }
         }
@@ -583,10 +551,18 @@ export default function WorkshopPage() {
     if (!deletePartModal.part || !deletePartModal.jobId) return;
     const { jobId, part } = deletePartModal;
 
-    const targetJob = jobs.find(j => String(j.id) === String(jobId));
+    const targetJob = jobs.find(j => String(j.id) === String(jobId)) || selectedJob;
     if (!targetJob) return;
 
-    const updatedParts = (targetJob.parts || []).filter(p => String(p.id) !== String(part.id));
+    const updatedParts = (targetJob.parts || []).filter(p => {
+      if (!p) return false;
+      const matchId = String(p.id || '') === String(part.id || '');
+      const matchInvId = (p.inventory_id && part.inventory_id && String(p.inventory_id) === String(part.inventory_id));
+      const matchPartId = (p.part_id && part.part_id && String(p.part_id) === String(part.part_id));
+      const matchName = String(p.part_name || p.name || '').trim().toLowerCase() === String(part.part_name || part.name || '').trim().toLowerCase();
+      return !(matchId || matchInvId || matchPartId || matchName);
+    });
+
     const newPartsTotal = updatedParts.reduce((acc, p) => acc + parseFloat(p.staged_total || (parseFloat(p.price || p.unit_price || 0) * parseInt(p.quantity || 1, 10))), 0);
     const newLiveTotal = newPartsTotal + parseFloat(targetJob.labour_charge || 0);
 
@@ -594,9 +570,11 @@ export default function WorkshopPage() {
       ...targetJob,
       parts: updatedParts,
       parts_total: newPartsTotal,
-      live_total: newLiveTotal
+      live_total: newLiveTotal,
+      updated_at: new Date().toISOString()
     };
 
+    setSelectedJob(updatedJob);
     setJobs(prev => prev.map(j => (String(j.id) === String(jobId) ? updatedJob : j)));
 
     const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');

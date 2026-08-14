@@ -301,29 +301,47 @@ export default function KhataBookPage() {
         });
       });
 
-      // 2. Process Finished Jobs (only if not already in invoices)
+      // 2. Process Finished Jobs (only if not already in invoices and not fully paid)
       finishedJobs.forEach(job => {
-        if (!job || isDeleted(job.id)) return;
+        if (!job || isDeleted(job.id, job.vehicle_number)) return;
         const rawId = String(job.id || '').replace(/^(inv_|job_|khata_|booking_)/, '');
         const veh = (job.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+        
+        // 1. Check if matching invoice exists
+        const matchingInv = combinedInvs.find(i => {
+          if (!i) return false;
+          const iRaw = String(i.job_id || i.id || '').replace(/^(inv_|job_|khata_|booking_)/g, '');
+          const iVeh = (i.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+          return (rawId && iRaw && rawId === iRaw) || (veh && iVeh && veh === iVeh);
+        });
+        
+        // If matching invoice exists and is fully paid, skip completely!
+        if (matchingInv) {
+          const invTotal = parseFloat(matchingInv.grand_total || matchingInv.total_amount || 0);
+          const invPaid = parseFloat(matchingInv.paid_amount || 0);
+          const invPending = parseFloat(matchingInv.pending_amount !== undefined ? matchingInv.pending_amount : Math.max(0, invTotal - invPaid));
+          if (invPending <= 0 || matchingInv.payment_status === 'PAID') {
+            return; // Fully paid invoice exists! Never show in Khata Book
+          }
+        }
+
+        // 2. Check if already added to khataList
         const alreadyInInvoices = khataList.some(i => String(i.job_id || i.invoice_id || '').replace(/^(inv_|job_|khata_|booking_)/, '') === rawId || (veh && (i.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase() === veh));
         if (alreadyInInvoices) return;
 
+        // 3. Check if job itself is fully paid
         const partsVal = parseFloat(job.parts_total || 0);
         const labourVal = parseFloat(job.labour_charge || 0);
         const discountVal = parseFloat(job.discount_amount || job.discount || 0);
         const totalVal = parseFloat(job.grand_total || job.live_total || Math.max(0, partsVal + labourVal - discountVal));
-        
         let directPaid = parseFloat(job.paid_amount !== undefined && job.paid_amount !== null ? job.paid_amount : (job.payment_status === 'PAID' ? totalVal : 0));
-        const extraCredits = Math.max(
-          rawId ? (creditMap.get(`job_${rawId}`) || 0) : 0,
-          veh ? (creditMap.get(`veh_${veh}`) || 0) : 0
-        );
-        const totalPaid = Math.min(totalVal, Math.max(directPaid, extraCredits));
+        if (matchingInv) {
+          directPaid = Math.max(directPaid, parseFloat(matchingInv.paid_amount || 0));
+        }
+        const totalPaid = Math.min(totalVal, directPaid);
         const pendingVal = Math.max(0, totalVal - totalPaid);
 
-        // ONLY filter out if pending amount is 0
-        if (pendingVal <= 0) return;
+        if (pendingVal <= 0 || job.payment_status === 'PAID') return;
 
         const itemDate = job.finished_at || job.completed_at || job.created_at || new Date().toISOString();
         const formattedDate = new Date(itemDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -355,19 +373,11 @@ export default function KhataBookPage() {
 
       // 3. Process DEBIT Khata entries (only if not already processed in invoices/jobs)
       combinedKhata.filter(k => k && k.type === 'DEBIT').forEach(k => {
-        if (!k || isDeleted(k.id) || isDeleted(k.job_id)) return;
+        if (!k || isDeleted(k.id, k.vehicle_number, k.invoice_number) || isDeleted(k.job_id, k.vehicle_number, k.invoice_number)) return;
         const rawId = String(k.job_id || k.id || '').replace(/^(inv_|job_|khata_|booking_)/, '');
         const veh = (k.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
         
-        // 1. Check if already processed in khataList
-        const alreadyInList = khataList.some(item => {
-          const itemRaw = String(item.job_id || item.invoice_id || item.id || '').replace(/^(inv_|job_|khata_|booking_)/, '');
-          const itemVeh = (item.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-          return itemRaw === rawId || (veh && itemVeh === veh);
-        });
-        if (alreadyInList) return;
-
-        // 2. Check if invoice exists and is already fully paid
+        // 1. Check if invoice exists and is already fully paid
         const matchingInv = combinedInvs.find(i => {
           if (!i) return false;
           const iRaw = String(i.job_id || i.id || '').replace(/^(inv_|job_|khata_|booking_)/g, '');
@@ -383,7 +393,7 @@ export default function KhataBookPage() {
           }
         }
 
-        // 3. Check if job exists and is already fully paid
+        // 2. Check if job exists and is already fully paid
         const matchingJob = combinedJobs.find(j => {
           if (!j) return false;
           const jRaw = String(j.id || '').replace(/^(inv_|job_|khata_|booking_)/g, '');
@@ -399,13 +409,22 @@ export default function KhataBookPage() {
           }
         }
 
+        // 3. Check if already processed in khataList
+        const alreadyInList = khataList.some(item => {
+          const itemRaw = String(item.job_id || item.invoice_id || item.id || '').replace(/^(inv_|job_|khata_|booking_)/, '');
+          const itemVeh = (item.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+          return itemRaw === rawId || (veh && itemVeh === veh);
+        });
+        if (alreadyInList) return;
+
         const billed = parseFloat(k.total_billed !== undefined ? k.total_billed : (k.amount || k.grand_total || k.total_amount || 0));
         let directPaid = parseFloat(k.total_paid !== undefined ? k.total_paid : (k.paid_amount || 0));
-        const extraCredits = Math.max(
-          rawId ? (creditMap.get(`job_${rawId}`) || 0) : 0,
-          veh ? (creditMap.get(`veh_${veh}`) || 0) : 0
-        );
-        const totalPaid = Math.min(billed, Math.max(directPaid, extraCredits));
+        if (matchingInv) {
+          directPaid = Math.max(directPaid, parseFloat(matchingInv.paid_amount || 0));
+        } else if (matchingJob) {
+          directPaid = Math.max(directPaid, parseFloat(matchingJob.paid_amount || 0));
+        }
+        const totalPaid = Math.min(billed, directPaid);
         const pending = Math.max(0, billed - totalPaid);
         const discountVal = parseFloat(k.discount_amount || k.discount || 0);
 

@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { BarChart3, IndianRupee, Package, Users, TrendingUp, AlertCircle, Wrench, ShoppingBag, PieChart } from 'lucide-react';
 import API from '../services/api';
-import { fetchCloudDeletedIds, fetchCloudInvoices, fetchCloudInventory } from '../utils/cloudSync';
+import { fetchMasterStore } from '../utils/cloudSync';
 
 const computeInstantReports = () => {
   try {
     const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
     const localInvoices = JSON.parse(localStorage.getItem('local_invoices') || '[]');
-    const localInventory = JSON.parse(localStorage.getItem('local_inventory') || localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
+    const localInventory = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
     const localCounterSales = JSON.parse(localStorage.getItem('local_counter_sales') || '[]');
     const localCounterKhata = JSON.parse(localStorage.getItem('local_counter_khata') || '[]');
+    const localKhataEntries = JSON.parse(localStorage.getItem('khata_entries') || '[]');
     const deletedIds = JSON.parse(localStorage.getItem('deleted_ids') || '[]');
 
     const isDeleted = (id) => id && (deletedIds.includes(String(id)) || deletedIds.includes(String(id).replace(/^inv_/, '').replace(/^job_/, '')));
@@ -18,11 +19,17 @@ const computeInstantReports = () => {
     localInvoices.forEach(inv => {
       if (inv && !isDeleted(inv.id) && !isDeleted(inv.invoice_number)) {
         const key = String(inv.id || inv.invoice_number || inv.job_id);
+        const grandVal = parseFloat(inv.grand_total || inv.total_amount || 0);
+        const rawPaid = parseFloat(inv.paid_amount !== undefined && inv.paid_amount !== null ? inv.paid_amount : (inv.received_amount || (inv.payment_status === 'PAID' ? grandVal : 0)));
+        const paidVal = Math.min(grandVal, Math.max(0, rawPaid));
+        const pendingVal = inv.pending_amount !== undefined ? parseFloat(inv.pending_amount) : Math.max(0, grandVal - paidVal);
+
         allMap.set(key, {
           ...inv,
-          grand_total: parseFloat(inv.grand_total || inv.total_amount || 0),
-          paid_amount: parseFloat(inv.paid_amount !== undefined ? inv.paid_amount : (inv.grand_total || inv.total_amount || 0)),
-          pending_amount: parseFloat(inv.pending_amount !== undefined ? inv.pending_amount : 0),
+          grand_total: grandVal,
+          paid_amount: paidVal,
+          pending_amount: pendingVal,
+          discount_amount: parseFloat(inv.discount_amount || inv.discount || 0),
           created_at: inv.created_at || new Date().toISOString()
         });
       }
@@ -31,12 +38,24 @@ const computeInstantReports = () => {
     const finishedJobs = localJobs.filter(j => j && (j.status === 'FINISHED' || j.status === 'COMPLETED') && !isDeleted(j.id) && !isDeleted(j.vehicle_number));
     finishedJobs.forEach((j, idx) => {
       const key = `bill_${j.id || idx}`;
-      if (!allMap.has(key) && !allMap.has(String(j.id))) {
+      const strJobId = String(j.id || '');
+      const strVehNum = String(j.vehicle_number || '').trim().toLowerCase();
+
+      const alreadyHasInvoice = Array.from(allMap.values()).some(inv => {
+        if (!inv) return false;
+        const invJobId = String(inv.job_id || inv.id || '');
+        const invVeh = String(inv.vehicle_number || '').trim().toLowerCase();
+        return (strJobId && invJobId && (invJobId === strJobId || invJobId.includes(strJobId))) ||
+               (strVehNum && invVeh && strVehNum === invVeh);
+      });
+
+      if (!alreadyHasInvoice && !allMap.has(key) && !allMap.has(strJobId)) {
         const partsVal = parseFloat(j.parts_total || 0);
         const labourVal = parseFloat(j.labour_charge || 100);
-        const discountVal = parseFloat(j.discount_amount || 0);
+        const discountVal = parseFloat(j.discount_amount || j.discount || 0);
         const totalVal = parseFloat(j.grand_total || j.total_amount || j.live_total || Math.max(0, partsVal + labourVal - discountVal));
-        const paidVal = j.paid_amount !== undefined ? parseFloat(j.paid_amount) : totalVal;
+        const rawPaid = j.paid_amount !== undefined ? parseFloat(j.paid_amount) : totalVal;
+        const paidVal = Math.min(totalVal, Math.max(0, rawPaid));
         const pendingVal = j.pending_amount !== undefined ? parseFloat(j.pending_amount) : Math.max(0, totalVal - paidVal);
 
         allMap.set(key, {
@@ -50,6 +69,7 @@ const computeInstantReports = () => {
           total_amount: totalVal,
           paid_amount: paidVal,
           pending_amount: pendingVal,
+          discount_amount: discountVal,
           payment_status: pendingVal > 0 ? 'PENDING' : 'PAID',
           created_at: j.finished_at || j.completed_at || j.created_at || new Date().toISOString()
         });
@@ -105,20 +125,36 @@ const computeInstantReports = () => {
 
     const cleanCounterSales = localCounterSales.filter(s => s && s.id && !isDeleted(s.id) && !isDeleted(String(s.id).replace(/^cs_/, '')));
     const cleanCounterKhata = localCounterKhata.filter(k => k && k.id && !isDeleted(k.id) && !isDeleted(k.sale_id) && !isDeleted(String(k.id).replace(/^ckhata_/, '')));
+    const cleanKhataEntries = localKhataEntries.filter(k => k && k.id && !isDeleted(k.id) && !isDeleted(String(k.id).replace(/^khata_/, '')));
 
-    // 1. Workshop Revenues
+    // 1. Workshop Revenues (Collected Paid Amounts - identical to Dashboard)
     const workshopDailyRevenue = allInvoices
       .filter(inv => isToday(inv.created_at || inv.visit_date || inv.date))
-      .reduce((acc, inv) => acc + parseFloat(inv.paid_amount || inv.grand_total || 0), 0);
+      .reduce((acc, inv) => {
+        const grandVal = parseFloat(inv.grand_total || inv.total_amount || 0);
+        const rawPaid = parseFloat(inv.paid_amount !== undefined && inv.paid_amount !== null ? inv.paid_amount : (inv.received_amount || (inv.payment_status === 'PAID' ? grandVal : 0)));
+        const paidVal = Math.min(grandVal, Math.max(0, rawPaid));
+        return acc + paidVal;
+      }, 0);
 
     const workshopMonthlyRevenue = allInvoices
       .filter(inv => isThisMonth(inv.created_at || inv.visit_date || inv.date))
-      .reduce((acc, inv) => acc + parseFloat(inv.paid_amount || inv.grand_total || 0), 0);
+      .reduce((acc, inv) => {
+        const grandVal = parseFloat(inv.grand_total || inv.total_amount || 0);
+        const rawPaid = parseFloat(inv.paid_amount !== undefined && inv.paid_amount !== null ? inv.paid_amount : (inv.received_amount || (inv.payment_status === 'PAID' ? grandVal : 0)));
+        const paidVal = Math.min(grandVal, Math.max(0, rawPaid));
+        return acc + paidVal;
+      }, 0);
 
     const workshopTotalRevenue = allInvoices
-      .reduce((acc, inv) => acc + parseFloat(inv.paid_amount || inv.grand_total || 0), 0);
+      .reduce((acc, inv) => {
+        const grandVal = parseFloat(inv.grand_total || inv.total_amount || 0);
+        const rawPaid = parseFloat(inv.paid_amount !== undefined && inv.paid_amount !== null ? inv.paid_amount : (inv.received_amount || (inv.payment_status === 'PAID' ? grandVal : 0)));
+        const paidVal = Math.min(grandVal, Math.max(0, rawPaid));
+        return acc + paidVal;
+      }, 0);
 
-    // 2. Counter Sales Revenues
+    // 2. Counter Sales Revenues (Collected Paid Amounts - identical to Dashboard)
     const counterDailyRevenue = cleanCounterSales
       .filter(s => isToday(s.created_at || s.date))
       .reduce((acc, s) => acc + parseFloat(s.paid_amount || s.net_total || 0), 0);
@@ -138,24 +174,29 @@ const computeInstantReports = () => {
     // 4. Inventory Valuation
     const cleanInv = localInventory.filter(i => i && !isDeleted(i.id) && !isDeleted(i.part_name));
     const inventoryValue = cleanInv.reduce((acc, item) => {
-      const price = parseFloat(item.selling_price || item.unit_price || item.price || 0);
+      const price = parseFloat(item.price || item.selling_price || item.unit_price || 0);
       const stock = parseInt(item.current_stock || item.stock_quantity || item.quantity || 0, 10);
       return acc + (price * stock);
     }, 0);
 
-    // 5. Total Pending Dues (Workshop + Counter Khata)
+    // 5. Total Pending Dues (Workshop + Counter Khata + General Khata)
     const workshopPending = allInvoices.reduce((acc, inv) => {
       const grandVal = parseFloat(inv.grand_total || inv.total_amount || 0);
       const rawPaid = parseFloat(inv.paid_amount !== undefined && inv.paid_amount !== null ? inv.paid_amount : (inv.received_amount || (inv.payment_status === 'PAID' ? grandVal : 0)));
       const paidVal = Math.min(grandVal, Math.max(0, rawPaid));
-      return acc + Math.max(0, grandVal - paidVal);
+      const pendingVal = inv.pending_amount !== undefined ? parseFloat(inv.pending_amount) : Math.max(0, grandVal - paidVal);
+      return acc + (isNaN(pendingVal) ? 0 : Math.max(0, pendingVal));
     }, 0);
 
     const counterPending = cleanCounterKhata
-      .filter(k => k && k.status !== 'CLEARED')
-      .reduce((acc, k) => acc + parseFloat(k.pending_amount || 0), 0);
+      .filter(k => k && String(k.status).toUpperCase() !== 'PAID' && parseFloat(k.pending_amount || 0) > 0)
+      .reduce((acc, k) => acc + (parseFloat(k.pending_amount || 0) || 0), 0);
 
-    const totalPendingDues = workshopPending + counterPending;
+    const generalKhataPending = cleanKhataEntries
+      .filter(k => k && String(k.status).toUpperCase() !== 'PAID' && parseFloat(k.pending_amount || 0) > 0)
+      .reduce((acc, k) => acc + (parseFloat(k.pending_amount || 0) || 0), 0);
+
+    const totalPendingDues = workshopPending + counterPending + generalKhataPending;
 
     return {
       daily_revenue: totalDailyRevenue,
@@ -174,7 +215,7 @@ const computeInstantReports = () => {
       total_inventory_value: inventoryValue,
       total_inventory_items: cleanInv.length,
       workshop_pending: workshopPending,
-      counter_pending: counterPending,
+      counter_pending: counterPending + generalKhataPending,
       total_pending_payments: totalPendingDues
     };
   } catch (err) {
@@ -222,10 +263,20 @@ export default function ReportsPage() {
     const handleStorage = () => setReports(computeInstantReports());
     window.addEventListener('storage', handleStorage);
     window.addEventListener('master_store_updated', handleStorage);
+    window.addEventListener('khata_updated', handleStorage);
+    window.addEventListener('invoices_updated', handleStorage);
+    window.addEventListener('counter_khata_updated', handleStorage);
+    window.addEventListener('counter_sales_updated', handleStorage);
+    window.addEventListener('inventory_updated', handleStorage);
     return () => {
       clearInterval(interval);
       window.removeEventListener('storage', handleStorage);
       window.removeEventListener('master_store_updated', handleStorage);
+      window.removeEventListener('khata_updated', handleStorage);
+      window.removeEventListener('invoices_updated', handleStorage);
+      window.removeEventListener('counter_khata_updated', handleStorage);
+      window.removeEventListener('counter_sales_updated', handleStorage);
+      window.removeEventListener('inventory_updated', handleStorage);
     };
   }, []);
 

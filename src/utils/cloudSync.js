@@ -589,86 +589,82 @@ export async function fetchCloudInventory() {
 
 export async function pushCloudInventoryItem(newItem) {
   if (!newItem || typeof newItem !== 'object') return;
-
-  const newId = String(newItem.id || '');
+  const rawId = String(newItem.id || '').trim();
   const rawName = String(newItem.part_name || newItem.item_name || newItem.name || '').trim();
   const newName = rawName.toLowerCase();
   const newNorm = newName.replace(/[^a-z0-9]/g, '');
+  const newId = rawId || `inv_${newNorm || Date.now()}`;
+
+  const stockVal = parseInt(newItem.current_stock !== undefined ? newItem.current_stock : (newItem.stock_quantity !== undefined ? newItem.stock_quantity : (newItem.quantity !== undefined ? newItem.quantity : 0)), 10);
+  const priceVal = parseFloat(newItem.price || newItem.selling_price || newItem.unit_price || 0);
+
   const stampedItem = {
     ...newItem,
+    id: newId,
     part_name: rawName,
     item_name: rawName,
     name: rawName,
-    updated_at: newItem.updated_at || new Date().toISOString()
+    current_stock: stockVal,
+    stock_quantity: stockVal,
+    quantity: stockVal,
+    price: priceVal,
+    unit_price: priceVal,
+    selling_price: priceVal,
+    updated_at: new Date().toISOString()
   };
 
   const isMatchItem = (i) => {
     if (!i) return false;
-    const curId = String(i.id || '');
+    const curId = String(i.id || '').trim();
     const curRaw = String(i.part_name || i.item_name || i.name || '').trim();
     const curName = curRaw.toLowerCase();
     const curNorm = curName.replace(/[^a-z0-9]/g, '');
-    return (newId && curId && newId === curId) || (newNorm && curNorm && newNorm === curNorm) || (newName && curName && newName === curName);
+    return (newId && curId && newId.toLowerCase() === curId.toLowerCase()) || 
+           (newNorm && curNorm && newNorm === curNorm) || 
+           (newName && curName && newName === curName);
   };
 
-  // 1. Remove from local deleted_ids, deleted_item_ids, and recycle_bin_items
+  // 1. Remove from all local and cloud deletion lists
+  const isDeletedMatch = (d) => {
+    if (!d) return false;
+    const dStr = String(d).toLowerCase().trim();
+    const dNorm = dStr.replace(/[^a-z0-9]/g, '');
+    return dStr === newId.toLowerCase() || dStr === newName || (newNorm && dNorm && dNorm === newNorm);
+  };
+
   const localDeleted = JSON.parse(localStorage.getItem('deleted_ids') || '[]');
   const localDeletedItems = JSON.parse(localStorage.getItem('deleted_item_ids') || '[]');
   const localTrash = JSON.parse(localStorage.getItem('recycle_bin_items') || '[]');
 
-  const cleanedLocalDeleted = localDeleted.filter(d => {
-    if (!d) return false;
-    const dStr = String(d).toLowerCase().trim();
-    const dNorm = dStr.replace(/[^a-z0-9]/g, '');
-    return dStr !== newId.toLowerCase() && dStr !== newName && dNorm !== newNorm;
-  });
-  const cleanedLocalDeletedItems = localDeletedItems.filter(d => {
-    if (!d) return false;
-    const dStr = String(d).toLowerCase().trim();
-    const dNorm = dStr.replace(/[^a-z0-9]/g, '');
-    return dStr !== newId.toLowerCase() && dStr !== newName && dNorm !== newNorm;
-  });
-  const cleanedLocalTrash = localTrash.filter(t => {
-    if (!t) return false;
-    const tTitle = String(t.title || '').toLowerCase().trim();
-    const tNorm = tTitle.replace(/[^a-z0-9]/g, '');
-    return tTitle !== newName && tNorm !== newNorm;
-  });
+  const cleanedLocalDeleted = localDeleted.filter(d => !isDeletedMatch(d));
+  const cleanedLocalDeletedItems = localDeletedItems.filter(d => !isDeletedMatch(d));
+  const cleanedLocalTrash = localTrash.filter(t => !isDeletedMatch(t?.title) && !isDeletedMatch(t?.payload?.id) && !isDeletedMatch(t?.payload?.part_name));
 
   localStorage.setItem('deleted_ids', JSON.stringify(cleanedLocalDeleted));
   localStorage.setItem('deleted_item_ids', JSON.stringify(cleanedLocalDeletedItems));
   localStorage.setItem('recycle_bin_items', JSON.stringify(cleanedLocalTrash));
 
-  // 2. Update all local storages
+  // 2. Update local storages immediately
   const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
-  const existsLocal = localInv.some(isMatchItem);
-  let updatedLocal = existsLocal 
-    ? localInv.map(i => isMatchItem(i) ? { ...i, ...stampedItem } : i)
-    : [stampedItem, ...localInv];
+  const filteredLocal = localInv.filter(i => !isMatchItem(i));
+  const updatedLocal = [stampedItem, ...filteredLocal];
 
   localStorage.setItem('inventory_items', JSON.stringify(updatedLocal));
   localStorage.setItem('spare_parts', JSON.stringify(updatedLocal));
   localStorage.setItem('local_inventory', JSON.stringify(updatedLocal));
 
-  // 3. Save to master_store
-  const store = await fetchMasterStore();
+  // 3. Save to master store and clear from cloud deletedIds
+  const store = await fetchMasterStore(true);
   const cloudDeleted = Array.isArray(store.deletedIds) ? store.deletedIds : [];
-  const cleanedCloudDeleted = cloudDeleted.filter(d => {
-    if (!d) return false;
-    const dStr = String(d).toLowerCase().trim();
-    const dNorm = dStr.replace(/[^a-z0-9]/g, '');
-    return dStr !== newId.toLowerCase() && dStr !== newName && dNorm !== newNorm;
-  });
+  const cleanedCloudDeleted = cloudDeleted.filter(d => !isDeletedMatch(d));
 
   const existing = (store.inventory || []).filter(i => i && typeof i === 'object');
-  const exists = existing.some(isMatchItem);
-  let updated = exists 
-    ? existing.map(i => isMatchItem(i) ? { ...i, ...stampedItem } : i)
-    : [stampedItem, ...existing];
+  const filteredCloud = existing.filter(i => !isMatchItem(i));
+  const updatedCloud = [stampedItem, ...filteredCloud];
 
   await saveMasterStore({
     ...store,
-    inventory: updated,
+    inventory: updatedCloud,
     deletedIds: cleanedCloudDeleted
   });
 
@@ -677,6 +673,8 @@ export async function pushCloudInventoryItem(newItem) {
     window.dispatchEvent(new Event('master_store_updated'));
     window.dispatchEvent(new Event('inventory_updated'));
   } catch (e) {}
+
+  return stampedItem;
 }
 
 export async function moveToRecycleBin(trashObj, inventoryItem) {

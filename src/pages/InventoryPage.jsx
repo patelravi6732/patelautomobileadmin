@@ -72,15 +72,12 @@ export default function InventoryPage() {
     const cleanLocalInv = rawLocalInv.filter(i => !isItemDeleted(i));
     const cleanCloudInv = cloudInv.filter(i => !isItemDeleted(i));
 
-    localStorage.setItem('inventory_items', JSON.stringify(cleanLocalInv));
-    localStorage.setItem('spare_parts', JSON.stringify(cleanLocalInv));
-    localStorage.setItem('local_inventory', JSON.stringify(cleanLocalInv));
-
     const allMap = new Map();
-    [...cleanLocalInv, ...cleanCloudInv].forEach(item => {
+    [...cleanCloudInv, ...cleanLocalInv].forEach(item => {
       if (item && typeof item === 'object' && (item.id || item.part_name || item.name)) {
-        const rawId = String(item.id || `inv_${String(item.part_name || item.name).toLowerCase().replace(/[^a-z0-9]/g, '')}`);
         const rawName = String(item.part_name || item.name || '').trim();
+        const normKey = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const rawId = String(item.id || `inv_${normKey || Date.now()}`);
         const parsedStock = parseInt(item.current_stock !== undefined ? item.current_stock : 0, 10);
         const parsedMin = item.min_stock_alert !== undefined && item.min_stock_alert !== '' ? parseInt(item.min_stock_alert, 10) : 2;
         
@@ -94,30 +91,21 @@ export default function InventoryPage() {
           updated_at: item.updated_at || new Date().toISOString()
         };
 
-        if (!allMap.has(rawId)) {
-          allMap.set(rawId, newItemObj);
-        } else {
-          const existing = allMap.get(rawId);
-          const minStock = Math.min(existing.current_stock, parsedStock);
-          allMap.set(rawId, {
-            ...newItemObj,
-            ...existing,
-            current_stock: minStock,
-            price: newItemObj.price || existing.price || 0
-          });
-        }
+        const mapKey = normKey || rawId;
+        allMap.set(mapKey, newItemObj);
       }
     });
 
-      const finalInvList = Array.from(allMap.values());
-      localStorage.setItem('inventory_items', JSON.stringify(finalInvList));
-      localStorage.setItem('spare_parts', JSON.stringify(finalInvList));
+    const finalInvList = Array.from(allMap.values());
+    localStorage.setItem('inventory_items', JSON.stringify(finalInvList));
+    localStorage.setItem('spare_parts', JSON.stringify(finalInvList));
+    localStorage.setItem('local_inventory', JSON.stringify(finalInvList));
 
-      setItems(finalInvList);
-    } catch (err) {
-      console.warn('fetchInventory notice:', err);
-    } finally {
-      setLoading(false);
+    setItems(finalInvList);
+  } catch (err) {
+    console.warn('fetchInventory notice:', err);
+  } finally {
+    setLoading(false);
     }
   };
 
@@ -177,38 +165,38 @@ export default function InventoryPage() {
 
   const saveNewPart = async (data) => {
     const nowIso = new Date().toISOString();
+    const rawName = String(data.part_name || '').trim();
+    const normName = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
     const newPartObj = {
-      id: `inv_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-      part_name: data.part_name,
+      id: `inv_${normName || Date.now()}`,
+      part_name: rawName,
+      name: rawName,
+      item_name: rawName,
       category: data.category || 'General',
       price: parseFloat(data.price || 0),
+      unit_price: parseFloat(data.price || 0),
+      selling_price: parseFloat(data.price || 0),
       current_stock: parseInt(data.current_stock || 0, 10),
+      stock_quantity: parseInt(data.current_stock || 0, 10),
+      quantity: parseInt(data.current_stock || 0, 10),
       min_stock_alert: data.min_stock_alert !== '' ? parseInt(data.min_stock_alert, 10) : 2,
       created_at: nowIso,
       updated_at: nowIso
     };
 
-    // Remove any historical deletion block matching this part name
-    const rawName = String(data.part_name || '').trim().toLowerCase();
-    const normName = rawName.replace(/[^a-z0-9]/g, '');
-    const localDeleted = JSON.parse(localStorage.getItem('deleted_ids') || '[]');
-    const cleanedDeleted = localDeleted.filter(d => {
-      if (!d) return false;
-      const dStr = String(d).toLowerCase().trim();
-      const dNorm = dStr.replace(/[^a-z0-9]/g, '');
-      return dStr !== rawName && dNorm !== normName;
-    });
-    localStorage.setItem('deleted_ids', JSON.stringify(cleanedDeleted));
+    try {
+      await pushCloudInventoryItem(newPartObj);
+    } catch(e) {
+      console.warn('Cloud inventory push notice:', e);
+    }
 
-    // Save locally and push to cloud bin
-    pushCloudInventoryItem(newPartObj).catch(console.warn);
     const existing = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
-    const updatedLocal = [newPartObj, ...existing.filter(i => i && String(i.id) !== newPartObj.id)];
+    const updatedLocal = [newPartObj, ...existing.filter(i => i && String(i.id) !== newPartObj.id && String(i.part_name || '').toLowerCase() !== rawName.toLowerCase())];
     localStorage.setItem('inventory_items', JSON.stringify(updatedLocal));
     localStorage.setItem('spare_parts', JSON.stringify(updatedLocal));
     localStorage.setItem('local_inventory', JSON.stringify(updatedLocal));
 
-    setItems(prev => [newPartObj, ...prev.filter(i => i && String(i.id) !== newPartObj.id)]);
+    setItems(prev => [newPartObj, ...prev.filter(i => i && String(i.id) !== newPartObj.id && String(i.part_name || '').toLowerCase() !== rawName.toLowerCase())]);
     setShowAddModal(false);
 
     try {
@@ -222,7 +210,7 @@ export default function InventoryPage() {
     } catch (err) {
       console.warn('Backend API offline, added spare part locally and cloud store:', err);
     } finally {
-      alert('New spare part added to inventory!');
+      alert('✅ New spare part added to inventory!');
     }
   };
 

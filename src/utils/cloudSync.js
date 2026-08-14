@@ -166,10 +166,16 @@ export async function fetchMasterStore(forceFresh = false) {
                 const prev = mergedInvMap.get(normKey);
                 const prevTime = new Date(prev.updated_at || 0).getTime();
                 const curTime = new Date(i.updated_at || 0).getTime();
-                const preferred = curTime >= prevTime ? i : prev;
+                const prevStock = parseInt(prev.current_stock !== undefined ? prev.current_stock : (prev.stock_quantity !== undefined ? prev.stock_quantity : (prev.quantity !== undefined ? prev.quantity : 10)), 10);
+                const curStock = parseInt(i.current_stock !== undefined ? i.current_stock : (i.stock_quantity !== undefined ? i.stock_quantity : (i.quantity !== undefined ? i.quantity : 10)), 10);
+                const resolvedStock = curTime > prevTime ? curStock : Math.min(prevStock, curStock);
+                const preferred = curTime > prevTime ? i : prev;
                 mergedInvMap.set(normKey, {
                   ...prev,
                   ...preferred,
+                  current_stock: resolvedStock,
+                  stock_quantity: resolvedStock,
+                  quantity: resolvedStock,
                   part_name: rawName,
                   item_name: rawName,
                   name: rawName

@@ -247,13 +247,12 @@ export async function saveMasterStore(storeData) {
     const localRecycle = JSON.parse(localStorage.getItem('recycle_bin_items') || '[]');
     const localKhata = JSON.parse(localStorage.getItem('khata_entries') || '[]');
     const localCust = JSON.parse(localStorage.getItem('local_customers') || '[]');
-    const localInvList = JSON.parse(localStorage.getItem('local_invoices') || '[]');
-    const allDeletedIds = Array.from(new Set([
-      ...(storeData.deletedIds || []),
-      ...(curCache.deletedIds || []),
-      ...JSON.parse(localStorage.getItem('deleted_ids') || '[]'),
-      ...JSON.parse(localStorage.getItem('deleted_item_ids') || '[]')
-    ])).map(String);
+    const allDeletedIds = Array.isArray(storeData.deletedIds)
+      ? storeData.deletedIds.map(String)
+      : Array.from(new Set([
+          ...(curCache.deletedIds || []),
+          ...JSON.parse(localStorage.getItem('deleted_ids') || '[]')
+        ])).map(String);
 
     const isDeletedItem = (item) => {
       if (!item) return true;

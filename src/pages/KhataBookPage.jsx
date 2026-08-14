@@ -350,12 +350,46 @@ export default function KhataBookPage() {
         if (!k || isDeleted(k.id) || isDeleted(k.job_id)) return;
         const rawId = String(k.job_id || k.id || '').replace(/^(inv_|job_|khata_|booking_)/, '');
         const veh = (k.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+        
+        // 1. Check if already processed in khataList
         const alreadyInList = khataList.some(item => {
           const itemRaw = String(item.job_id || item.invoice_id || item.id || '').replace(/^(inv_|job_|khata_|booking_)/, '');
           const itemVeh = (item.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
           return itemRaw === rawId || (veh && itemVeh === veh);
         });
         if (alreadyInList) return;
+
+        // 2. Check if invoice exists and is already fully paid
+        const matchingInv = combinedInvs.find(i => {
+          if (!i) return false;
+          const iRaw = String(i.job_id || i.id || '').replace(/^(inv_|job_|khata_|booking_)/g, '');
+          const iVeh = (i.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+          return (rawId && iRaw && rawId === iRaw) || (veh && iVeh && veh === iVeh);
+        });
+        if (matchingInv) {
+          const invTotal = parseFloat(matchingInv.grand_total || matchingInv.total_amount || 0);
+          const invPaid = parseFloat(matchingInv.paid_amount || 0);
+          const invPending = parseFloat(matchingInv.pending_amount !== undefined ? matchingInv.pending_amount : Math.max(0, invTotal - invPaid));
+          if (invPending <= 0 || matchingInv.payment_status === 'PAID') {
+            return; // Fully paid invoice! Never show in Khata Book
+          }
+        }
+
+        // 3. Check if job exists and is already fully paid
+        const matchingJob = combinedJobs.find(j => {
+          if (!j) return false;
+          const jRaw = String(j.id || '').replace(/^(inv_|job_|khata_|booking_)/g, '');
+          const jVeh = (j.vehicle_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+          return (rawId && jRaw && rawId === jRaw) || (veh && jVeh && veh === jVeh);
+        });
+        if (matchingJob) {
+          const jobTotal = parseFloat(matchingJob.grand_total || matchingJob.live_total || 0);
+          const jobPaid = parseFloat(matchingJob.paid_amount || 0);
+          const jobPending = parseFloat(matchingJob.pending_amount !== undefined ? matchingJob.pending_amount : Math.max(0, jobTotal - jobPaid));
+          if (jobPending <= 0 || matchingJob.payment_status === 'PAID') {
+            return; // Fully paid job! Never show in Khata Book
+          }
+        }
 
         const billed = parseFloat(k.total_billed !== undefined ? k.total_billed : (k.amount || k.grand_total || k.total_amount || 0));
         let directPaid = parseFloat(k.total_paid !== undefined ? k.total_paid : (k.paid_amount || 0));

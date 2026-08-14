@@ -1777,16 +1777,18 @@ export async function atomicDeductInventoryStock({ partId, partName, quantity })
     const itName = String(item.part_name || item.item_name || item.name || '').trim().toLowerCase();
     const itNorm = itName.replace(/[^a-z0-9]/g, '');
     return (targetId && itId && targetId === itId) ||
-           (normName && itNorm && (normName === itNorm || normName.includes(itNorm) || itNorm.includes(normName))) ||
-           (rawName && itName && rawName === itName);
+           (normName && itNorm && normName === itNorm);
   };
 
   // 1. Update local storage (Deduct EXACTLY ONCE)
   const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
   let updatedTargetItem = null;
+  let hasDeducted = false;
+
   const updatedLocal = localInv.map(i => {
-    if (isMatch(i)) {
-      const curStock = parseInt(i.current_stock !== undefined ? i.current_stock : (i.stock_quantity !== undefined ? i.stock_quantity : (i.quantity !== undefined ? i.quantity : 10)), 10);
+    if (isMatch(i) && !hasDeducted) {
+      hasDeducted = true;
+      const curStock = parseInt(i.current_stock !== undefined ? i.current_stock : (i.stock_quantity !== undefined ? i.stock_quantity : (i.quantity !== undefined ? i.quantity : 0)), 10);
       const newStock = Math.max(0, curStock - qty);
       const updated = {
         ...i,
@@ -1809,9 +1811,11 @@ export async function atomicDeductInventoryStock({ partId, partName, quantity })
   try {
     const store = await fetchMasterStore();
     const cloudInv = (store.inventory || []).filter(i => i && typeof i === 'object');
+    let hasCloudDeducted = false;
     const updatedCloud = cloudInv.map(i => {
-      if (isMatch(i)) {
-        const curStock = parseInt(i.current_stock !== undefined ? i.current_stock : (i.stock_quantity !== undefined ? i.stock_quantity : (i.quantity !== undefined ? i.quantity : 10)), 10);
+      if (isMatch(i) && !hasCloudDeducted) {
+        hasCloudDeducted = true;
+        const curStock = parseInt(i.current_stock !== undefined ? i.current_stock : (i.stock_quantity !== undefined ? i.stock_quantity : (i.quantity !== undefined ? i.quantity : 0)), 10);
         const newStock = Math.max(0, curStock - qty);
         return {
           ...i,
@@ -1855,15 +1859,17 @@ export async function atomicRestoreInventoryStock({ partId, partName, quantity }
     const itName = String(item.part_name || item.item_name || item.name || '').trim().toLowerCase();
     const itNorm = itName.replace(/[^a-z0-9]/g, '');
     return (targetId && itId && targetId === itId) ||
-           (normName && itNorm && (normName === itNorm || normName.includes(itNorm) || itNorm.includes(normName))) ||
-           (rawName && itName && rawName === itName);
+           (normName && itNorm && normName === itNorm);
   };
 
   // 1. Update local storage (Restore EXACTLY ONCE)
   const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
   let updatedTargetItem = null;
+  let hasRestored = false;
+
   const updatedLocal = localInv.map(i => {
-    if (isMatch(i)) {
+    if (isMatch(i) && !hasRestored) {
+      hasRestored = true;
       const curStock = parseInt(i.current_stock !== undefined ? i.current_stock : (i.stock_quantity !== undefined ? i.stock_quantity : (i.quantity !== undefined ? i.quantity : 0)), 10);
       const newStock = curStock + qty;
       const updated = {
@@ -1887,8 +1893,10 @@ export async function atomicRestoreInventoryStock({ partId, partName, quantity }
   try {
     const store = await fetchMasterStore();
     const cloudInv = (store.inventory || []).filter(i => i && typeof i === 'object');
+    let hasCloudRestored = false;
     const updatedCloud = cloudInv.map(i => {
-      if (isMatch(i)) {
+      if (isMatch(i) && !hasCloudRestored) {
+        hasCloudRestored = true;
         const curStock = parseInt(i.current_stock !== undefined ? i.current_stock : (i.stock_quantity !== undefined ? i.stock_quantity : (i.quantity !== undefined ? i.quantity : 0)), 10);
         const newStock = curStock + qty;
         return {

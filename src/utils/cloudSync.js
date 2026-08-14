@@ -611,15 +611,33 @@ export async function pushCloudInventoryItem(newItem) {
     return (newId && curId && newId === curId) || (newNorm && curNorm && newNorm === curNorm) || (newName && curName && newName === curName);
   };
 
-  // 1. Remove from local deleted_ids and cloud deletedIds
+  // 1. Remove from local deleted_ids, deleted_item_ids, and recycle_bin_items
   const localDeleted = JSON.parse(localStorage.getItem('deleted_ids') || '[]');
+  const localDeletedItems = JSON.parse(localStorage.getItem('deleted_item_ids') || '[]');
+  const localTrash = JSON.parse(localStorage.getItem('recycle_bin_items') || '[]');
+
   const cleanedLocalDeleted = localDeleted.filter(d => {
     if (!d) return false;
     const dStr = String(d).toLowerCase().trim();
     const dNorm = dStr.replace(/[^a-z0-9]/g, '');
     return dStr !== newId.toLowerCase() && dStr !== newName && dNorm !== newNorm;
   });
+  const cleanedLocalDeletedItems = localDeletedItems.filter(d => {
+    if (!d) return false;
+    const dStr = String(d).toLowerCase().trim();
+    const dNorm = dStr.replace(/[^a-z0-9]/g, '');
+    return dStr !== newId.toLowerCase() && dStr !== newName && dNorm !== newNorm;
+  });
+  const cleanedLocalTrash = localTrash.filter(t => {
+    if (!t) return false;
+    const tTitle = String(t.title || '').toLowerCase().trim();
+    const tNorm = tTitle.replace(/[^a-z0-9]/g, '');
+    return tTitle !== newName && tNorm !== newNorm;
+  });
+
   localStorage.setItem('deleted_ids', JSON.stringify(cleanedLocalDeleted));
+  localStorage.setItem('deleted_item_ids', JSON.stringify(cleanedLocalDeletedItems));
+  localStorage.setItem('recycle_bin_items', JSON.stringify(cleanedLocalTrash));
 
   // 2. Update all local storages
   const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');

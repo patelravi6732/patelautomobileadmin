@@ -817,7 +817,7 @@ export default function CounterSalePage() {
     }
   };
 
-  // Handle Save New Part
+  // Handle Save New Part (Adds to Main Inventory & Catalog, NEVER automatically to Cart)
   const handleSaveNewPart = async (e) => {
     e.preventDefault();
     if (!newPartForm.part_name.trim()) {
@@ -835,22 +835,32 @@ export default function CounterSalePage() {
 
     setAddingPart(true);
     try {
-      const createdItem = await atomicAddInventoryItem({
-        name: newPartForm.part_name.trim(),
-        part_name: newPartForm.part_name.trim(),
-        item_name: newPartForm.part_name.trim(),
+      const rawName = newPartForm.part_name.trim();
+      const normKey = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const priceVal = parseFloat(newPartForm.price) || 0;
+      const stockVal = parseInt(newPartForm.current_stock, 10) || 0;
+      const minStock = parseInt(newPartForm.min_stock_alert || 5, 10) || 5;
+
+      const newPartObj = {
+        id: `inv_${normKey || Date.now()}`,
+        name: rawName,
+        part_name: rawName,
+        item_name: rawName,
         category: newPartForm.category || 'General',
-        price: parseFloat(newPartForm.price),
-        unit_price: parseFloat(newPartForm.price),
-        selling_price: parseFloat(newPartForm.price),
-        current_stock: parseInt(newPartForm.current_stock, 10),
-        stock_quantity: parseInt(newPartForm.current_stock, 10),
-        min_stock_alert: parseInt(newPartForm.min_stock_alert || 5, 10)
-      });
+        price: priceVal,
+        unit_price: priceVal,
+        selling_price: priceVal,
+        current_stock: stockVal,
+        stock_quantity: stockVal,
+        quantity: stockVal,
+        min_stock_alert: minStock,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
 
-      handleAddToCart(createdItem);
+      await pushCloudInventoryItem(newPartObj);
 
-      alert(`✅ '${createdItem.part_name || createdItem.name}' added to Inventory and added to cart!`);
+      alert(`✅ '${rawName}' successfully added to Main Inventory and Catalog!`);
       setShowAddPartModal(false);
       setNewPartForm({
         part_name: '',

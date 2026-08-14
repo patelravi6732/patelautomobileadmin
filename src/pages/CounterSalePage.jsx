@@ -531,11 +531,16 @@ export default function CounterSalePage() {
     setCartItems(updatedCart);
   };
 
-  // Remove Item from Cart (Restores Confirmed Stock back to Inventory)
+  // Remove Item from Cart (0ms Instant UI Response + Restores Confirmed Stock back to Inventory)
   const handleRemoveFromCart = async (itemId) => {
     const itemToRemove = cartItems.find(i => String(i.id) === String(itemId));
     if (!itemToRemove) return;
 
+    // 1. Immediately remove from UI state at 0ms (first click response)
+    const nextCart = cartItems.filter(i => String(i.id) !== String(itemId));
+    setCartItems(nextCart);
+
+    // 2. Restore stock if the item was already deducted/confirmed
     const returnQty = parseInt(itemToRemove.deducted_qty !== undefined ? itemToRemove.deducted_qty : (itemToRemove.is_deducted ? itemToRemove.quantity : 0), 10);
 
     if (returnQty > 0) {
@@ -550,69 +555,41 @@ export default function CounterSalePage() {
         console.warn('Error restoring stock on cart remove:', e);
       }
     }
-
-    const nextCart = cartItems.filter(i => String(i.id) !== String(itemId));
-    setCartItems(nextCart);
   };
 
-  // Clear Cart Completely (Restores Stock if parts were already confirmed)
+  // Clear Cart Completely (0ms Instant UI Reset for Cart, Customer Name, Mobile Number + Restores Stock)
   const handleClearCart = async () => {
-    if (!window.confirm('Are you sure you want to clear the active cart?')) return;
+    if (cartItems.length === 0 && !customerName && !customerPhone) return;
+    if (!window.confirm('Are you sure you want to clear the active cart and customer details?')) return;
 
-    const confirmedItems = cartItems.filter(i => i && i.is_deducted);
-    if (confirmedItems.length > 0) {
+    const itemsToRestore = cartItems.filter(i => i && (i.is_deducted || (i.deducted_qty && i.deducted_qty > 0)));
+
+    // 1. Clear all inputs and cart immediately at 0ms
+    setCartItems([]);
+    setCustomerName('');
+    setCustomerPhone('');
+    setDiscount('');
+    localStorage.removeItem('counter_sale_draft');
+    pushCloudActiveCounterCart(null).catch(() => null);
+
+    // 2. Restore any confirmed items back to inventory stock
+    if (itemsToRestore.length > 0) {
       try {
-        const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
-        const cloudInv = await fetchCloudInventory().catch(() => []);
-        const allInvMap = new Map();
-        [...cloudInv, ...localInv].forEach(item => {
-          if (item && (item.id || item.part_name || item.item_name || item.name)) {
-            const rawName = String(item.part_name || item.item_name || item.name || '').trim();
-            const key = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
-            if (!allInvMap.has(key)) allInvMap.set(key, item);
+        for (const itemToRemove of itemsToRestore) {
+          const returnQty = parseInt(itemToRemove.deducted_qty !== undefined ? itemToRemove.deducted_qty : (itemToRemove.is_deducted ? itemToRemove.quantity : 0), 10);
+          if (returnQty > 0) {
+            await atomicRestoreInventoryStock({
+              partId: itemToRemove.inventory_id || itemToRemove.part_id || itemToRemove.id,
+              partName: itemToRemove.part_name || itemToRemove.item_name || itemToRemove.name,
+              quantity: returnQty
+            });
           }
-        });
-
-        let invList = Array.from(allInvMap.values());
-        confirmedItems.forEach(itemToRemove => {
-          const pId = String(itemToRemove.inventory_id || itemToRemove.part_id || itemToRemove.id || '').replace(/[^a-z0-9]/g, '');
-          const pName = String(itemToRemove.part_name || itemToRemove.item_name || itemToRemove.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase().trim();
-          const returnQty = parseInt(itemToRemove.quantity || 1, 10);
-
-          invList = invList.map(invItem => {
-            if (!invItem) return invItem;
-            const invId = String(invItem.id || '').replace(/[^a-z0-9]/g, '');
-            const invName = String(invItem.part_name || invItem.item_name || invItem.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase().trim();
-            const isMatch = (pId && invId && pId === invId) || (pName && invName && (pName === invName || pName.includes(invName) || invName.includes(pName)));
-            if (isMatch) {
-              const cur = parseInt(invItem.current_stock !== undefined ? invItem.current_stock : (invItem.stock_quantity !== undefined ? invItem.stock_quantity : (invItem.quantity !== undefined ? invItem.quantity : 0)), 10);
-              const restored = cur + returnQty;
-              const updated = { ...invItem, current_stock: restored, stock_quantity: restored, quantity: restored, updated_at: new Date().toISOString() };
-              pushCloudInventoryItem(updated).catch(console.warn);
-              return updated;
-            }
-            return invItem;
-          });
-        });
-
-        localStorage.setItem('inventory_items', JSON.stringify(invList));
-        localStorage.setItem('spare_parts', JSON.stringify(invList));
-        localStorage.setItem('local_inventory', JSON.stringify(invList));
-        setInventory(invList);
-        await syncCloudInventory(invList).catch(console.warn);
-        try {
-          window.dispatchEvent(new Event('inventory_updated'));
-          window.dispatchEvent(new Event('master_store_updated'));
-        } catch (e) {}
-        loadInventory();
+        }
+        await loadInventory();
       } catch (e) {
         console.warn('Error restoring stock on clear cart:', e);
       }
     }
-
-    setCartItems([]);
-    localStorage.removeItem('counter_sale_draft');
-    pushCloudActiveCounterCart(null).catch(() => null);
   };
 
   // Submit Counter Sale
@@ -1341,13 +1318,13 @@ Kindly clear your pending balance at your earliest convenience.
                     <Receipt className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600" /> Customer & Billing Cart
                   </h3>
                   <div className="flex items-center gap-2">
-                    {cartItems.length > 0 && (
+                    {(cartItems.length > 0 || customerName || customerPhone) && (
                       <button
                         type="button"
                         onClick={handleClearCart}
-                        className="text-[11px] text-rose-500 hover:text-rose-700 font-bold hover:underline"
+                        className="text-[11px] text-rose-500 hover:text-rose-700 font-bold hover:underline cursor-pointer"
                       >
-                        Clear
+                        Clear Cart
                       </button>
                     )}
                     <span className="px-2 py-0.5 bg-blue-50 text-blue-700 font-bold text-[11px] sm:text-xs rounded-lg font-mono">

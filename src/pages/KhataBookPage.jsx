@@ -197,18 +197,36 @@ export default function KhataBookPage() {
       const localInvs = JSON.parse(localStorage.getItem('local_invoices') || '[]').filter(i => i && !isDeleted(i.id) && !isDeleted(i.invoice_number) && !isDeleted(i.job_id));
       const cloudInvs = (await fetchCloudInvoices().catch(() => [])).filter(i => i && !isDeleted(i.id) && !isDeleted(i.invoice_number) && !isDeleted(i.job_id));
       
+      const getNormInvKey = (inv) => {
+        if (!inv) return '';
+        const id = String(inv.id || '').replace(/^(inv_|job_|khata_|booking_)/g, '').trim();
+        const jId = String(inv.job_id || '').replace(/^(inv_|job_|khata_|booking_)/g, '').trim();
+        const num = String(inv.invoice_number || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+        return jId || id || num;
+      };
+
       const invMap = new Map();
-      // Put cloud invoices first, then local invoices overwrite them so freshest local changes are preserved
-      cloudInvs.forEach(inv => {
-        if (inv && (inv.id || inv.job_id || inv.invoice_number)) {
-          const rawKey = String(inv.job_id || inv.id || inv.invoice_number).replace(/^(inv_|job_|khata_|booking_)/, '');
-          invMap.set(rawKey, inv);
-        }
-      });
-      localInvs.forEach(inv => {
-        if (inv && (inv.id || inv.job_id || inv.invoice_number)) {
-          const rawKey = String(inv.job_id || inv.id || inv.invoice_number).replace(/^(inv_|job_|khata_|booking_)/, '');
-          invMap.set(rawKey, inv);
+      [...cloudInvs, ...localInvs].forEach(inv => {
+        if (inv) {
+          const normKey = getNormInvKey(inv);
+          if (normKey) {
+            const existing = invMap.get(normKey);
+            if (!existing) {
+              invMap.set(normKey, inv);
+            } else {
+              const prevPaid = parseFloat(existing.paid_amount || 0);
+              const curPaid = parseFloat(inv.paid_amount || 0);
+              const preferred = curPaid >= prevPaid ? inv : existing;
+              const maxPaid = Math.max(prevPaid, curPaid);
+              const grand = parseFloat(preferred.grand_total || preferred.total_amount || 0);
+              invMap.set(normKey, {
+                ...existing,
+                ...preferred,
+                paid_amount: maxPaid,
+                pending_amount: Math.max(0, grand - maxPaid)
+              });
+            }
+          }
         }
       });
       const combinedInvs = Array.from(invMap.values());
@@ -218,14 +236,7 @@ export default function KhataBookPage() {
       const cloudJobs = (await fetchCloudJobs().catch(() => [])).filter(j => j && !isDeleted(j.id) && !isDeleted(j.booking_id));
       
       const jobsMap = new Map();
-      // Put cloud jobs first, then local jobs overwrite them
-      cloudJobs.forEach(j => {
-        if (j && (j.id || j.booking_id)) {
-          const rawKey = String(j.id || j.booking_id).replace(/^(inv_|job_|khata_|booking_)/, '');
-          jobsMap.set(rawKey, j);
-        }
-      });
-      localJobs.forEach(j => {
+      [...cloudJobs, ...localJobs].forEach(j => {
         if (j && (j.id || j.booking_id)) {
           const rawKey = String(j.id || j.booking_id).replace(/^(inv_|job_|khata_|booking_)/, '');
           jobsMap.set(rawKey, j);
@@ -248,11 +259,7 @@ export default function KhataBookPage() {
         const totalVal = parseFloat(inv.grand_total || inv.total_amount || Math.max(0, partsVal + labourVal - discountVal));
         
         let directPaid = parseFloat(inv.paid_amount !== undefined && inv.paid_amount !== null ? inv.paid_amount : (inv.received_amount !== undefined ? inv.received_amount : (inv.payment_status === 'PAID' ? totalVal : 0)));
-        const extraCredits = Math.max(
-          rawId ? (creditMap.get(`job_${rawId}`) || 0) : 0,
-          veh ? (creditMap.get(`veh_${veh}`) || 0) : 0
-        );
-        const totalPaid = Math.min(totalVal, Math.max(directPaid, extraCredits));
+        const totalPaid = Math.min(totalVal, directPaid);
         const pendingVal = Math.max(0, totalVal - totalPaid);
 
         // ONLY filter out if pending amount is 0

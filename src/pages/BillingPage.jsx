@@ -148,7 +148,7 @@ export default function BillingPage() {
     });
 
     const allMap = new Map();
-    [...localInvs, ...cloudInvs, ...derivedInvs, ...backendInvs].forEach(inv => {
+    [...derivedInvs, ...backendInvs, ...cloudInvs, ...localInvs].forEach(inv => {
       if (inv && typeof inv === 'object') {
         const strId = String(inv.id || '');
         const rawId = cleanRawId(inv.job_id || inv.id || inv.invoice_number);
@@ -164,11 +164,17 @@ export default function BillingPage() {
         const labourVal = parseFloat(inv.labour_charge || 100);
         const discountVal = parseFloat(inv.discount_amount || inv.discount || 0);
         const totalVal = parseFloat(inv.grand_total || inv.total_amount || inv.live_total || Math.max(0, partsVal + labourVal - discountVal));
-        const rawPaid = inv.paid_amount !== undefined && inv.paid_amount !== null
-          ? parseFloat(inv.paid_amount)
-          : (inv.received_amount !== undefined && inv.received_amount !== null
-            ? parseFloat(inv.received_amount)
-            : (inv.payment_status === 'PAID' ? totalVal : 0));
+        
+        let rawPaid = 0;
+        if (inv.paid_amount !== undefined && inv.paid_amount !== null) {
+          rawPaid = parseFloat(inv.paid_amount);
+        } else if (inv.received_amount !== undefined && inv.received_amount !== null) {
+          rawPaid = parseFloat(inv.received_amount);
+        } else if (inv.pending_amount !== undefined && parseFloat(inv.pending_amount) > 0) {
+          rawPaid = Math.max(0, totalVal - parseFloat(inv.pending_amount));
+        } else if (inv.payment_status === 'PAID') {
+          rawPaid = totalVal;
+        }
         
         const extraCredit = Math.max(
           rawId ? (khataCreditMap.get(rawId) || 0) : 0,
@@ -214,14 +220,9 @@ export default function BillingPage() {
           allMap.set(newKey, normalizedInv);
         } else {
           const prev = allMap.get(existingKey);
-          const maxPaid = Math.min(totalVal, Math.max(parseFloat(prev.paid_amount || 0), paidVal));
-          const minPending = Math.max(0, totalVal - maxPaid);
           allMap.set(existingKey, {
             ...prev,
-            ...normalizedInv,
-            paid_amount: maxPaid,
-            pending_amount: minPending,
-            payment_status: minPending === 0 ? 'PAID' : (maxPaid > 0 ? 'PARTIAL' : 'PENDING')
+            ...normalizedInv
           });
         }
       }

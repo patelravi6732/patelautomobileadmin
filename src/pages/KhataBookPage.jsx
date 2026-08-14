@@ -190,27 +190,17 @@ export default function KhataBookPage() {
       const cloudInvs = (await fetchCloudInvoices().catch(() => [])).filter(i => i && !isDeleted(i.id) && !isDeleted(i.invoice_number) && !isDeleted(i.job_id));
       
       const invMap = new Map();
-      [...localInvs, ...cloudInvs].forEach(inv => {
+      // Put cloud invoices first, then local invoices overwrite them so freshest local changes are preserved
+      cloudInvs.forEach(inv => {
         if (inv && (inv.id || inv.job_id || inv.invoice_number)) {
           const rawKey = String(inv.job_id || inv.id || inv.invoice_number).replace(/^(inv_|job_|khata_|booking_)/, '');
-          const existing = invMap.get(rawKey);
-          if (!existing) {
-            invMap.set(rawKey, inv);
-          } else {
-            const exPaid = parseFloat(existing.paid_amount !== undefined ? existing.paid_amount : (existing.received_amount || 0));
-            const curPaid = parseFloat(inv.paid_amount !== undefined ? inv.paid_amount : (inv.received_amount || 0));
-            const preferred = curPaid >= exPaid ? inv : existing;
-            const chosenPaid = Math.max(exPaid, curPaid);
-            const total = parseFloat(preferred.grand_total || preferred.total_amount || 0);
-            const chosenPending = Math.max(0, total - chosenPaid);
-            invMap.set(rawKey, {
-              ...existing,
-              ...preferred,
-              paid_amount: chosenPaid,
-              pending_amount: chosenPending,
-              payment_status: chosenPending <= 0 ? 'PAID' : 'PARTIAL'
-            });
-          }
+          invMap.set(rawKey, inv);
+        }
+      });
+      localInvs.forEach(inv => {
+        if (inv && (inv.id || inv.job_id || inv.invoice_number)) {
+          const rawKey = String(inv.job_id || inv.id || inv.invoice_number).replace(/^(inv_|job_|khata_|booking_)/, '');
+          invMap.set(rawKey, inv);
         }
       });
       const combinedInvs = Array.from(invMap.values());
@@ -220,27 +210,17 @@ export default function KhataBookPage() {
       const cloudJobs = (await fetchCloudJobs().catch(() => [])).filter(j => j && !isDeleted(j.id) && !isDeleted(j.booking_id));
       
       const jobsMap = new Map();
-      [...localJobs, ...cloudJobs].forEach(j => {
+      // Put cloud jobs first, then local jobs overwrite them
+      cloudJobs.forEach(j => {
         if (j && (j.id || j.booking_id)) {
           const rawKey = String(j.id || j.booking_id).replace(/^(inv_|job_|khata_|booking_)/, '');
-          const existing = jobsMap.get(rawKey);
-          if (!existing) {
-            jobsMap.set(rawKey, j);
-          } else {
-            const exPaid = parseFloat(existing.paid_amount !== undefined ? existing.paid_amount : 0);
-            const curPaid = parseFloat(j.paid_amount !== undefined ? j.paid_amount : 0);
-            const preferred = curPaid >= exPaid ? j : existing;
-            const chosenPaid = Math.max(exPaid, curPaid);
-            const total = parseFloat(preferred.grand_total || preferred.live_total || 0);
-            const chosenPending = Math.max(0, total - chosenPaid);
-            jobsMap.set(rawKey, {
-              ...existing,
-              ...preferred,
-              paid_amount: chosenPaid,
-              pending_amount: chosenPending,
-              payment_status: chosenPending <= 0 ? 'PAID' : 'PARTIAL'
-            });
-          }
+          jobsMap.set(rawKey, j);
+        }
+      });
+      localJobs.forEach(j => {
+        if (j && (j.id || j.booking_id)) {
+          const rawKey = String(j.id || j.booking_id).replace(/^(inv_|job_|khata_|booking_)/, '');
+          jobsMap.set(rawKey, j);
         }
       });
       const combinedJobs = Array.from(jobsMap.values());

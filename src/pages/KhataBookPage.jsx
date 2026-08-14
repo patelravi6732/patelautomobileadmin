@@ -85,9 +85,10 @@ export default function KhataBookPage() {
     localStorage.setItem('recycle_bin_items', JSON.stringify([trashObj, ...existingTrash]));
     pushCloudRecycleBinItem(trashObj).catch(console.warn);
 
-    // 2. Mark ALL ID variations as deleted & purge cloud store
+    // 2. Mark ALL ID variations & vehicle number as deleted & purge cloud store
     const idsToMark = [targetId, rawId, `inv_${rawId}`, `job_${rawId}`, `khata_${rawId}`];
     if (invNum) idsToMark.push(invNum);
+    if (vehNum) idsToMark.push(vehNum, `veh_${vehNum}`);
     idsToMark.forEach(id => {
       if (id) {
         markIdAsDeleted(id).catch(console.warn);
@@ -154,21 +155,28 @@ export default function KhataBookPage() {
       }
 
       const deletedIds = await fetchCloudDeletedIds().catch(() => []);
-      const isDeleted = (id) => {
-        if (!id) return false;
-        const s = String(id).trim();
-        const raw = s.replace(/^(inv_|job_|khata_|booking_)/, '');
+      const isDeleted = (id, veh = '', num = '') => {
+        const s = String(id || '').trim();
+        const raw = s.replace(/^(inv_|job_|khata_|booking_|cust_|trash_|cs_|ckhata_|khata_entry_)+/gi, '').trim();
+        const v = String(veh || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+        const n = String(num || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+        
         return deletedIds.some(d => {
           if (!d) return false;
           const dStr = String(d).trim();
-          const dRaw = dStr.replace(/^(inv_|job_|khata_|booking_)/, '');
-          return s === dStr || (raw && dRaw && raw === dRaw);
+          const dRaw = dStr.replace(/^(inv_|job_|khata_|booking_|cust_|trash_|cs_|ckhata_|khata_entry_)+/gi, '').trim();
+          const dNorm = dStr.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+          if (s && dStr && s === dStr) return true;
+          if (raw && dRaw && raw === dRaw) return true;
+          if (v && dNorm && (v === dNorm || dNorm === `VEH${v}` || dNorm === `VEH_${v}`)) return true;
+          if (n && dNorm && n === dNorm) return true;
+          return false;
         });
       };
 
       // Read stores safely
-      const localKhata = JSON.parse(localStorage.getItem('khata_entries') || '[]').filter(k => k && !isDeleted(k.id) && !isDeleted(k.job_id));
-      const cloudKhata = (await fetchCloudKhataEntries().catch(() => [])).filter(k => k && !isDeleted(k.id) && !isDeleted(k.job_id));
+      const localKhata = JSON.parse(localStorage.getItem('khata_entries') || '[]').filter(k => k && !isDeleted(k.id, k.vehicle_number, k.invoice_number) && !isDeleted(k.job_id, k.vehicle_number, k.invoice_number));
+      const cloudKhata = (await fetchCloudKhataEntries().catch(() => [])).filter(k => k && !isDeleted(k.id, k.vehicle_number, k.invoice_number) && !isDeleted(k.job_id, k.vehicle_number, k.invoice_number));
       
       const khataEntryMap = new Map();
       [...cloudKhata, ...localKhata].forEach(k => {
@@ -194,8 +202,8 @@ export default function KhataBookPage() {
         }
       });
 
-      const localInvs = JSON.parse(localStorage.getItem('local_invoices') || '[]').filter(i => i && !isDeleted(i.id) && !isDeleted(i.invoice_number) && !isDeleted(i.job_id));
-      const cloudInvs = (await fetchCloudInvoices().catch(() => [])).filter(i => i && !isDeleted(i.id) && !isDeleted(i.invoice_number) && !isDeleted(i.job_id));
+      const localInvs = JSON.parse(localStorage.getItem('local_invoices') || '[]').filter(i => i && !isDeleted(i.id, i.vehicle_number, i.invoice_number) && !isDeleted(i.invoice_number, i.vehicle_number, i.invoice_number) && !isDeleted(i.job_id, i.vehicle_number, i.invoice_number));
+      const cloudInvs = (await fetchCloudInvoices().catch(() => [])).filter(i => i && !isDeleted(i.id, i.vehicle_number, i.invoice_number) && !isDeleted(i.invoice_number, i.vehicle_number, i.invoice_number) && !isDeleted(i.job_id, i.vehicle_number, i.invoice_number));
       
       const getNormInvKey = (inv) => {
         if (!inv) return '';
@@ -232,8 +240,8 @@ export default function KhataBookPage() {
       const combinedInvs = Array.from(invMap.values());
 
       const rawLocalJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
-      const localJobs = rawLocalJobs.filter(j => j && !isDeleted(j.id) && !isDeleted(j.booking_id));
-      const cloudJobs = (await fetchCloudJobs().catch(() => [])).filter(j => j && !isDeleted(j.id) && !isDeleted(j.booking_id));
+      const localJobs = rawLocalJobs.filter(j => j && !isDeleted(j.id, j.vehicle_number) && !isDeleted(j.booking_id, j.vehicle_number));
+      const cloudJobs = (await fetchCloudJobs().catch(() => [])).filter(j => j && !isDeleted(j.id, j.vehicle_number) && !isDeleted(j.booking_id, j.vehicle_number));
       
       const jobsMap = new Map();
       [...cloudJobs, ...localJobs].forEach(j => {

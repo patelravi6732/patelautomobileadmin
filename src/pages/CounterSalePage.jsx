@@ -321,7 +321,7 @@ export default function CounterSalePage() {
 
   const effectivePaid = useMemo(() => {
     if (paidAmount === '' || paidAmount === undefined || paidAmount === null) {
-      return cartNetTotal;
+      return 0;
     }
     const parsed = parseFloat(paidAmount);
     if (isNaN(parsed)) return 0;

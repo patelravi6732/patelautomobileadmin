@@ -4,7 +4,7 @@ import {
   IndianRupee, Package, Bike, User, Phone, Check, Receipt, UserCheck, Users, Lock, Search, ChevronDown, Edit2, Tag
 } from 'lucide-react';
 import API from '../services/api';
-import { fetchCloudJobs, updateCloudJobStatus, deleteCloudJob, fetchCloudInventory, pushCloudJob, pushCloudRecycleBinItem, pushCloudKhataEntry, pushCloudInvoice, updateCloudBookingStatus, fetchCloudDeletedIds, fetchCloudBookings, atomicFinishWorkshopJob, pushCloudInventoryItem, deleteJobToRecycleBin, pushAuditLog, atomicDeductInventoryStock } from '../utils/cloudSync';
+import { fetchCloudJobs, updateCloudJobStatus, deleteCloudJob, fetchCloudInventory, pushCloudJob, pushCloudRecycleBinItem, pushCloudKhataEntry, pushCloudInvoice, updateCloudBookingStatus, fetchCloudDeletedIds, fetchCloudBookings, atomicFinishWorkshopJob, pushCloudInventoryItem, deleteJobToRecycleBin, pushAuditLog, atomicDeductInventoryStock, atomicRestoreInventoryStock } from '../utils/cloudSync';
 import { useAuth } from '../context/AuthContext';
 import AdminPasswordModal from '../components/AdminPasswordModal';
 
@@ -534,51 +534,21 @@ export default function WorkshopPage() {
 
     setSelectedJob(updatedJob);
     setJobs(prev => prev.map(j => (isMatchJob(j) ? updatedJob : j)));
-    
-    // 1. Deduct Inventory stock IMMEDIATELY (10 -> 9) across local and cloud
-    const baseInv = (inventory && inventory.length > 0) ? inventory : (localInv.length > 0 ? localInv : [partObj]);
-    const partNormName = String(partObj.part_name || partObj.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
+    // 1. Deduct Inventory stock EXACTLY ONCE across local and cloud
     let updatedTargetItem = null;
-    const updatedInv = baseInv.map(invItem => {
-      if (!invItem) return invItem;
-      const curNormName = String(invItem.part_name || invItem.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-      const curId = String(invItem.id || '');
-      const isMatch = (partNormName && curNormName && (partNormName === curNormName || partNormName.includes(curNormName) || curNormName.includes(partNormName))) || (partObj.id && curId && String(partObj.id) === curId);
-
-      if (isMatch) {
-        const currentQty = parseInt(invItem.current_stock !== undefined ? invItem.current_stock : 10, 10);
-        const newQty = Math.max(0, currentQty - qty);
-        const updatedObj = {
-          ...invItem,
-          current_stock: newQty,
-          stock_quantity: newQty,
-          quantity: newQty,
-          updated_at: new Date().toISOString()
-        };
-        updatedTargetItem = updatedObj;
-        return updatedObj;
-      }
-      return invItem;
-    });
-
-    localStorage.setItem('inventory_items', JSON.stringify(updatedInv));
-    localStorage.setItem('spare_parts', JSON.stringify(updatedInv));
-    localStorage.setItem('local_inventory', JSON.stringify(updatedInv));
-    setInventory(updatedInv);
-
-    // Call atomic cloud deduction
-    atomicDeductInventoryStock({
-      partId: partObj.id,
-      partName: partObj.part_name || partObj.name,
-      quantity: qty
-    }).catch(console.warn);
-
     try {
-      window.dispatchEvent(new Event('storage'));
-      window.dispatchEvent(new Event('master_store_updated'));
-      window.dispatchEvent(new Event('inventory_updated'));
-    } catch (e) {}
+      updatedTargetItem = await atomicDeductInventoryStock({
+        partId: partObj.id,
+        partName: partObj.part_name || partObj.name,
+        quantity: qty
+      });
+      if (updatedTargetItem) {
+        setInventory(prev => prev.map(i => (i && (i.id === updatedTargetItem.id || String(i.part_name || i.name).toLowerCase() === String(updatedTargetItem.part_name || updatedTargetItem.name).toLowerCase()) ? updatedTargetItem : i)));
+      }
+    } catch (e) {
+      console.warn('atomicDeductInventoryStock error:', e);
+    }
 
     // 2. Update Job parts
     const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
@@ -634,55 +604,18 @@ export default function WorkshopPage() {
     localStorage.setItem('workshop_jobs', JSON.stringify(updatedLocal));
     pushCloudJob(updatedJob).catch(console.warn);
 
-    // If the removed part was already CONFIRMED & DEDUCTED, restore stock back to Inventory
+    // If the removed part was already CONFIRMED & DEDUCTED, restore stock back to Inventory EXACTLY ONCE
     if (part.is_deducted || part.status === 'CONFIRMED') {
       try {
         const qtyToRestore = parseInt(part.quantity || 1, 10);
-        const pId = String(part.inventory_id || part.part_id || part.id || '').replace(/[^a-z0-9]/g, '');
-        const pName = String(part.part_name || part.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase().trim();
-
-        const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]');
-        const cloudInv = await fetchCloudInventory().catch(() => []);
-        const allInvMap = new Map();
-        [...cloudInv, ...localInv].forEach(item => {
-          if (item && (item.id || item.part_name || item.name)) {
-            const rawName = String(item.part_name || item.name || '').trim();
-            const key = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
-            if (!allInvMap.has(key)) allInvMap.set(key, item);
-          }
+        const restoredTarget = await atomicRestoreInventoryStock({
+          partId: part.inventory_id || part.part_id || part.id,
+          partName: part.part_name || part.name,
+          quantity: qtyToRestore
         });
-
-        let invList = Array.from(allInvMap.values());
-        invList = invList.map(invItem => {
-          if (!invItem) return invItem;
-          const invId = String(invItem.id || '').replace(/[^a-z0-9]/g, '');
-          const invName = String(invItem.part_name || invItem.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase().trim();
-          const isMatch = (pId && invId && pId === invId) || (pName && invName && (pName === invName || pName.includes(invName) || invName.includes(pName)));
-
-          if (isMatch) {
-            const currentQty = parseInt(invItem.current_stock !== undefined ? invItem.current_stock : (invItem.stock_quantity !== undefined ? invItem.stock_quantity : (invItem.quantity !== undefined ? invItem.quantity : 0)), 10);
-            const newQty = currentQty + qtyToRestore;
-            const updatedItem = {
-              ...invItem,
-              current_stock: newQty,
-              stock_quantity: newQty,
-              quantity: newQty
-            };
-            pushCloudInventoryItem(updatedItem).catch(console.warn);
-            return updatedItem;
-          }
-          return invItem;
-        });
-
-        localStorage.setItem('inventory_items', JSON.stringify(invList));
-        localStorage.setItem('spare_parts', JSON.stringify(invList));
-        localStorage.setItem('local_inventory', JSON.stringify(invList));
-        setInventory(invList);
-        try {
-          window.dispatchEvent(new Event('storage'));
-          window.dispatchEvent(new Event('master_store_updated'));
-          window.dispatchEvent(new Event('inventory_updated'));
-        } catch (e) {}
+        if (restoredTarget) {
+          setInventory(prev => prev.map(i => (i && (i.id === restoredTarget.id || String(i.part_name || i.name).toLowerCase() === String(restoredTarget.part_name || restoredTarget.name).toLowerCase()) ? restoredTarget : i)));
+        }
       } catch (err) {
         console.warn('Stock restoration notice:', err);
       }

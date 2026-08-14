@@ -338,13 +338,11 @@ export async function saveMasterStore(storeData) {
     const cleanInv = (Array.isArray(storeData.inventory) ? storeData.inventory : []).filter(item => {
       if (!item || typeof item !== 'object') return false;
       const rawId = String(item.id || '').toLowerCase().trim();
-      const rawName = String(item.part_name || item.item_name || item.name || '').trim().toLowerCase();
-      const normName = rawName.replace(/[^a-z0-9]/g, '');
+      if (!rawId) return true;
       return !allDeleted.some(d => {
         if (!d) return false;
         const dStr = String(d).toLowerCase().trim();
-        const dNorm = dStr.replace(/[^a-z0-9]/g, '');
-        return (rawId && dStr && rawId === dStr) || (rawName && dStr && rawName === dStr) || (normName && dNorm && normName === dNorm);
+        return rawId === dStr;
       });
     });
 

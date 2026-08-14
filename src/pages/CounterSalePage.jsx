@@ -12,7 +12,8 @@ import {
   fetchCloudCounterKhata, pushCloudCounterKhata, deleteCloudCounterKhata,
   atomicRecordCounterPayment, syncCloudInventory, atomicAddInventoryItem,
   fetchMasterStore, saveMasterStore, pushCloudActiveCounterCart,
-  pushCloudRecycleBinItem, pushCloudInventoryItem, fetchCloudInventory
+  pushCloudRecycleBinItem, pushCloudInventoryItem, fetchCloudInventory,
+  atomicRestoreInventoryStock
 } from '../utils/cloudSync';
 import { generateCounterSaleCardPhotoAsync, generateBillCanvasBlob } from '../utils/billCardGenerator';
 import { formatDateDMY } from '../utils/dateFormatter';
@@ -491,28 +492,46 @@ export default function CounterSalePage() {
     setCartItems(nextCart);
   };
 
-  // Update Cart Item Quantity
-  const handleUpdateQty = (itemId, newQty) => {
+  // Update Cart Item Quantity (Auto-Restores Stock when confirmed items are decremented)
+  const handleUpdateQty = async (itemId, newQty) => {
     const qty = parseInt(newQty, 10);
     if (isNaN(qty) || qty <= 0) return;
     const target = cartItems.find(i => String(i.id) === String(itemId));
     if (!target) return;
     const curStock = target.available_stock || 999;
-    const alreadyDeducted = target.deducted_qty || 0;
-    if ((qty - alreadyDeducted) > curStock) {
+    const alreadyDeducted = parseInt(target.deducted_qty !== undefined ? target.deducted_qty : (target.is_deducted ? target.quantity : 0), 10);
+    
+    if (qty > alreadyDeducted && (qty - alreadyDeducted) > curStock) {
       alert(`⚠️ Only ${curStock} additional units available in stock!`);
       return;
     }
+
+    // If decreasing quantity below the already confirmed/deducted count, restore the difference back to inventory
+    if (alreadyDeducted > qty) {
+      const returnQty = alreadyDeducted - qty;
+      try {
+        await atomicRestoreInventoryStock({
+          partId: target.inventory_id || target.part_id || target.id,
+          partName: target.part_name || target.item_name || target.name,
+          quantity: returnQty
+        });
+        await loadInventory();
+      } catch (err) {
+        console.warn('Error restoring stock on quantity decrement:', err);
+      }
+    }
+
     const updatedCart = cartItems.map(i => String(i.id) === String(itemId) ? {
       ...i,
       quantity: qty,
-      status: (qty === alreadyDeducted) ? 'CONFIRMED' : 'STAGED',
-      is_deducted: (qty === alreadyDeducted)
+      deducted_qty: Math.min(qty, alreadyDeducted),
+      status: (qty <= alreadyDeducted) ? 'CONFIRMED' : 'STAGED',
+      is_deducted: (qty <= alreadyDeducted)
     } : i);
     setCartItems(updatedCart);
   };
 
-  // Remove Item from Cart
+  // Remove Item from Cart (Restores Confirmed Stock back to Inventory)
   const handleRemoveFromCart = async (itemId) => {
     const itemToRemove = cartItems.find(i => String(i.id) === String(itemId));
     if (!itemToRemove) return;
@@ -521,46 +540,12 @@ export default function CounterSalePage() {
 
     if (returnQty > 0) {
       try {
-        const localInv = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
-        const cloudInv = await fetchCloudInventory().catch(() => []);
-        const allInvMap = new Map();
-        [...cloudInv, ...localInv].forEach(item => {
-          if (item && (item.id || item.part_name || item.item_name || item.name)) {
-            const rawName = String(item.part_name || item.item_name || item.name || '').trim();
-            const key = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
-            if (!allInvMap.has(key)) allInvMap.set(key, item);
-          }
+        await atomicRestoreInventoryStock({
+          partId: itemToRemove.inventory_id || itemToRemove.part_id || itemToRemove.id,
+          partName: itemToRemove.part_name || itemToRemove.item_name || itemToRemove.name,
+          quantity: returnQty
         });
-
-        let invList = Array.from(allInvMap.values());
-        const pId = String(itemToRemove.inventory_id || itemToRemove.part_id || itemToRemove.id || '').replace(/[^a-z0-9]/g, '');
-        const pName = String(itemToRemove.part_name || itemToRemove.item_name || itemToRemove.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase().trim();
-
-        invList = invList.map(invItem => {
-          if (!invItem) return invItem;
-          const invId = String(invItem.id || '').replace(/[^a-z0-9]/g, '');
-          const invName = String(invItem.part_name || invItem.item_name || invItem.name || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase().trim();
-          const isMatch = (pId && invId && pId === invId) || (pName && invName && (pName === invName || pName.includes(invName) || invName.includes(pName)));
-          if (isMatch) {
-            const cur = parseInt(invItem.current_stock !== undefined ? invItem.current_stock : (invItem.stock_quantity !== undefined ? invItem.stock_quantity : (invItem.quantity !== undefined ? invItem.quantity : 0)), 10);
-            const restored = cur + returnQty;
-            const updated = { ...invItem, current_stock: restored, stock_quantity: restored, quantity: restored, updated_at: new Date().toISOString() };
-            pushCloudInventoryItem(updated).catch(console.warn);
-            return updated;
-          }
-          return invItem;
-        });
-
-        localStorage.setItem('inventory_items', JSON.stringify(invList));
-        localStorage.setItem('spare_parts', JSON.stringify(invList));
-        localStorage.setItem('local_inventory', JSON.stringify(invList));
-        setInventory(invList);
-        await syncCloudInventory(invList).catch(console.warn);
-        try {
-          window.dispatchEvent(new Event('inventory_updated'));
-          window.dispatchEvent(new Event('master_store_updated'));
-        } catch (e) {}
-        loadInventory();
+        await loadInventory();
       } catch (e) {
         console.warn('Error restoring stock on cart remove:', e);
       }

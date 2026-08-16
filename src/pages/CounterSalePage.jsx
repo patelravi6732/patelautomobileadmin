@@ -770,7 +770,8 @@ export default function CounterSalePage() {
         photoUrl: photoUrl
       });
 
-      // 6. Reset POS Form & Clear Draft
+      // 6. Reset POS Form & Clear Draft completely
+      isSyncingFromCloud.current = true;
       setCustomerName('');
       setCustomerPhone('');
       setVehicleNumber('');
@@ -778,7 +779,8 @@ export default function CounterSalePage() {
       setDiscountAmount(0);
       setPaidAmount(0);
       localStorage.removeItem('counter_sale_draft');
-      pushCloudActiveCounterCart(null).catch(() => null);
+      await pushCloudActiveCounterCart(null).catch(() => null);
+      setTimeout(() => { isSyncingFromCloud.current = false; }, 3000);
 
       // Reload Data
       loadInventory();
@@ -2057,7 +2059,17 @@ export default function CounterSalePage() {
 
               <button
                 type="button"
-                onClick={() => setSuccessModal({ isOpen: false, sale: null, photoUrl: null })}
+                onClick={() => {
+                  setSuccessModal({ isOpen: false, sale: null, photoUrl: null });
+                  setCustomerName('');
+                  setCustomerPhone('');
+                  setVehicleNumber('');
+                  setCartItems([]);
+                  setDiscountAmount(0);
+                  setPaidAmount(0);
+                  localStorage.removeItem('counter_sale_draft');
+                  pushCloudActiveCounterCart(null).catch(() => null);
+                }}
                 className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs rounded-xl transition-all"
               >
                 Done / Next Sale

@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Save, MapPin, Phone, MessageSquare, Clock, Wrench, IndianRupee, Mail, Lock, ShieldCheck, User, Calendar, History, Trash2, Camera, Upload, Image as ImageIcon, Plus, Edit2, Key, Eye, EyeOff, CheckCircle2, XCircle, ShieldAlert, Sparkles, AlertCircle, Smartphone, QrCode } from 'lucide-react';
+import { Settings, Save, MapPin, Phone, MessageSquare, Clock, Wrench, IndianRupee, Mail, Lock, ShieldCheck, User, Calendar, History, Trash2, Camera, Upload, Image as ImageIcon, Plus, Edit2, Key, Eye, EyeOff, CheckCircle2, XCircle, ShieldAlert, Sparkles, AlertCircle, Smartphone, QrCode, Download, Database, UploadCloud } from 'lucide-react';
 import API from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { fetchCloudAdminProfiles, pushCloudAdminProfile, deleteCloudAdminProfile, fetchCloudAuditLogs } from '../utils/cloudSync';
+import { fetchCloudAdminProfiles, pushCloudAdminProfile, deleteCloudAdminProfile, fetchCloudAuditLogs, safeSetStorageItem, saveMasterStore } from '../utils/cloudSync';
 import AdminPasswordModal from '../components/AdminPasswordModal';
 
 export const DEFAULT_ADMIN_PROFILES = [];
@@ -498,6 +498,92 @@ export default function SettingsPage() {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
+  const handleExportFullBackup = () => {
+    try {
+      const backupObj = {
+        app_name: 'Patel Automobiles Garage OS',
+        backup_date: new Date().toISOString(),
+        version: '2.0.0',
+        garageInfo: JSON.parse(localStorage.getItem('garage_info') || '{}'),
+        jobs: JSON.parse(localStorage.getItem('workshop_jobs') || '[]'),
+        invoices: JSON.parse(localStorage.getItem('local_invoices') || '[]'),
+        inventory: JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || '[]'),
+        khataEntries: JSON.parse(localStorage.getItem('khata_entries') || '[]'),
+        counterSales: JSON.parse(localStorage.getItem('local_counter_sales') || '[]'),
+        counterKhata: JSON.parse(localStorage.getItem('local_counter_khata') || '[]'),
+        attendance: JSON.parse(localStorage.getItem('local_attendance') || '[]'),
+        salaryPayments: JSON.parse(localStorage.getItem('local_salary_payments') || '[]'),
+        deletedIds: JSON.parse(localStorage.getItem('deleted_ids') || '[]')
+      };
+
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupObj, null, 2));
+      const downloadAnchor = document.createElement('a');
+      const dateStr = new Date().toISOString().split('T')[0];
+      downloadAnchor.setAttribute("href", dataStr);
+      downloadAnchor.setAttribute("download", `Patel_Automobiles_Full_Backup_${dateStr}.json`);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+      alert("✅ Full Garage Database Backup downloaded successfully!");
+    } catch (err) {
+      console.error("Export backup failed:", err);
+      alert("⚠️ Failed to generate backup file. Please try again.");
+    }
+  };
+
+  const handleImportFullBackup = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!window.confirm("⚠️ Are you sure you want to restore data from this backup file? Existing garage records will be merged & synchronized.")) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const data = JSON.parse(event.target.result);
+        if (!data || typeof data !== 'object') {
+          alert("⚠️ Invalid backup file format!");
+          return;
+        }
+
+        if (Array.isArray(data.inventory)) {
+          safeSetStorageItem('inventory_items', data.inventory);
+          safeSetStorageItem('spare_parts', data.inventory);
+          safeSetStorageItem('local_inventory', data.inventory);
+        }
+        if (Array.isArray(data.jobs)) safeSetStorageItem('workshop_jobs', data.jobs);
+        if (Array.isArray(data.invoices)) safeSetStorageItem('local_invoices', data.invoices);
+        if (Array.isArray(data.khataEntries)) safeSetStorageItem('khata_entries', data.khataEntries);
+        if (Array.isArray(data.counterSales)) safeSetStorageItem('local_counter_sales', data.counterSales);
+        if (Array.isArray(data.counterKhata)) safeSetStorageItem('local_counter_khata', data.counterKhata);
+        if (Array.isArray(data.attendance)) safeSetStorageItem('local_attendance', data.attendance);
+        if (Array.isArray(data.salaryPayments)) safeSetStorageItem('local_salary_payments', data.salaryPayments);
+        if (Array.isArray(data.deletedIds)) safeSetStorageItem('deleted_ids', data.deletedIds);
+        if (data.garageInfo && typeof data.garageInfo === 'object') safeSetStorageItem('garage_info', data.garageInfo);
+
+        await saveMasterStore({
+          inventory: data.inventory || [],
+          jobs: data.jobs || [],
+          invoices: data.invoices || [],
+          khataEntries: data.khataEntries || [],
+          counterSales: data.counterSales || [],
+          counterKhata: data.counterKhata || [],
+          attendance: data.attendance || [],
+          salaryPayments: data.salaryPayments || [],
+          deletedIds: data.deletedIds || [],
+          garageInfo: data.garageInfo || null
+        }).catch(console.warn);
+
+        alert("🎉 Full Garage Database restored and cloud synchronized successfully!");
+        window.location.reload();
+      } catch (err) {
+        console.error("Import backup error:", err);
+        alert("⚠️ Failed to parse backup file. Please ensure it is a valid JSON backup file.");
+      }
+    };
+    reader.readAsText(file);
+  };
+
   return (
     <div className="space-y-8 w-full">
       
@@ -527,6 +613,15 @@ export default function SettingsPage() {
             }`}
           >
             Admin Accounts ({adminProfiles.length})
+          </button>
+
+          <button
+            onClick={() => setTab('BACKUP')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+              tab === 'BACKUP' ? 'bg-emerald-600 text-white shadow-sm' : 'text-emerald-700 hover:text-emerald-900 bg-emerald-50'
+            }`}
+          >
+            <Database className="w-3.5 h-3.5" /> Backup &amp; Restore
           </button>
         </div>
       </div>
@@ -870,6 +965,70 @@ export default function SettingsPage() {
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* TAB 3: DATABASE BACKUP & RESTORE */}
+      {tab === 'BACKUP' && (
+        <div className="bg-white p-8 rounded-3xl border border-slate-200/80 soft-shadow space-y-6">
+          <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
+            <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+              <Database className="w-6 h-6" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-slate-900 font-poppins">Garage Database Backup &amp; Recovery</h2>
+              <p className="text-xs text-slate-500">Download 1-click full offline JSON backups or restore previous garage records.</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+            {/* EXPORT BACKUP CARD */}
+            <div className="p-6 rounded-3xl bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200 space-y-4">
+              <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center">
+                <Download className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900 font-poppins text-base">Export Full Garage Backup</h3>
+                <p className="text-xs text-slate-600 mt-1">
+                  Downloads a complete offline backup file (`.json`) containing all Workshop Bills, Spare Parts Inventory, Customer Khata Book, Counter Sales, and Attendance logs.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleExportFullBackup}
+                className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Download className="w-4 h-4" /> Download Backup File (.json)
+              </button>
+            </div>
+
+            {/* IMPORT RESTORE CARD */}
+            <div className="p-6 rounded-3xl bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 space-y-4">
+              <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center">
+                <UploadCloud className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900 font-poppins text-base">Restore Database from Backup</h3>
+                <p className="text-xs text-slate-600 mt-1">
+                  Upload a previously saved `.json` backup file to instantly restore and sync all garage records on new devices or laptops.
+                </p>
+              </div>
+              <label className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer text-center">
+                <UploadCloud className="w-4 h-4" /> Select Backup File to Restore
+                <input
+                  type="file"
+                  accept=".json,application/json"
+                  className="hidden"
+                  onChange={handleImportFullBackup}
+                />
+              </label>
+            </div>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-xs font-bold text-amber-900 space-y-1">
+            <p>💡 Pro-Tip for Patel Owner:</p>
+            <p className="font-medium text-amber-800">We recommend downloading a full backup once a week or month. Keep the `.json` file saved safely on your Google Drive or phone storage.</p>
           </div>
         </div>
       )}

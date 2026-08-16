@@ -547,12 +547,23 @@ export default function WorkshopPage() {
     if (!deletePartModal.part || !deletePartModal.jobId) return;
     const { jobId, part } = deletePartModal;
 
-    const targetJob = jobs.find(j => String(j.id) === String(jobId)) || selectedJob;
+    const selId = String(jobId || '');
+    const selRaw = selId.replace(/^job_/, '').replace(/^inv_/, '');
+
+    const isMatchJob = (j) => {
+      if (!j) return false;
+      const jId = String(j.id || '');
+      const jRaw = jId.replace(/^job_/, '').replace(/^inv_/, '');
+      return (selId && jId && (selId === jId || selId.includes(jId) || jId.includes(selId))) ||
+             (selRaw && jRaw && selRaw === jRaw);
+    };
+
+    const targetJob = jobs.find(isMatchJob) || selectedJob;
     if (!targetJob) return;
 
     const updatedParts = (targetJob.parts || []).filter(p => {
       if (!p) return false;
-      const matchId = String(p.id || '') === String(part.id || '');
+      const matchId = (p.id && part.id && String(p.id) === String(part.id));
       const matchInvId = (p.inventory_id && part.inventory_id && String(p.inventory_id) === String(part.inventory_id));
       const matchPartId = (p.part_id && part.part_id && String(p.part_id) === String(part.part_id));
       const matchName = String(p.part_name || p.name || '').trim().toLowerCase() === String(part.part_name || part.name || '').trim().toLowerCase();
@@ -570,11 +581,13 @@ export default function WorkshopPage() {
       updated_at: new Date().toISOString()
     };
 
-    setSelectedJob(updatedJob);
-    setJobs(prev => prev.map(j => (String(j.id) === String(jobId) ? updatedJob : j)));
+    if (selectedJob && isMatchJob(selectedJob)) {
+      setSelectedJob(updatedJob);
+    }
+    setJobs(prev => prev.map(j => (isMatchJob(j) ? updatedJob : j)));
 
     const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
-    const updatedLocal = localJobs.map(j => (String(j.id) === String(jobId) ? updatedJob : j));
+    const updatedLocal = localJobs.map(j => (isMatchJob(j) ? updatedJob : j));
     localStorage.setItem('workshop_jobs', JSON.stringify(updatedLocal));
     pushCloudJob(updatedJob).catch(console.warn);
 

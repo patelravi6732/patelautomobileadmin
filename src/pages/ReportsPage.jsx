@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { BarChart3, IndianRupee, Package, Users, TrendingUp, AlertCircle, Wrench, ShoppingBag, PieChart } from 'lucide-react';
+import { BarChart3, IndianRupee, Package, Users, TrendingUp, AlertCircle, Wrench, ShoppingBag, PieChart, Calendar } from 'lucide-react';
 import API from '../services/api';
 import { fetchMasterStore } from '../utils/cloudSync';
 
-const computeInstantReports = () => {
+const computeInstantReports = (startDate = '', endDate = '') => {
   try {
     const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');
     const localInvoices = JSON.parse(localStorage.getItem('local_invoices') || '[]');
@@ -362,14 +362,16 @@ const computeInstantReports = () => {
 };
 
 export default function ReportsPage() {
-  const [reports, setReports] = useState(() => computeInstantReports());
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [reports, setReports] = useState(() => computeInstantReports('', ''));
   const [loading, setLoading] = useState(false);
 
   const fetchReports = async () => {
     try {
       await fetchMasterStore(true).catch(() => null);
     } catch (e) {}
-    setReports(computeInstantReports());
+    setReports(computeInstantReports(startDate, endDate));
     setLoading(false);
   };
 
@@ -378,7 +380,7 @@ export default function ReportsPage() {
     const interval = setInterval(() => {
       fetchReports();
     }, 4000);
-    const handleStorage = () => setReports(computeInstantReports());
+    const handleStorage = () => setReports(computeInstantReports(startDate, endDate));
     window.addEventListener('storage', handleStorage);
     window.addEventListener('master_store_updated', handleStorage);
     window.addEventListener('khata_updated', handleStorage);
@@ -396,16 +398,52 @@ export default function ReportsPage() {
       window.removeEventListener('counter_sales_updated', handleStorage);
       window.removeEventListener('inventory_updated', handleStorage);
     };
-  }, []);
+  }, [startDate, endDate]);
 
   return (
     <div className="space-y-8">
       
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900 font-poppins flex items-center gap-2.5">
-          <BarChart3 className="w-7 h-7 text-blue-600" /> Garage Analytics & Revenue Reports
-        </h1>
-        <p className="text-xs text-slate-500">Executive financial metrics, Workshop Services vs. Spare Parts Counter Sales, and inventory valuation.</p>
+      {/* HEADER WITH CUSTOM DATE RANGE PICKER */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-3xl border border-slate-200/80 soft-shadow">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900 font-poppins flex items-center gap-2.5">
+            <BarChart3 className="w-7 h-7 text-blue-600" /> Garage Analytics &amp; Revenue Reports
+          </h1>
+          <p className="text-xs text-slate-500 mt-1">Executive financial metrics, Workshop Services vs. Spare Parts Counter Sales, and inventory valuation.</p>
+        </div>
+
+        {/* DATE RANGE FILTER */}
+        <div className="flex flex-wrap items-center gap-2 bg-slate-50 p-2 rounded-2xl border border-slate-200 text-xs">
+          <div className="flex items-center gap-1 font-bold text-slate-600 px-1">
+            <Calendar className="w-3.5 h-3.5 text-blue-600" /> From:
+          </div>
+          <input
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-800 outline-none focus:border-blue-500 cursor-pointer"
+          />
+
+          <div className="flex items-center gap-1 font-bold text-slate-600 px-1">
+            To:
+          </div>
+          <input
+            type="date"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+            className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-800 outline-none focus:border-blue-500 cursor-pointer"
+          />
+
+          {(startDate || endDate) && (
+            <button
+              type="button"
+              onClick={() => { setStartDate(''); setEndDate(''); }}
+              className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-all"
+            >
+              Clear Filter
+            </button>
+          )}
+        </div>
       </div>
 
       {loading ? (

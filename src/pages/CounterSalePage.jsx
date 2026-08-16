@@ -13,7 +13,7 @@ import {
   atomicRecordCounterPayment, syncCloudInventory, atomicAddInventoryItem,
   fetchMasterStore, saveMasterStore, pushCloudActiveCounterCart,
   pushCloudRecycleBinItem, pushCloudInventoryItem, fetchCloudInventory,
-  atomicRestoreInventoryStock
+  atomicRestoreInventoryStock, atomicDeductInventoryStock
 } from '../utils/cloudSync';
 import { generateCounterSaleCardPhotoAsync, generateBillCanvasBlob } from '../utils/billCardGenerator';
 import { formatDateDMY } from '../utils/dateFormatter';
@@ -462,19 +462,27 @@ export default function CounterSalePage() {
     if (existingIndex >= 0) {
       const existing = cartItems[existingIndex];
       const currentQty = existing.quantity || 1;
-      const alreadyDeducted = parseInt(existing.deducted_qty || 0, 10);
+      const alreadyDeducted = parseInt(existing.deducted_qty !== undefined ? existing.deducted_qty : (existing.is_deducted ? existing.quantity : 0), 10);
       const maxAllowed = liveStock + alreadyDeducted;
       if (currentQty + 1 > maxAllowed) {
         alert(`⚠️ Maximum available stock for '${rawName}' is ${maxAllowed} unit(s).`);
         return;
       }
+      const newDeducted = alreadyDeducted + 1;
       const nextCart = cartItems.map((cItem, idx) => idx === existingIndex ? {
         ...cItem,
         quantity: currentQty + 1,
-        status: (currentQty + 1 === alreadyDeducted) ? 'CONFIRMED' : 'STAGED',
-        is_deducted: (currentQty + 1 === alreadyDeducted)
+        deducted_qty: newDeducted,
+        status: 'CONFIRMED',
+        is_deducted: true
       } : cItem);
       setCartItems(nextCart);
+
+      atomicDeductInventoryStock({
+        partId: invItem.id,
+        partName: rawName,
+        quantity: 1
+      }).then(() => loadInventory()).catch(console.warn);
     } else {
       if (liveStock <= 0) {
         alert(`⚠️ '${rawName}' is currently Out of Stock!`);
@@ -488,21 +496,28 @@ export default function CounterSalePage() {
         selling_price: priceVal,
         unit_price: priceVal,
         quantity: 1,
-        available_stock: liveStock,
-        deducted_qty: 0,
-        status: 'STAGED',
-        is_deducted: false
+        available_stock: liveStock - 1,
+        deducted_qty: 1,
+        status: 'CONFIRMED',
+        is_deducted: true
       }];
       setCartItems(nextCart);
+
+      atomicDeductInventoryStock({
+        partId: invItem.id,
+        partName: rawName,
+        quantity: 1
+      }).then(() => loadInventory()).catch(console.warn);
     }
   };
 
-  // Update Cart Item Quantity (Synchronous UI Update + Auto-Restores Stock when confirmed items are decremented)
+  // Update Cart Item Quantity (Synchronous UI Update + Auto-Restores/Deducts Stock dynamically)
   const handleUpdateQty = async (itemId, newQty) => {
     const qty = parseInt(newQty, 10);
     if (isNaN(qty) || qty <= 0) return;
 
     let deltaToRestore = 0;
+    let deltaToDeduct = 0;
     let targetPartInfo = null;
 
     setCartItems(prevCart => {
@@ -527,17 +542,18 @@ export default function CounterSalePage() {
         return prevCart;
       }
 
-      const returnQty = (alreadyDeducted > qty) ? (alreadyDeducted - qty) : 0;
-      const nextDeducted = Math.min(qty, alreadyDeducted);
-
-      deltaToRestore = returnQty;
+      if (qty > alreadyDeducted) {
+        deltaToDeduct = qty - alreadyDeducted;
+      } else if (alreadyDeducted > qty) {
+        deltaToRestore = alreadyDeducted - qty;
+      }
 
       return prevCart.map(i => String(i.id) === String(itemId) ? {
         ...i,
         quantity: qty,
-        deducted_qty: nextDeducted,
-        status: (qty <= nextDeducted && nextDeducted > 0) ? 'CONFIRMED' : 'STAGED',
-        is_deducted: (qty <= nextDeducted && nextDeducted > 0)
+        deducted_qty: qty,
+        status: 'CONFIRMED',
+        is_deducted: true
       } : i);
     });
 
@@ -551,6 +567,17 @@ export default function CounterSalePage() {
         await loadInventory();
       } catch (err) {
         console.warn('Error restoring stock on quantity decrement:', err);
+      }
+    } else if (deltaToDeduct > 0 && targetPartInfo) {
+      try {
+        await atomicDeductInventoryStock({
+          partId: targetPartInfo.inventory_id || targetPartInfo.part_id || targetPartInfo.id,
+          partName: targetPartInfo.part_name || targetPartInfo.item_name || targetPartInfo.name,
+          quantity: deltaToDeduct
+        });
+        await loadInventory();
+      } catch (err) {
+        console.warn('Error deducting stock on quantity increment:', err);
       }
     }
   };

@@ -495,15 +495,19 @@ export default function CounterSalePage() {
     }
   };
 
-  // Update Cart Item Quantity (Pure UI Cart Update + Strict Stock Boundary Check)
-  const handleUpdateQty = (itemId, newQty) => {
+  // Update Cart Item Quantity (Pure UI Cart Update + Restores Stock for Confirmed Items on Decrement)
+  const handleUpdateQty = async (itemId, newQty) => {
     const qty = parseInt(newQty, 10);
     if (isNaN(qty) || qty <= 0) return;
+
+    let deltaToRestore = 0;
+    let targetPartInfo = null;
 
     setCartItems(prevCart => {
       const target = prevCart.find(i => String(i.id) === String(itemId));
       if (!target) return prevCart;
 
+      targetPartInfo = target;
       const invItem = inventory.find(inv => {
         const invId = String(inv.id || '').trim();
         const invNorm = String(inv.part_name || inv.item_name || inv.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -513,28 +517,69 @@ export default function CounterSalePage() {
       });
 
       const liveStock = parseInt(invItem?.current_stock !== undefined ? invItem.current_stock : (invItem?.stock_quantity !== undefined ? invItem.stock_quantity : 0), 10);
+      const alreadyDeducted = parseInt(target.deducted_qty !== undefined ? target.deducted_qty : (target.is_deducted ? target.quantity : 0), 10);
+      const maxAllowed = liveStock + alreadyDeducted;
 
-      if (qty > liveStock) {
-        alert(`⚠️ Maximum available stock for '${target.part_name || target.item_name}' is ${liveStock} unit(s)!`);
+      if (qty > maxAllowed) {
+        alert(`⚠️ Maximum available stock for '${target.part_name || target.item_name}' is ${maxAllowed} unit(s)!`);
         return prevCart;
       }
 
+      if (alreadyDeducted > qty) {
+        deltaToRestore = alreadyDeducted - qty;
+      }
+
+      const nextDeducted = Math.min(qty, alreadyDeducted);
+
       return prevCart.map(i => String(i.id) === String(itemId) ? {
         ...i,
-        quantity: qty
+        quantity: qty,
+        deducted_qty: nextDeducted
       } : i);
     });
+
+    if (deltaToRestore > 0 && targetPartInfo) {
+      try {
+        await atomicRestoreInventoryStock({
+          partId: targetPartInfo.inventory_id || targetPartInfo.part_id || targetPartInfo.id,
+          partName: targetPartInfo.part_name || targetPartInfo.item_name || targetPartInfo.name,
+          quantity: deltaToRestore
+        });
+        await loadInventory();
+      } catch (err) {
+        console.warn('Error restoring stock on confirmed item quantity decrement:', err);
+      }
+    }
   };
 
-  // Remove Item from Cart
-  const handleRemoveFromCart = (itemId) => {
+  // Remove Item from Cart (Restores Confirmed Stock back to Inventory)
+  const handleRemoveFromCart = async (itemId) => {
+    const itemToRemove = cartItems.find(i => String(i.id) === String(itemId));
+    if (!itemToRemove) return;
+
     setCartItems(prev => prev.filter(i => String(i.id) !== String(itemId)));
+
+    const returnQty = parseInt(itemToRemove.deducted_qty !== undefined ? itemToRemove.deducted_qty : (itemToRemove.is_deducted ? itemToRemove.quantity : 0), 10);
+    if (returnQty > 0) {
+      try {
+        await atomicRestoreInventoryStock({
+          partId: itemToRemove.inventory_id || itemToRemove.part_id || itemToRemove.id,
+          partName: itemToRemove.part_name || itemToRemove.item_name || itemToRemove.name,
+          quantity: returnQty
+        });
+        await loadInventory();
+      } catch (e) {
+        console.warn('Error restoring stock on cart remove:', e);
+      }
+    }
   };
 
-  // Clear Cart Completely
-  const handleClearCart = () => {
+  // Clear Cart Completely (Restores Confirmed Stock back to Inventory)
+  const handleClearCart = async () => {
     if (cartItems.length === 0 && !customerName && !customerPhone) return;
     if (!window.confirm('Are you sure you want to clear the active cart and customer details?')) return;
+
+    const itemsToRestore = cartItems.filter(i => i && (i.is_deducted || (i.deducted_qty && i.deducted_qty > 0) || i.status === 'CONFIRMED'));
 
     setCartItems([]);
     setCustomerName('');
@@ -542,6 +587,24 @@ export default function CounterSalePage() {
     setDiscount('');
     localStorage.removeItem('counter_sale_draft');
     pushCloudActiveCounterCart(null).catch(() => null);
+
+    if (itemsToRestore.length > 0) {
+      try {
+        for (const itemToRemove of itemsToRestore) {
+          const returnQty = parseInt(itemToRemove.deducted_qty !== undefined ? itemToRemove.deducted_qty : (itemToRemove.is_deducted ? itemToRemove.quantity : 0), 10);
+          if (returnQty > 0) {
+            await atomicRestoreInventoryStock({
+              partId: itemToRemove.inventory_id || itemToRemove.part_id || itemToRemove.id,
+              partName: itemToRemove.part_name || itemToRemove.item_name || itemToRemove.name,
+              quantity: returnQty
+            });
+          }
+        }
+        await loadInventory();
+      } catch (e) {
+        console.warn('Error restoring stock on clear cart:', e);
+      }
+    }
   };
 
   // Submit Counter Sale

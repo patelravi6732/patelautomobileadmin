@@ -13,7 +13,7 @@ import {
   atomicRecordCounterPayment, syncCloudInventory, atomicAddInventoryItem,
   fetchMasterStore, saveMasterStore, pushCloudActiveCounterCart,
   pushCloudRecycleBinItem, pushCloudInventoryItem, fetchCloudInventory,
-  atomicRestoreInventoryStock
+  atomicRestoreInventoryStock, atomicDeductInventoryStock
 } from '../utils/cloudSync';
 import { generateCounterSaleCardPhotoAsync, generateBillCanvasBlob } from '../utils/billCardGenerator';
 import { formatDateDMY } from '../utils/dateFormatter';
@@ -437,7 +437,7 @@ export default function CounterSalePage() {
     }
   };
 
-  // Handle Add Item to Cart (Workshop Style)
+  // Handle Add Item to Cart (Immediate Stock Deduction Style)
   const handleAddToCart = (item) => {
     if (!item) return;
     const invItem = inventory.find(inv => {
@@ -462,19 +462,27 @@ export default function CounterSalePage() {
     if (existingIndex >= 0) {
       const existing = cartItems[existingIndex];
       const currentQty = existing.quantity || 1;
-      const alreadyDeducted = parseInt(existing.deducted_qty || 0, 10);
+      const alreadyDeducted = parseInt(existing.deducted_qty !== undefined ? existing.deducted_qty : (existing.is_deducted ? existing.quantity : 0), 10);
       const maxAllowed = liveStock + alreadyDeducted;
       if (currentQty + 1 > maxAllowed) {
         alert(`⚠️ Maximum available stock for '${rawName}' is ${maxAllowed} unit(s).`);
         return;
       }
+      const newDeducted = alreadyDeducted + 1;
       const nextCart = cartItems.map((cItem, idx) => idx === existingIndex ? {
         ...cItem,
         quantity: currentQty + 1,
-        status: (currentQty + 1 === alreadyDeducted) ? 'CONFIRMED' : 'STAGED',
-        is_deducted: (currentQty + 1 === alreadyDeducted)
+        deducted_qty: newDeducted,
+        status: 'CONFIRMED',
+        is_deducted: true
       } : cItem);
       setCartItems(nextCart);
+
+      atomicDeductInventoryStock({
+        partId: invItem.id,
+        partName: rawName,
+        quantity: 1
+      }).then(() => loadInventory()).catch(console.warn);
     } else {
       if (liveStock <= 0) {
         alert(`⚠️ '${rawName}' is currently Out of Stock!`);
@@ -488,21 +496,28 @@ export default function CounterSalePage() {
         selling_price: priceVal,
         unit_price: priceVal,
         quantity: 1,
-        available_stock: liveStock,
-        deducted_qty: 0,
-        status: 'STAGED',
-        is_deducted: false
+        available_stock: liveStock - 1,
+        deducted_qty: 1,
+        status: 'CONFIRMED',
+        is_deducted: true
       }];
       setCartItems(nextCart);
+
+      atomicDeductInventoryStock({
+        partId: invItem.id,
+        partName: rawName,
+        quantity: 1
+      }).then(() => loadInventory()).catch(console.warn);
     }
   };
 
-  // Update Cart Item Quantity (Synchronous UI Update + Auto-Restores Stock when confirmed items are decremented)
+  // Update Cart Item Quantity (Synchronous UI Update + Auto-Restores/Deducts Stock dynamically)
   const handleUpdateQty = async (itemId, newQty) => {
     const qty = parseInt(newQty, 10);
     if (isNaN(qty) || qty <= 0) return;
 
     let deltaToRestore = 0;
+    let deltaToDeduct = 0;
     let targetPartInfo = null;
 
     setCartItems(prevCart => {
@@ -527,17 +542,18 @@ export default function CounterSalePage() {
         return prevCart;
       }
 
-      const returnQty = (alreadyDeducted > qty) ? (alreadyDeducted - qty) : 0;
-      const nextDeducted = Math.min(qty, alreadyDeducted);
-
-      deltaToRestore = returnQty;
+      if (qty > alreadyDeducted) {
+        deltaToDeduct = qty - alreadyDeducted;
+      } else if (alreadyDeducted > qty) {
+        deltaToRestore = alreadyDeducted - qty;
+      }
 
       return prevCart.map(i => String(i.id) === String(itemId) ? {
         ...i,
         quantity: qty,
-        deducted_qty: nextDeducted,
-        status: (qty <= nextDeducted && nextDeducted > 0) ? 'CONFIRMED' : 'STAGED',
-        is_deducted: (qty <= nextDeducted && nextDeducted > 0)
+        deducted_qty: qty,
+        status: 'CONFIRMED',
+        is_deducted: true
       } : i);
     });
 
@@ -552,10 +568,21 @@ export default function CounterSalePage() {
       } catch (err) {
         console.warn('Error restoring stock on quantity decrement:', err);
       }
+    } else if (deltaToDeduct > 0 && targetPartInfo) {
+      try {
+        await atomicDeductInventoryStock({
+          partId: targetPartInfo.inventory_id || targetPartInfo.part_id || targetPartInfo.id,
+          partName: targetPartInfo.part_name || targetPartInfo.item_name || targetPartInfo.name,
+          quantity: deltaToDeduct
+        });
+        await loadInventory();
+      } catch (err) {
+        console.warn('Error deducting stock on quantity increment:', err);
+      }
     }
   };
 
-  // Remove Item from Cart (0ms Instant UI Response + Restores Confirmed Stock back to Inventory)
+  // Remove Item from Cart (0ms Instant UI Response + Restores Stock back to Inventory)
   const handleRemoveFromCart = async (itemId) => {
     const itemToRemove = cartItems.find(i => String(i.id) === String(itemId));
     if (!itemToRemove) return;
@@ -564,8 +591,8 @@ export default function CounterSalePage() {
     const nextCart = cartItems.filter(i => String(i.id) !== String(itemId));
     setCartItems(nextCart);
 
-    // 2. Restore stock if the item was already deducted/confirmed
-    const returnQty = parseInt(itemToRemove.deducted_qty !== undefined ? itemToRemove.deducted_qty : (itemToRemove.is_deducted ? itemToRemove.quantity : 0), 10);
+    // 2. Restore stock back to inventory
+    const returnQty = parseInt(itemToRemove.deducted_qty !== undefined ? itemToRemove.deducted_qty : (itemToRemove.quantity || 1), 10);
 
     if (returnQty > 0) {
       try {
@@ -581,12 +608,12 @@ export default function CounterSalePage() {
     }
   };
 
-  // Clear Cart Completely (0ms Instant UI Reset for Cart, Customer Name, Mobile Number + Restores Stock)
+  // Clear Cart Completely (0ms Instant UI Reset + Restores Stock)
   const handleClearCart = async () => {
     if (cartItems.length === 0 && !customerName && !customerPhone) return;
     if (!window.confirm('Are you sure you want to clear the active cart and customer details?')) return;
 
-    const itemsToRestore = cartItems.filter(i => i && (i.is_deducted || (i.deducted_qty && i.deducted_qty > 0) || i.status === 'CONFIRMED'));
+    const itemsToRestore = [...cartItems];
 
     // 1. Clear all inputs and cart immediately at 0ms
     setCartItems([]);
@@ -596,11 +623,11 @@ export default function CounterSalePage() {
     localStorage.removeItem('counter_sale_draft');
     pushCloudActiveCounterCart(null).catch(() => null);
 
-    // 2. Restore any confirmed items back to inventory stock
+    // 2. Restore any items back to inventory stock
     if (itemsToRestore.length > 0) {
       try {
         for (const itemToRemove of itemsToRestore) {
-          const returnQty = parseInt(itemToRemove.deducted_qty !== undefined ? itemToRemove.deducted_qty : (itemToRemove.is_deducted ? itemToRemove.quantity : (itemToRemove.status === 'CONFIRMED' ? itemToRemove.quantity : 0)), 10);
+          const returnQty = parseInt(itemToRemove.deducted_qty !== undefined ? itemToRemove.deducted_qty : (itemToRemove.quantity || 1), 10);
           if (returnQty > 0) {
             await atomicRestoreInventoryStock({
               partId: itemToRemove.inventory_id || itemToRemove.part_id || itemToRemove.id,

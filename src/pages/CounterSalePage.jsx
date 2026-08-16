@@ -1411,23 +1411,10 @@ export default function CounterSalePage() {
                               </div>
                             </div>
 
-                            {/* Qty Counter */}
-                            <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-1.5 py-0.5">
-                              <button
-                                type="button"
-                                onClick={() => handleUpdateQty(itemKey, qty - 1)}
-                                className="text-slate-500 hover:text-rose-600 font-bold px-1 text-sm cursor-pointer"
-                              >
-                                -
-                              </button>
-                              <span className="text-xs font-mono font-bold w-5 text-center">{qty}</span>
-                              <button
-                                type="button"
-                                onClick={() => handleUpdateQty(itemKey, qty + 1)}
-                                className="text-slate-500 hover:text-emerald-600 font-bold px-1 text-sm cursor-pointer"
-                              >
-                                +
-                              </button>
+                            {/* Qty Display Badge */}
+                            <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-2 py-1">
+                              <span className="text-[10px] font-extrabold text-slate-400 uppercase">Qty:</span>
+                              <span className="text-xs font-mono font-black text-slate-900">{qty}</span>
                             </div>
 
                             <span className="text-xs font-black font-mono text-slate-900 w-14 sm:w-16 text-right">

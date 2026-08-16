@@ -1,3 +1,4 @@
+// Updated: 2026-08-16 - Removed plus minus buttons from cart UI
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   ShoppingBag, Plus, Search, Trash2, CheckCircle2, AlertCircle, 

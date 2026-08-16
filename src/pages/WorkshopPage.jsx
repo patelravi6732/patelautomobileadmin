@@ -279,14 +279,8 @@ export default function WorkshopPage() {
             if (!existing) {
               allInvMap.set(rawId, cleanItem);
             } else {
-              const minStock = Math.min(existing.current_stock, parsedStock);
-              allInvMap.set(rawId, {
-                ...cleanItem,
-                ...existing,
-                current_stock: minStock,
-                stock_quantity: minStock,
-                quantity: minStock
-              });
+              const useItem = (existing.updated_at && cleanItem.updated_at && new Date(existing.updated_at) >= new Date(cleanItem.updated_at)) ? existing : cleanItem;
+              allInvMap.set(rawId, useItem);
             }
           }
         }
@@ -584,21 +578,19 @@ export default function WorkshopPage() {
     localStorage.setItem('workshop_jobs', JSON.stringify(updatedLocal));
     pushCloudJob(updatedJob).catch(console.warn);
 
-    // If the removed part was already CONFIRMED & DEDUCTED, restore stock back to Inventory EXACTLY ONCE
-    if (part.is_deducted || part.status === 'CONFIRMED') {
-      try {
-        const qtyToRestore = parseInt(part.quantity || 1, 10);
-        const restoredTarget = await atomicRestoreInventoryStock({
-          partId: part.inventory_id || part.part_id || part.id,
-          partName: part.part_name || part.name,
-          quantity: qtyToRestore
-        });
-        if (restoredTarget) {
-          setInventory(prev => prev.map(i => (i && (i.id === restoredTarget.id || String(i.part_name || i.name).toLowerCase() === String(restoredTarget.part_name || restoredTarget.name).toLowerCase()) ? restoredTarget : i)));
-        }
-      } catch (err) {
-        console.warn('Stock restoration notice:', err);
+    // Restore stock back to Inventory EXACTLY ONCE
+    try {
+      const qtyToRestore = parseInt(part.quantity || 1, 10);
+      const restoredTarget = await atomicRestoreInventoryStock({
+        partId: part.inventory_id || part.part_id || part.id,
+        partName: part.part_name || part.name,
+        quantity: qtyToRestore
+      });
+      if (restoredTarget) {
+        setInventory(prev => prev.map(i => (i && (i.id === restoredTarget.id || String(i.part_name || i.name).toLowerCase() === String(restoredTarget.part_name || restoredTarget.name).toLowerCase()) ? restoredTarget : i)));
       }
+    } catch (err) {
+      console.warn('Stock restoration notice:', err);
     }
 
     setDeletePartModal({ isOpen: false, jobId: null, part: null });

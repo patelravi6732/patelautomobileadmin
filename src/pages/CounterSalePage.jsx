@@ -501,46 +501,52 @@ export default function CounterSalePage() {
   const handleUpdateQty = async (itemId, newQty) => {
     const qty = parseInt(newQty, 10);
     if (isNaN(qty) || qty <= 0) return;
-    const target = cartItems.find(i => String(i.id) === String(itemId));
-    if (!target) return;
 
-    const invItem = inventory.find(inv => {
-      const invId = String(inv.id || '').trim();
-      const invNorm = String(inv.part_name || inv.item_name || inv.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-      const tId = String(target.inventory_id || target.part_id || target.id || '').trim();
-      const tNorm = String(target.part_name || target.item_name || target.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-      return (tId && invId && tId === invId) || (tNorm && invNorm && tNorm === invNorm);
+    let deltaToRestore = 0;
+    let targetPartInfo = null;
+
+    setCartItems(prevCart => {
+      const target = prevCart.find(i => String(i.id) === String(itemId));
+      if (!target) return prevCart;
+
+      targetPartInfo = target;
+      const invItem = inventory.find(inv => {
+        const invId = String(inv.id || '').trim();
+        const invNorm = String(inv.part_name || inv.item_name || inv.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        const tId = String(target.inventory_id || target.part_id || target.id || '').trim();
+        const tNorm = String(target.part_name || target.item_name || target.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        return (tId && invId && tId === invId) || (tNorm && invNorm && tNorm === invNorm);
+      });
+
+      const liveStock = parseInt(invItem?.current_stock !== undefined ? invItem.current_stock : (invItem?.stock_quantity !== undefined ? invItem.stock_quantity : 0), 10);
+      const alreadyDeducted = parseInt(target.deducted_qty !== undefined ? target.deducted_qty : (target.is_deducted ? target.quantity : 0), 10);
+      const maxAllowed = liveStock + alreadyDeducted;
+
+      if (qty > maxAllowed) {
+        alert(`⚠️ Maximum available stock for '${target.part_name || target.item_name}' is ${maxAllowed} unit(s)!`);
+        return prevCart;
+      }
+
+      const returnQty = (alreadyDeducted > qty) ? (alreadyDeducted - qty) : 0;
+      const nextDeducted = Math.min(qty, alreadyDeducted);
+
+      deltaToRestore = returnQty;
+
+      return prevCart.map(i => String(i.id) === String(itemId) ? {
+        ...i,
+        quantity: qty,
+        deducted_qty: nextDeducted,
+        status: (qty <= nextDeducted && nextDeducted > 0) ? 'CONFIRMED' : 'STAGED',
+        is_deducted: (qty <= nextDeducted && nextDeducted > 0)
+      } : i);
     });
 
-    const liveStock = parseInt(invItem?.current_stock !== undefined ? invItem.current_stock : (invItem?.stock_quantity !== undefined ? invItem.stock_quantity : 0), 10);
-    const alreadyDeducted = parseInt(target.deducted_qty !== undefined ? target.deducted_qty : (target.is_deducted ? target.quantity : 0), 10);
-    const maxAllowed = liveStock + alreadyDeducted;
-    
-    if (qty > maxAllowed) {
-      alert(`⚠️ Maximum available stock for '${target.part_name || target.item_name}' is ${maxAllowed} unit(s)!`);
-      return;
-    }
-
-    // 1. UPDATE CART STATE SYNCHRONOUSLY FIRST (Prevents race conditions & compounding on rapid clicking)
-    const returnQty = (alreadyDeducted > qty) ? (alreadyDeducted - qty) : 0;
-    const nextDeducted = Math.min(qty, alreadyDeducted);
-
-    const updatedCart = cartItems.map(i => String(i.id) === String(itemId) ? {
-      ...i,
-      quantity: qty,
-      deducted_qty: nextDeducted,
-      status: (qty <= nextDeducted && nextDeducted > 0) ? 'CONFIRMED' : 'STAGED',
-      is_deducted: (qty <= nextDeducted && nextDeducted > 0)
-    } : i);
-    setCartItems(updatedCart);
-
-    // 2. RESTORE EXACT DIFFERENCE TO INVENTORY STOCK
-    if (returnQty > 0) {
+    if (deltaToRestore > 0 && targetPartInfo) {
       try {
         await atomicRestoreInventoryStock({
-          partId: target.inventory_id || target.part_id || target.id,
-          partName: target.part_name || target.item_name || target.name,
-          quantity: returnQty
+          partId: targetPartInfo.inventory_id || targetPartInfo.part_id || targetPartInfo.id,
+          partName: targetPartInfo.part_name || targetPartInfo.item_name || targetPartInfo.name,
+          quantity: deltaToRestore
         });
         await loadInventory();
       } catch (err) {

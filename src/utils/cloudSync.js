@@ -1,5 +1,23 @@
 import axios from 'axios';
 
+export function safeSetStorageItem(key, data) {
+  try {
+    const val = typeof data === 'string' ? data : JSON.stringify(data);
+    localStorage.setItem(key, val);
+  } catch (err) {
+    if (err && (err.name === 'QuotaExceededError' || err.code === 22 || err.code === 1014)) {
+      console.warn(`localStorage quota warning for '${key}'. Clearing non-critical logs.`);
+      try {
+        localStorage.removeItem('recycle_bin_items');
+        localStorage.removeItem('local_messages');
+        localStorage.removeItem('contact_messages');
+        const val = typeof data === 'string' ? data : JSON.stringify(data);
+        localStorage.setItem(key, val);
+      } catch (e2) {}
+    }
+  }
+}
+
 const DEFAULT_PRIMARY_BIN_URL = '/api/public/master_store/';
 
 function getActiveBinUrl() {
@@ -349,24 +367,24 @@ export async function saveMasterStore(storeData) {
     storeData.inventory = cleanInv;
     storeData.deletedIds = allDeleted;
 
-    localStorage.setItem('inventory_items', JSON.stringify(cleanInv));
-    localStorage.setItem('spare_parts', JSON.stringify(cleanInv));
-    localStorage.setItem('local_inventory', JSON.stringify(cleanInv));
-    localStorage.setItem('master_cloud_cache', JSON.stringify(storeData));
+    safeSetStorageItem('inventory_items', cleanInv);
+    safeSetStorageItem('spare_parts', cleanInv);
+    safeSetStorageItem('local_inventory', cleanInv);
+    safeSetStorageItem('master_cloud_cache', storeData);
 
     if (storeData.garageInfo) {
-      localStorage.setItem('garage_info', JSON.stringify(storeData.garageInfo));
+      safeSetStorageItem('garage_info', storeData.garageInfo);
     }
-    if (Array.isArray(storeData.jobs)) localStorage.setItem('workshop_jobs', JSON.stringify(storeData.jobs));
-    if (Array.isArray(storeData.invoices)) localStorage.setItem('local_invoices', JSON.stringify(storeData.invoices));
-    if (Array.isArray(storeData.khataEntries)) localStorage.setItem('khata_entries', JSON.stringify(storeData.khataEntries));
-    if (Array.isArray(storeData.customers)) localStorage.setItem('local_customers', JSON.stringify(storeData.customers));
-    if (Array.isArray(storeData.bookings)) localStorage.setItem('local_bookings', JSON.stringify(storeData.bookings));
+    if (Array.isArray(storeData.jobs)) safeSetStorageItem('workshop_jobs', storeData.jobs);
+    if (Array.isArray(storeData.invoices)) safeSetStorageItem('local_invoices', storeData.invoices);
+    if (Array.isArray(storeData.khataEntries)) safeSetStorageItem('khata_entries', storeData.khataEntries);
+    if (Array.isArray(storeData.customers)) safeSetStorageItem('local_customers', storeData.customers);
+    if (Array.isArray(storeData.bookings)) safeSetStorageItem('local_bookings', storeData.bookings);
     if (Array.isArray(storeData.messages)) {
-      localStorage.setItem('local_messages', JSON.stringify(storeData.messages));
-      localStorage.setItem('contact_messages', JSON.stringify(storeData.messages));
+      safeSetStorageItem('local_messages', storeData.messages);
+      safeSetStorageItem('contact_messages', storeData.messages);
     }
-    if (Array.isArray(storeData.adminProfiles)) localStorage.setItem('admin_profiles', JSON.stringify(storeData.adminProfiles));
+    if (Array.isArray(storeData.adminProfiles)) safeSetStorageItem('admin_profiles', storeData.adminProfiles);
   } catch (e) {
     console.warn('Error writing local master_cloud_cache:', e);
   }

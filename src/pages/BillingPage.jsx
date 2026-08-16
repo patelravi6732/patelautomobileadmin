@@ -301,6 +301,19 @@ export default function BillingPage() {
     });
   }, [invoices, search, filterMode, selectedMonth, selectedYear, selectedDate]);
 
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 20;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, filterMode, selectedMonth, selectedYear, selectedDate]);
+
+  const totalPages = Math.ceil(filteredInvoices.length / itemsPerPage) || 1;
+  const paginatedInvoices = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredInvoices.slice(start, start + itemsPerPage);
+  }, [filteredInvoices, currentPage]);
+
   const [previewImageUrl, setPreviewImageUrl] = useState(null);
   const [toast, setToast] = useState(null);
 
@@ -646,7 +659,7 @@ export default function BillingPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
-                {filteredInvoices.map((inv) => {
+                {paginatedInvoices.map((inv) => {
                   const partsVal = parseFloat(inv.parts_total || 0);
                   const labourVal = parseFloat(inv.labour_charge || 0);
                   const discountVal = parseFloat(inv.discount_amount || inv.discount || 0);
@@ -732,6 +745,31 @@ export default function BillingPage() {
                 })}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {filteredInvoices.length > itemsPerPage && (
+          <div className="p-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs font-bold text-slate-600 bg-slate-50/60">
+            <span>Showing {((currentPage - 1) * itemsPerPage) + 1} - {Math.min(currentPage * itemsPerPage, filteredInvoices.length)} of {filteredInvoices.length} Invoices</span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                className="px-3.5 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 font-bold transition-all shadow-xs cursor-pointer"
+              >
+                Previous
+              </button>
+              <span className="px-2 font-mono">Page {currentPage} of {totalPages}</span>
+              <button
+                type="button"
+                disabled={currentPage >= totalPages}
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                className="px-3.5 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 font-bold transition-all shadow-xs cursor-pointer"
+              >
+                Next
+              </button>
+            </div>
           </div>
         )}
       </div>

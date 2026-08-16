@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { generateBillCanvasDataUrl, generateBillCanvasDataUrlAsync, generateBillCanvasBlob } from '../utils/billCardGenerator';
 import { shareKhataStatementToWhatsApp } from '../utils/whatsappPhotoSharer';
 
-import { fetchCloudKhataEntries, fetchCloudInvoices, fetchCloudJobs, pushCloudKhataEntry, pushCloudRecycleBinItem, markIdAsDeleted, deleteCloudKhataEntry, fetchCloudDeletedIds, atomicRecordPayment } from '../utils/cloudSync';
+import { fetchCloudKhataEntries, fetchCloudInvoices, fetchCloudJobs, pushCloudKhataEntry, pushCloudRecycleBinItem, markIdAsDeleted, deleteCloudKhataEntry, fetchCloudDeletedIds, atomicRecordPayment, deleteCloudInvoice, deleteCloudJob } from '../utils/cloudSync';
 import AdminPasswordModal from '../components/AdminPasswordModal';
 
 const monthNames = [
@@ -583,7 +583,7 @@ export default function KhataBookPage() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, filterMode, selectedMonth, selectedYear, selectedDate, activeTab]);
+  }, [search, filterMode, selectedMonth, selectedYear, selectedDate]);
 
   const totalPages = Math.ceil(filtered.length / itemsPerPage) || 1;
   const paginatedKhata = useMemo(() => {

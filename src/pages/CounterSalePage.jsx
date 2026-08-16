@@ -463,9 +463,10 @@ export default function CounterSalePage() {
       const existing = cartItems[existingIndex];
       const currentQty = existing.quantity || 1;
       const alreadyDeducted = parseInt(existing.deducted_qty !== undefined ? existing.deducted_qty : (existing.is_deducted ? existing.quantity : 0), 10);
-      const maxAllowed = liveStock + alreadyDeducted;
-      if (currentQty + 1 > maxAllowed) {
-        alert(`⚠️ Maximum available stock for '${rawName}' is ${maxAllowed} unit(s).`);
+      const originalLimit = parseInt(existing.initial_stock !== undefined ? existing.initial_stock : (liveStock + alreadyDeducted), 10);
+
+      if (currentQty + 1 > originalLimit) {
+        alert(`⚠️ Maximum available stock for '${rawName}' is ${originalLimit} unit(s).`);
         return;
       }
       const newDeducted = alreadyDeducted + 1;
@@ -473,6 +474,7 @@ export default function CounterSalePage() {
         ...cItem,
         quantity: currentQty + 1,
         deducted_qty: newDeducted,
+        initial_stock: originalLimit,
         status: 'CONFIRMED',
         is_deducted: true
       } : cItem);
@@ -497,6 +499,7 @@ export default function CounterSalePage() {
         unit_price: priceVal,
         quantity: 1,
         available_stock: liveStock - 1,
+        initial_stock: liveStock,
         deducted_qty: 1,
         status: 'CONFIRMED',
         is_deducted: true
@@ -535,10 +538,10 @@ export default function CounterSalePage() {
 
       const liveStock = parseInt(invItem?.current_stock !== undefined ? invItem.current_stock : (invItem?.stock_quantity !== undefined ? invItem.stock_quantity : 0), 10);
       const alreadyDeducted = parseInt(target.deducted_qty !== undefined ? target.deducted_qty : (target.is_deducted ? target.quantity : 0), 10);
-      const maxAllowed = liveStock + alreadyDeducted;
+      const originalLimit = parseInt(target.initial_stock !== undefined ? target.initial_stock : (liveStock + alreadyDeducted), 10);
 
-      if (qty > maxAllowed) {
-        alert(`⚠️ Maximum available stock for '${target.part_name || target.item_name}' is ${maxAllowed} unit(s)!`);
+      if (qty > originalLimit) {
+        alert(`⚠️ Maximum available stock for '${target.part_name || target.item_name}' is ${originalLimit} unit(s)!`);
         return prevCart;
       }
 
@@ -552,6 +555,7 @@ export default function CounterSalePage() {
         ...i,
         quantity: qty,
         deducted_qty: qty,
+        initial_stock: originalLimit,
         status: 'CONFIRMED',
         is_deducted: true
       } : i);

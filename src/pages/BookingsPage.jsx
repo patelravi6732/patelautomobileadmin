@@ -71,7 +71,7 @@ export default function BookingsPage() {
     const localBookings = JSON.parse(localStorage.getItem('local_bookings') || '[]');
 
     const allBookingsMap = new Map();
-    [...localBookings, ...cloudBookings, ...backendBookings].forEach(b => {
+    [...backendBookings, ...cloudBookings, ...localBookings].forEach(b => {
       if (b && typeof b === 'object' && b.id) {
         const uniqueKey = String(b.id);
         if (!deletedIds.includes(uniqueKey)) {

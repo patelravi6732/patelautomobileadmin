@@ -426,13 +426,13 @@ const renderCanvasInternal = (invoice, garageInfo, logoImg, qrImg) => {
 };
 
 export const getDynamicUpiQrUrl = (invoice, garageInfo) => {
-  const upiId = garageInfo?.upi_id || '';
+  const upiId = garageInfo?.upi_id || '8140371414@ybl';
   const payeeName = garageInfo?.upi_payee_name || garageInfo?.garage_name || 'Patel Automobiles';
-  const pendingAmt = parseFloat(invoice?.pending_amount || 0);
 
-  if (upiId && pendingAmt > 0) {
-    const upiUri = `upi://pay?pa=${upiId}&pn=${encodeURIComponent(payeeName)}&am=${pendingAmt.toFixed(2)}&cu=INR&tn=${encodeURIComponent(`Invoice Payment #${invoice?.id || ''}`)}`;
-    return `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(upiUri)}`;
+  if (upiId) {
+    const rawInvId = String(invoice?.id || invoice?.invoice_number || '').slice(-8);
+    const upiUri = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(payeeName)}&cu=INR&tn=${encodeURIComponent(`Patel Auto Bill ${rawInvId}`)}`;
+    return `https://api.qrserver.com/v1/create-qr-code/?size=400x400&margin=8&data=${encodeURIComponent(upiUri)}`;
   }
 
   return (garageInfo?.upi_qr_code && garageInfo.upi_qr_code.trim() !== '' && !garageInfo.upi_qr_code.includes('undefined'))

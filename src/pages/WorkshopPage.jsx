@@ -718,13 +718,16 @@ export default function WorkshopPage() {
 
   const handleSilentUpdateLabourCharge = (jobId, newLabour) => {
     const num = parseFloat(newLabour) || 0;
+    const nowIso = new Date().toISOString();
+    setLabourInputs(prev => ({ ...prev, [jobId]: newLabour }));
     setJobs(prev => prev.map(j => {
       if (String(j.id) === String(jobId)) {
         const partsTotal = parseFloat(j.parts_total || 0);
         const updated = {
           ...j,
           labour_charge: num,
-          live_total: partsTotal + num
+          live_total: partsTotal + num,
+          updated_at: nowIso
         };
         pushCloudJob(updated).catch(console.warn);
         const localJobs = JSON.parse(localStorage.getItem('workshop_jobs') || '[]');

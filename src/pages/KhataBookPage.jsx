@@ -1275,8 +1275,8 @@ export default function KhataBookPage() {
                       const upiId = garageInfo?.upi_id || '';
                       const payeeName = garageInfo?.upi_payee_name || garageInfo?.garage_name || 'Patel Automobiles';
                       const rawCustId = String(statementCustomer?.id || statementCustomer?.vehicle_number || 'bill').slice(-8);
-                      const fixedUpiUri = upiId ? `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(payeeName)}&am=${encodeURIComponent(pendingAmtStr)}&cu=INR&tn=${encodeURIComponent(`Dues Payment ${rawCustId}`)}` : '';
-                      const dynamicQrImage = upiId ? `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(fixedUpiUri)}` : '';
+                      const fixedUpiUri = upiId ? `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(payeeName)}&cu=INR&tn=${encodeURIComponent(`Patel Auto Khata ${rawCustId}`)}` : '';
+                      const dynamicQrImage = upiId ? `https://api.qrserver.com/v1/create-qr-code/?size=400x400&margin=8&data=${encodeURIComponent(fixedUpiUri)}` : '';
                       const qrSrc = (garageInfo?.upi_qr_code && garageInfo.upi_qr_code.trim() !== '' && !garageInfo.upi_qr_code.includes('undefined')) ? garageInfo.upi_qr_code : (dynamicQrImage || '/upi_qr.jpg');
 
                       return (

@@ -58,9 +58,11 @@ export default function NewServicePage() {
       id: Date.now(),
       parts: [],
       parts_total: 0,
-      live_total: parseFloat(formData.labour_charge || 100),
+      labour_charge: parseFloat(formData.labour_charge || 0),
+      live_total: parseFloat(formData.labour_charge || 0),
       status: 'IN_PROGRESS',
-      created_at: new Date().toISOString()
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
     };
 
     pushCloudJob(newJobObj).catch(console.warn);

@@ -238,14 +238,33 @@ export default function InventoryPage() {
         min_stock_alert: passwordModal.pendingData.min_stock_alert !== '' ? parseInt(passwordModal.pendingData.min_stock_alert, 10) : 2
       };
 
-      pushCloudInventoryItem(updatedObj).catch(console.warn);
-      const existing = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || JSON.stringify(DEFAULT_SPARE_PARTS));
-      const updatedLocal = existing.map(i => (String(i.id) === String(targetItem.id) ? updatedObj : i));
+      pushCloudInventoryItem(updatedObj, targetItem.id).catch(console.warn);
+      const existing = JSON.parse(localStorage.getItem('inventory_items') || localStorage.getItem('spare_parts') || localStorage.getItem('local_inventory') || '[]');
+      const targetId = String(targetItem.id || '').toLowerCase();
+      const targetNorm = String(targetItem.part_name || targetItem.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+      const updatedLocal = existing.map(i => {
+        if (!i) return i;
+        const curId = String(i.id || '').toLowerCase();
+        const curNorm = String(i.part_name || i.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (curId === targetId || (targetNorm && curNorm === targetNorm)) {
+          return updatedObj;
+        }
+        return i;
+      });
       localStorage.setItem('inventory_items', JSON.stringify(updatedLocal));
       localStorage.setItem('spare_parts', JSON.stringify(updatedLocal));
       localStorage.setItem('local_inventory', JSON.stringify(updatedLocal));
 
-      setItems(prev => prev.map(i => (String(i.id) === String(targetItem.id) ? updatedObj : i)));
+      setItems(prev => prev.map(i => {
+        if (!i) return i;
+        const curId = String(i.id || '').toLowerCase();
+        const curNorm = String(i.part_name || i.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (curId === targetId || (targetNorm && curNorm === targetNorm)) {
+          return updatedObj;
+        }
+        return i;
+      }));
       setShowAddModal(false);
 
       try {

@@ -604,13 +604,14 @@ export async function fetchCloudInventory() {
   return (store.inventory || []).filter(i => i && typeof i === 'object' && (i.id || i.part_name || i.item_name || i.name));
 }
 
-export async function pushCloudInventoryItem(newItem) {
+export async function pushCloudInventoryItem(newItem, oldItemId = null) {
   if (!newItem || typeof newItem !== 'object') return;
-  const rawId = String(newItem.id || '').trim();
+  const rawId = String(newItem.id || oldItemId || '').trim();
   const rawName = String(newItem.part_name || newItem.item_name || newItem.name || '').trim();
   const newName = rawName.toLowerCase();
   const newNorm = newName.replace(/[^a-z0-9]/g, '');
   const newId = rawId || `part_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const oldIdStr = oldItemId ? String(oldItemId).trim().toLowerCase() : null;
 
   const stockVal = parseInt(newItem.current_stock !== undefined ? newItem.current_stock : (newItem.stock_quantity !== undefined ? newItem.stock_quantity : (newItem.quantity !== undefined ? newItem.quantity : 0)), 10);
   const priceVal = parseFloat(newItem.price || newItem.selling_price || newItem.unit_price || 0);
@@ -632,11 +633,12 @@ export async function pushCloudInventoryItem(newItem) {
 
   const isMatchItem = (i) => {
     if (!i) return false;
-    const curId = String(i.id || '').trim();
+    const curId = String(i.id || '').trim().toLowerCase();
     const curRaw = String(i.part_name || i.item_name || i.name || '').trim();
     const curName = curRaw.toLowerCase();
     const curNorm = curName.replace(/[^a-z0-9]/g, '');
-    return (newId && curId && newId.toLowerCase() === curId.toLowerCase()) || 
+    return (oldIdStr && curId && curId === oldIdStr) ||
+           (newId && curId && newId.toLowerCase() === curId) || 
            (newNorm && curNorm && newNorm === curNorm) || 
            (newName && curName && newName === curName);
   };

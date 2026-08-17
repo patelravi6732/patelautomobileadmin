@@ -71,9 +71,13 @@ const renderCanvasInternal = (invoice, garageInfo, logoImg, qrImg) => {
   const parts = inv.service_job?.parts || inv.service_job?.parts_used || inv.parts || inv.items || [];
   const hasLabour = parseFloat(inv.service_job?.labour_charge || inv.labour_charge || 0) > 0;
   const itemCount = Array.isArray(parts) ? parts.length + (hasLabour ? 1 : 0) : 1;
-  const rowHeight = 44;
-  const baseHeight = 780;
-  const height = Math.max(940, baseHeight + (itemCount * rowHeight));
+
+  // Smart Adaptive Layout for compact, beautifully proportioned bills
+  const isLargeBill = itemCount > 12;
+  const isHugeBill = itemCount > 20;
+  const rowHeight = isHugeBill ? 25 : (isLargeBill ? 29 : 36);
+  const baseHeight = isLargeBill ? 600 : 660;
+  const height = Math.max(900, baseHeight + (itemCount * rowHeight));
 
   const canvas = document.createElement('canvas');
   canvas.width = width * scale;
@@ -133,89 +137,97 @@ const renderCanvasInternal = (invoice, garageInfo, logoImg, qrImg) => {
   ctx.fillText(`📞 ${garageInfo?.phone || '+91 81403 71414'}`, pad + 86, currentY + 68);
 
   // Date Top Right
-  const invDate = inv.created_at || inv.visit_date || inv.date || Date.now();
-  const dateStr = formatDateDMY(invDate);
-
-  ctx.fillStyle = '#64748b';
-  ctx.font = 'bold 13.5px Consolas, "Liberation Mono", monospace, sans-serif';
   ctx.textAlign = 'right';
-  ctx.fillText(`Date: ${dateStr}`, width - pad, currentY + 26);
+  ctx.fillStyle = '#475569';
+  ctx.font = '600 13px Consolas, "Liberation Mono", monospace, sans-serif';
+  ctx.fillText(`Date: ${formatDateDMY(inv.created_at || inv.date || new Date())}`, width - pad, currentY + 26);
   ctx.textAlign = 'left';
 
-  currentY += 88;
+  currentY += logoSize + 16;
 
-  // 3. Royal Blue Divider Line
-  ctx.strokeStyle = '#2563eb';
-  ctx.lineWidth = 2.5;
-  ctx.beginPath();
-  ctx.moveTo(pad, currentY);
-  ctx.lineTo(width - pad, currentY);
-  ctx.stroke();
+  // 3. Top Decorative Brand Accent Line
+  const brandGradient = ctx.createLinearGradient(pad, currentY, width - pad, currentY);
+  brandGradient.addColorStop(0, '#2563eb');
+  brandGradient.addColorStop(0.5, '#4f46e5');
+  brandGradient.addColorStop(1, '#06b6d4');
+  ctx.fillStyle = brandGradient;
+  drawRoundedRect(ctx, pad, currentY, width - (pad * 2), 4, 2);
+  ctx.fill();
 
-  currentY += 22;
+  currentY += 16;
 
-  // 4. Customer Details Box (Clean Slate / Blue Accent)
-  const boxHeight = 82;
-  const boxY = currentY;
-
+  // 4. Customer & Vehicle Info Box (Modern Clean Grid)
+  const infoBoxH = 80;
   ctx.fillStyle = '#f8fafc';
-  drawRoundedRect(ctx, pad, boxY, width - (pad * 2), boxHeight, 16);
+  drawRoundedRect(ctx, pad, currentY, width - (pad * 2), infoBoxH, 14);
   ctx.fill();
   ctx.strokeStyle = '#e2e8f0';
-  ctx.lineWidth = 1.5;
-  drawRoundedRect(ctx, pad, boxY, width - (pad * 2), boxHeight, 16);
+  ctx.lineWidth = 1.2;
+  drawRoundedRect(ctx, pad, currentY, width - (pad * 2), infoBoxH, 14);
   ctx.stroke();
 
-  // Customer Details Left
+  // Customer Details (Left)
   ctx.fillStyle = '#2563eb';
-  ctx.font = 'bold 11.5px "Segoe UI", Roboto, system-ui, -apple-system, sans-serif';
-  ctx.fillText('CUSTOMER DETAILS', pad + 20, boxY + 24);
+  ctx.font = 'bold 10px "Segoe UI", Roboto, system-ui, -apple-system, sans-serif';
+  ctx.fillText('CUSTOMER DETAILS', pad + 18, currentY + 22);
 
   ctx.fillStyle = '#0f172a';
-  ctx.font = 'bold 17px "Segoe UI", Roboto, system-ui, -apple-system, sans-serif';
-  ctx.fillText(inv.customer_name || 'Valued Customer', pad + 20, boxY + 48);
+  ctx.font = 'bold 15px "Segoe UI", Roboto, system-ui, -apple-system, sans-serif';
+  const cName = inv.customer_name || inv.customer?.name || 'Valued Customer';
+  ctx.fillText(cName, pad + 18, currentY + 44);
 
-  ctx.fillStyle = '#334155';
-  ctx.font = 'bold 13.5px Consolas, "Liberation Mono", monospace, sans-serif';
-  ctx.fillText(`📞 ${inv.customer_phone || inv.customer_mobile || inv.mobile_number || inv.phone || '8140371414'}`, pad + 20, boxY + 68);
+  const cPhone = inv.customer_phone || inv.customer_mobile || inv.customer?.phone || inv.mobile_number || '';
+  if (cPhone) {
+    ctx.fillStyle = '#475569';
+    ctx.font = '600 12.5px Consolas, monospace';
+    ctx.fillText(`📞 ${cPhone}`, pad + 18, currentY + 64);
+  }
 
-  // Vehicle Details Right
-  const col2X = pad + 380;
-  ctx.fillStyle = '#2563eb';
-  ctx.font = 'bold 11.5px "Segoe UI", Roboto, system-ui, -apple-system, sans-serif';
-  ctx.fillText('VEHICLE / SERVICE INFO', col2X, boxY + 24);
+  // Vehicle Details (Right)
+  const vehNum = inv.vehicle_number || inv.service_job?.vehicle_number || inv.bike_model || '';
+  if (vehNum) {
+    ctx.fillStyle = '#2563eb';
+    ctx.font = 'bold 10px "Segoe UI", Roboto, system-ui, -apple-system, sans-serif';
+    ctx.fillText('VEHICLE / SERVICE INFO', pad + 380, currentY + 22);
 
-  ctx.fillStyle = '#0f172a';
-  ctx.font = 'bold 17px Consolas, "Liberation Mono", monospace, sans-serif';
-  ctx.fillText((inv.vehicle_number || 'COUNTER RETAIL SALE').toUpperCase(), col2X, boxY + 48);
+    ctx.fillStyle = '#0f172a';
+    ctx.font = 'bold 15px Consolas, monospace';
+    ctx.fillText(vehNum.toUpperCase(), pad + 380, currentY + 44);
 
-  ctx.fillStyle = '#475569';
-  ctx.font = '600 13.5px "Segoe UI", Roboto, system-ui, -apple-system, sans-serif';
-  ctx.fillText((inv.bike_model || 'Spare Parts Direct Sale').toUpperCase(), col2X, boxY + 68);
+    const bModel = inv.bike_model || inv.service_job?.bike_model || '';
+    if (bModel) {
+      ctx.fillStyle = '#475569';
+      ctx.font = '600 12px "Segoe UI", Roboto, sans-serif';
+      ctx.fillText(bModel, pad + 380, currentY + 64);
+    }
+  }
 
-  currentY += boxHeight + 22;
+  currentY += infoBoxH + 18;
 
-  // 5. Dark Navy / Slate Table Header
+  // 5. Table Header
   const tblHeaderY = currentY;
-  const tblHeaderH = 40;
+  const tblHeaderH = 38;
 
   ctx.fillStyle = '#0f172a';
-  drawRoundedRect(ctx, pad, tblHeaderY, width - (pad * 2), tblHeaderH, 12);
+  drawRoundedRect(ctx, pad, tblHeaderY, width - (pad * 2), tblHeaderH, 10);
   ctx.fill();
 
   ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 12.5px "Segoe UI", Roboto, system-ui, -apple-system, sans-serif';
-  ctx.fillText('DESCRIPTION', pad + 18, tblHeaderY + 25);
+  ctx.font = 'bold 12px "Segoe UI", Roboto, system-ui, -apple-system, sans-serif';
+  ctx.fillText('DESCRIPTION', pad + 18, tblHeaderY + 24);
 
   ctx.textAlign = 'center';
-  ctx.fillText('QTY', pad + 400, tblHeaderY + 25);
+  ctx.fillText('QTY', pad + 400, tblHeaderY + 24);
 
   ctx.textAlign = 'right';
-  ctx.fillText('PRICE', pad + 570, tblHeaderY + 25);
-  ctx.fillText('TOTAL', width - pad - 18, tblHeaderY + 25);
+  ctx.fillText('PRICE', pad + 570, tblHeaderY + 24);
+  ctx.fillText('TOTAL', width - pad - 18, tblHeaderY + 24);
   ctx.textAlign = 'left';
 
-  currentY += tblHeaderH + 18;
+  currentY += tblHeaderH + 14;
+
+  const fontSz = isHugeBill ? '12px' : (isLargeBill ? '13px' : '14px');
+  const stepH = isHugeBill ? 24 : (isLargeBill ? 28 : 34);
 
   // 6. Table Rows
   if (Array.isArray(parts) && parts.length > 0) {
@@ -227,21 +239,21 @@ const renderCanvasInternal = (invoice, garageInfo, logoImg, qrImg) => {
       const cleanName = rawName.split(' Genuine Part')[0].split(' - ')[0].trim();
 
       ctx.fillStyle = '#0f172a';
-      ctx.font = 'bold 14.5px "Segoe UI", Roboto, system-ui, -apple-system, sans-serif';
-      ctx.fillText(cleanName, pad + 18, currentY + 20);
+      ctx.font = `bold ${fontSz} "Segoe UI", Roboto, system-ui, -apple-system, sans-serif`;
+      ctx.fillText(cleanName, pad + 18, currentY + 16);
 
       ctx.textAlign = 'center';
-      ctx.font = '14.5px Consolas, "Liberation Mono", monospace, sans-serif';
-      ctx.fillText(String(qty), pad + 400, currentY + 20);
+      ctx.font = `${fontSz} Consolas, "Liberation Mono", monospace, sans-serif`;
+      ctx.fillText(String(qty), pad + 400, currentY + 16);
 
       ctx.textAlign = 'right';
-      ctx.fillText(`₹${uPrice.toFixed(2)}`, pad + 570, currentY + 20);
+      ctx.fillText(`₹${uPrice.toFixed(2)}`, pad + 570, currentY + 16);
 
-      ctx.font = 'bold 14.5px Consolas, "Liberation Mono", monospace, sans-serif';
-      ctx.fillText(`₹${subTot.toFixed(2)}`, width - pad - 18, currentY + 20);
+      ctx.font = `bold ${fontSz} Consolas, "Liberation Mono", monospace, sans-serif`;
+      ctx.fillText(`₹${subTot.toFixed(2)}`, width - pad - 18, currentY + 16);
       ctx.textAlign = 'left';
 
-      currentY += 36;
+      currentY += stepH;
     });
   }
 
@@ -249,39 +261,39 @@ const renderCanvasInternal = (invoice, garageInfo, logoImg, qrImg) => {
   const labourVal = parseFloat(inv.labour_charge || inv.service_job?.labour_charge || 0);
   if (labourVal > 0) {
     ctx.fillStyle = '#0f172a';
-    ctx.font = 'bold 14.5px "Segoe UI", Roboto, system-ui, -apple-system, sans-serif';
-    ctx.fillText('Labour Service Charge', pad + 18, currentY + 20);
+    ctx.font = `bold ${fontSz} "Segoe UI", Roboto, system-ui, -apple-system, sans-serif`;
+    ctx.fillText('Labour Service Charge', pad + 18, currentY + 16);
 
     ctx.textAlign = 'center';
-    ctx.font = '14.5px Consolas, "Liberation Mono", monospace, sans-serif';
-    ctx.fillText('1', pad + 400, currentY + 20);
+    ctx.font = `${fontSz} Consolas, "Liberation Mono", monospace, sans-serif`;
+    ctx.fillText('1', pad + 400, currentY + 16);
 
     ctx.textAlign = 'right';
-    ctx.fillText(`₹${labourVal.toFixed(2)}`, pad + 570, currentY + 20);
+    ctx.fillText(`₹${labourVal.toFixed(2)}`, pad + 570, currentY + 16);
 
-    ctx.font = 'bold 14.5px Consolas, "Liberation Mono", monospace, sans-serif';
-    ctx.fillText(`₹${labourVal.toFixed(2)}`, width - pad - 18, currentY + 20);
+    ctx.font = `bold ${fontSz} Consolas, "Liberation Mono", monospace, sans-serif`;
+    ctx.fillText(`₹${labourVal.toFixed(2)}`, width - pad - 18, currentY + 16);
     ctx.textAlign = 'left';
 
-    currentY += 36;
+    currentY += stepH;
   }
 
-  currentY += 12;
+  currentY += 8;
 
   // Bottom Divider
   ctx.strokeStyle = '#0f172a';
-  ctx.lineWidth = 2;
+  ctx.lineWidth = 1.5;
   ctx.beginPath();
   ctx.moveTo(pad, currentY);
   ctx.lineTo(width - pad, currentY);
   ctx.stroke();
 
-  currentY += 24;
+  currentY += 18;
 
-  // 7. Totals Section with Pure, Clean UPI QR Scanner Image (For Pending Bills)
+  // 7. Totals Section with Large, High-Contrast UPI QR Scanner Image (For Pending Bills)
   const pendingVal = parseFloat(inv.pending_amount !== undefined ? inv.pending_amount : (inv.balance || 0));
   const isPendingPayment = pendingVal > 0;
-  const qrBoxSize = 185;
+  const qrBoxSize = 205; // Enlarged from 185 for ultra-fast instant scanner detection
   const startY = currentY;
 
   if (isPendingPayment) {
@@ -293,7 +305,7 @@ const renderCanvasInternal = (invoice, garageInfo, logoImg, qrImg) => {
 
     // Subtle Clean Border
     ctx.strokeStyle = '#cbd5e1';
-    ctx.lineWidth = 1;
+    ctx.lineWidth = 1.2;
     ctx.strokeRect(pad, startY, qrBoxSize + 20, qrBoxSize + 48);
 
     if (qrImg && (qrImg.naturalWidth > 0 || qrImg.complete)) {
@@ -310,19 +322,19 @@ const renderCanvasInternal = (invoice, garageInfo, logoImg, qrImg) => {
 
     // QR Helper Text
     ctx.fillStyle = '#0f172a';
-    ctx.font = 'bold 12.5px "Segoe UI", Roboto, system-ui, -apple-system, sans-serif';
+    ctx.font = 'bold 12px "Segoe UI", Roboto, system-ui, -apple-system, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('📱 Scan QR to Pay via GPay / PhonePe', pad + 10 + (qrBoxSize / 2), startY + qrBoxSize + 28);
+    ctx.fillText('📱 Scan QR to Pay via GPay / PhonePe', pad + 10 + (qrBoxSize / 2), startY + qrBoxSize + 26);
     ctx.fillStyle = '#64748b';
     ctx.font = '600 11px Consolas, monospace';
-    ctx.fillText(`${garageInfo?.upi_id || 'paytmqr5hlpsp@ptys'}`, pad + 10 + (qrBoxSize / 2), startY + qrBoxSize + 42);
+    ctx.fillText(`${garageInfo?.upi_id || 'paytmqr5hlpsp@ptys'}`, pad + 10 + (qrBoxSize / 2), startY + qrBoxSize + 40);
     ctx.textAlign = 'left';
   }
 
   // Right Side Totals Calculation
-  const totX = isPendingPayment ? (pad + qrBoxSize + 40) : (pad + 260);
+  const totX = isPendingPayment ? (pad + qrBoxSize + 35) : (pad + 240);
   const totW = width - pad - totX;
-  let curTotY = startY + 10;
+  let curTotY = startY + 8;
 
   // Subtotal
   const partsTot = parseFloat(inv.parts_total || (Array.isArray(parts) ? parts.reduce((acc, p) => acc + (parseFloat(p.unit_price || p.selling_price || p.price || 0) * (p.quantity || p.qty || 1)), 0) : 0));

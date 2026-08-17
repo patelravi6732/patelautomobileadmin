@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PlusCircle, User, Phone, Bike, UserCheck, Users } from 'lucide-react';
 import API from '../services/api';
@@ -23,17 +23,21 @@ export default function NewServicePage() {
   });
 
   const [loading, setLoading] = useState(false);
+  const hasInitialized = useRef(false);
 
   useEffect(() => {
     if (garageInfo?.mechanics_list) {
       const parsed = garageInfo.mechanics_list.split(',').map(m => m.trim()).filter(Boolean);
       if (parsed.length > 0) {
         setMechanicOptions(parsed);
-        setFormData(prev => ({
-          ...prev,
-          labour_charge: garageInfo.default_labour_charge || 100.00
-        }));
       }
+    }
+    if (!hasInitialized.current && garageInfo?.default_labour_charge !== undefined) {
+      hasInitialized.current = true;
+      setFormData(prev => ({
+        ...prev,
+        labour_charge: garageInfo.default_labour_charge
+      }));
     }
   }, [garageInfo]);
 
@@ -217,7 +221,7 @@ export default function NewServicePage() {
                 step="50"
                 required
                 value={formData.labour_charge}
-                onChange={(e) => setFormData({ ...formData, labour_charge: parseFloat(e.target.value) || 0 })}
+                onChange={(e) => setFormData({ ...formData, labour_charge: e.target.value })}
                 className="w-full px-4 py-3.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-sm font-bold text-slate-900 transition-all shadow-xs"
               />
             </div>
